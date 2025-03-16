@@ -8,3 +8,4 @@ prey_growth_rate: 0.25
 prey_death_rate: 0.005
 predator_growth_rate: 0.001
 predator_death_rate: 0.075
+static_plot_format: "svg"  # Add "pdf" to save as PDF, or "svg" for .svg, or "null" as html only

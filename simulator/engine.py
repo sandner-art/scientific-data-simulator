@@ -5,7 +5,7 @@ import platform
 import importlib
 import sys
 import logging
-import psutil  # psutil is now a required dependency
+import psutil
 from packaging import version
 import pkg_resources
 
@@ -15,7 +15,7 @@ from .config import load_config
 from .utils import DataDescriptor, DataType
 from typing import Dict, Any, Type
 from datetime import datetime
-from .visualization import generate_plots
+from .visualization import generate_plots  # Import the new function
 
 
 # Configure logging
@@ -64,15 +64,15 @@ class SimulatorEngine:
 
         # Get Software versions (using requirements.txt)
         try:
-            installed_packages = {p.project_name: p.version for p in pkg_resources.working_set}
+            installed_packages = {p.key: p.version for p in pkg_resources.working_set}
             relevant_versions = {}
             with open("requirements.txt", "r") as req_file:
                 required_packages = [line.strip() for line in req_file if line.strip() and not line.startswith("#")]
 
             for package_name in required_packages:
                 req = pkg_resources.Requirement.parse(package_name)
-                if req.project_name in installed_packages:
-                    relevant_versions[req.project_name] = installed_packages[req.project_name]
+                if req.key in installed_packages:
+                    relevant_versions[req.key] = installed_packages[req.key]
                 else:
                     logger.warning(f"Package required not found: {req.project_name}")
             record.set_software_versions(relevant_versions)
@@ -100,9 +100,20 @@ class SimulatorEngine:
             for data_name, data_info in results.items():
                 record.add_output_data(data_name, data_info['data'], data_info['descriptor'])
 
-            # --- Corrected: Pass experiment_dir to generate_plots ---
-            generate_plots(results, experiment_dir)
-            # --- End Correction ---
+            # --- MODIFIED: Generate plots ---
+            static_format = config.get('static_plot_format')
+            if static_format == 'null': # convert to None
+                static_format = None
+            generate_plots(results, experiment_dir, static_format=static_format)  # Get from config
+            # --- END MODIFIED ---
+
+            # Save result to csv
+            if config.get('save_csv', False): # Check for save_csv option.
+                try:
+                    from .data_handler import save_csv # Import here to avoid circular import
+                    save_csv(results, os.path.join(experiment_dir, "results.csv"))
+                except Exception as e:
+                    logger.error(f"Could not save to csv: {e}")
 
             record.set_end_time()
             logger.info(f"Experiment completed: {record.experiment_id}")
@@ -115,8 +126,27 @@ class SimulatorEngine:
             logger.error(f"Experiment failed: {e}", exc_info=True)
             raise  # Re-raise
 
-        self._save_experiment_record(record)
-        return record.experiment_id
+        experiment_id = self._save_experiment_record(record) # get experiment id
+
+        # --- ADDED: Output file summary ---
+        print("\nExperiment completed successfully. Output files:")
+        for filename in os.listdir(experiment_dir):
+            file_path = os.path.join(experiment_dir, filename)
+            if os.path.isfile(file_path):
+                try:
+                    file_size = os.path.getsize(file_path)  # Get size in bytes
+                    # Format size for readability (optional)
+                    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                        if file_size < 1024.0:
+                            break
+                        file_size /= 1024.0
+                    size_str = f"{file_size:.2f} {unit}"
+                except OSError:
+                    size_str = "Error getting size"
+                print(f"  - {filename}: {size_str}")
+        print(f"Output directory: {experiment_dir}\n")
+        # --- END ADDED ---
+        return experiment_id # return id
 
     def _get_experiment_logic_class(self, config: Dict[str, Any]) -> Type[ExperimentLogic]:
         """Loads the ExperimentLogic class based on the configuration."""
@@ -151,15 +181,13 @@ class SimulatorEngine:
 
     def _save_experiment_record(self, record: ExperimentRecord):
         """Saves the ExperimentRecord to a JSON file."""
-        # --- No change here, we now create directory earlier
         timestamp = record.start_time.strftime("%Y-%m-%d_%H-%M-%S")
         experiment_dir = os.path.join(self.output_dir, f"{timestamp}_{record.experiment_id}")
-        # --- END MODIFIED ---
-        # os.makedirs(experiment_dir, exist_ok=True) # Moved up
         record_path = os.path.join(experiment_dir, "experiment_record.json")
         with open(record_path, "w") as f:
             json.dump(record.to_dict(), f, indent=4)
         logger.info(f"Experiment record saved to: {record_path}")
+        return record.experiment_id # Return experiment ID
 
 
     def load_experiment_record(self, experiment_id: str) -> ExperimentRecord:

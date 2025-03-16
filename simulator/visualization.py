@@ -35,15 +35,12 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
         if group_name == "time_series":
             first_data_info = data_list[0]
             first_descriptor = first_data_info['descriptor']
-            x_axis_name = 'time'
-            if 'time' not in results:
-                x_axis_name = first_descriptor.x_axis if first_descriptor.x_axis else None
-                if x_axis_name is None:
-                    print(f"Warning: X-axis data not found and 'time' data not found. Skipping time series plot for {group_name}.")
-                    continue
+            # Determine x_axis_name:
+            x_axis_name = first_descriptor.x_axis if first_descriptor.x_axis else 'time'
             if x_axis_name not in results:
                 print(f"Warning: X-axis data '{x_axis_name}' not found. Skipping time series plot for {group_name}.")
                 continue
+
 
             x_axis_data = results[x_axis_name]['data']
             x_axis_descriptor = results[x_axis_name]['descriptor']
@@ -66,21 +63,22 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
 
             # --- Plotly ---
             df = pd.DataFrame()
-            df[x_axis_name] = x_axis_data
+            df[x_axis_name] = x_axis_data  # Always include the x-axis
             for data_info in data_list:
                 descriptor = data_info['descriptor']
                 if descriptor.plot_type == 'line' and descriptor.group == "time_series":
                     data = data_info['data']
                     df[descriptor.name] = data
 
-            fig = px.line(df, x=x_axis_name, y=[col for col in df.columns if col != x_axis_name],
-                          labels={'x': x_axis_descriptor.units if x_axis_descriptor.units else x_axis_name,
-                                  'value': "Value",
-                                  'variable': 'Series'},
-                          title=f"Time Series Plot ({group_name})")
+
+            fig = px.line(df, x=x_axis_name, y=[col for col in df.columns if col != x_axis_name], # all columns except x
+                            labels={'x': x_axis_descriptor.units if x_axis_descriptor.units else x_axis_name,
+                                    'value': "Value",  # Generic y-axis label
+                                    'variable': 'Series'},
+                            title=f"Time Series Plot ({group_name})")
             fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
             if static_format:
-                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
+                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format) # Corrected
 
 
         elif group_name == 'histogram':
@@ -89,8 +87,8 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
             for data_info in data_list:
                 descriptor = data_info['descriptor']
                 data = data_info['data']
-                plt.hist(data, bins='auto', label=descriptor.name, alpha=0.7)
-            plt.xlabel("Value")
+                plt.hist(data, bins='auto', label=descriptor.name, alpha=0.7) # Transparency for multiple histograms
+            plt.xlabel("Value") # Generic
             plt.ylabel("Frequency")
             plt.title(f"Histogram ({group_name})")
             plt.legend()
@@ -99,20 +97,22 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
             plt.close()
 
             # Plotly
+            # Combine into DataFrame for plotting
             hist_df = pd.DataFrame()
             for data_info in data_list:
                 descriptor = data_info['descriptor']
                 data = data_info['data']
-                hist_df[descriptor.name] = pd.Series(data)
+                hist_df[descriptor.name] = pd.Series(data) # Use Series, as data can be different length
 
-            fig = px.histogram(hist_df, nbins=30,
+
+            fig = px.histogram(hist_df, nbins=30, #  fixed number of bins
                               labels={'value': "Value", 'variable': 'Series'},
                               title=f"Histogram ({group_name})",
-                              marginal="rug",
-                              opacity=0.7)
+                              marginal="rug",  # Add marginal distributions
+                              opacity=0.7) # transparency
             fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
             if static_format:
-                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
+                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format) # Corrected
 
 
         # Add support for other groups as needed
@@ -157,6 +157,7 @@ def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str,
           df['Observed Predator'] = obs_df.set_index('time')['predator_population']
           df['Observed Predator'] = pd.to_numeric(df['Observed Predator'], errors='coerce')
 
+
     fig = px.line(df, x='time', y = [col for col in df.columns if col != 'time'],
                     labels={'time': results['time']['descriptor'].units if results['time']['descriptor'].units else 'Time',
                             'value': 'Population',
@@ -164,4 +165,4 @@ def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str,
                     title="Predator-Prey Population Dynamics")
     fig.write_html(os.path.join(output_dir, "combined_populations_plotly.html"))
     if static_format:
-        fig.write_image(os.path.join(output_dir, f"combined_populations_plotly.{static_format}"), format=static_format)
+        fig.write_image(os.path.join(output_dir, f"combined_populations_plotly.{static_format}"), format=static_format) # Corrected

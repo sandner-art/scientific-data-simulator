@@ -34,7 +34,7 @@ class RandomWalkExperiment(ExperimentLogic):
         return {
             "step": {
                 "data": steps,
-                "descriptor": DataDescriptor("step", DataType.NDARRAY, shape=steps.shape, units="steps", group="time_series")
+                "descriptor": DataDescriptor("step", DataType.NDARRAY, shape=steps.shape, units="steps", group="time_series",  plot_type="line", x_axis="step") # Added x_axis
             },
             "position": {
                 "data": positions,
