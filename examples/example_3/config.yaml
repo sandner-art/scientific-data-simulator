@@ -1,10 +1,10 @@
 # examples/example_3/config.yaml
 experiment_type: experiments.predator_prey.logic.PredatorPreyExperiment
 experiment_description: "Simulation of predator-prey population dynamics using the Lotka-Volterra equations."
-n_steps: 500
+n_steps: 40
 initial_prey: 100
-initial_predators: 20
-prey_growth_rate: 0.1
-prey_death_rate: 0.02
-predator_growth_rate: 0.01
-predator_death_rate: 0.05
+initial_predators: 5
+prey_growth_rate: 0.25
+prey_death_rate: 0.005
+predator_growth_rate: 0.001
+predator_death_rate: 0.075

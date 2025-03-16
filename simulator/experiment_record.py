@@ -4,6 +4,7 @@ from datetime import datetime
 import uuid
 from .utils import DataDescriptor  # Import from utils
 import numpy as np  # Import numpy
+import pandas as pd # Import pandas
 
 
 class ExperimentRecord:
@@ -18,7 +19,7 @@ class ExperimentRecord:
         self.config: Dict[str, Any] = config  # Store the configuration
         self.experiment_logic_class_name: str = experiment_logic_class.__name__
         self.experiment_logic_module: str = experiment_logic_class.__module__
-        self.experiment_description: str = config.get("experiment_description", "") # Get description
+        self.experiment_description: str = config.get("experiment_description", "")
         self.input_data_descriptors: Dict[str, DataDescriptor] = {}  # Descriptors used
         self.output_data: Dict[str, Dict[str, Any]] = {}  # Store results (as before)
         self.log_messages: List[str] = []  # Store log messages.
@@ -57,7 +58,7 @@ class ExperimentRecord:
             "config": self.config,
             "experiment_logic_class_name": self.experiment_logic_class_name,
             "experiment_logic_module": self.experiment_logic_module,
-            "experiment_description": self.experiment_description, # add to dict
+            "experiment_description": self.experiment_description,
             "input_data_descriptors": {
                 name: descriptor.to_dict()  # Use a to_dict method
                 for name, descriptor in self.input_data_descriptors.items()
@@ -79,6 +80,8 @@ class ExperimentRecord:
 def _convert_to_serializable(data):
     if isinstance(data, np.ndarray):
         return data.tolist()  # Convert NumPy arrays to lists
+    elif isinstance(data, pd.DataFrame):
+        return data.to_dict(orient='records')  # Convert DataFrame to list of dicts
     elif isinstance(data, dict):
         return {k: _convert_to_serializable(v) for k, v in data.items()}
     elif isinstance(data, list):

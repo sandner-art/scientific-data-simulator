@@ -8,4 +8,5 @@ python-dotenv
 pytest
 packaging
 psutil
-pandas  # Add pandas
+pandas
+kaleido 

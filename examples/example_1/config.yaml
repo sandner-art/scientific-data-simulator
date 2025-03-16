@@ -1,5 +1,6 @@
-# examples/config.yaml
+# examples/example_1/config.yaml
 experiment_type: experiments.example_experiment.logic.ExampleExperiment
-experiment_description: "A simple simulation of a sine wave."  # Add this line
-n_steps: 100
+experiment_description: "A simple simulation of a sine wave."
+n_steps: 150
 amplitude: 2.5
+static_plot_format: "pdf"  # Add "pdf" to save as PDF, or "svg" for .svg, or "null" as html only
