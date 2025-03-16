@@ -11,6 +11,49 @@ The Scientific Data Simulator is a Python framework designed for creating and ma
 
 The Scientific Data Simulator is a Python framework designed for creating and managing reproducible scientific simulations and generating synthetic data.  It aims to address the challenges of reproducibility, extensibility, and ease of use in computational science. The framework emphasizes modularity, allowing users to easily define and extend simulation models, incorporate various data sources, and integrate with external tools. A key feature is the optional integration of Large Language Models (LLMs) to assist in experiment design, lowering the barrier to entry for users and accelerating the research process.
 
+```console
+scientific_data_simulator/
+├── simulator/           # The core engine
+│   ├── __init__.py
+│   ├── base.py          # Abstract base classes (ExperimentLogic, LLMClient)
+│   ├── engine.py        # Core engine logic (execution, logging, etc.)
+│   ├── config.py       # Configuration management
+│   ├── data_handler.py # Data loading and saving
+│   ├── visualization.py # Visualization adapters/wrappers
+│   ├── utils.py         # Utility functions
+│   ├── doe.py           # Design of Experiments functions
+│   ├── llm_client.py    # LLM client abstraction
+│   └── experiment_record.py  # ExperimentRecord class
+│
+├── experiments/         # Specific experiment implementations
+│   ├── __init__.py
+│   ├── example_experiment/  # Example: A simple experiment
+│   │   ├── __init__.py
+│   │   └── logic.py     # Implements ExperimentLogic
+│   └── ... # Other experiments
+│
+├── tests/              # Unit and integration tests
+│   ├── __init__.py
+│   ├── test_engine.py
+│   ├── test_example_experiment.py
+│   └── ...
+│
+├── examples/            # Example usage scripts/notebooks
+│   ├── run_example_experiment.py
+│   ├── example_notebook.ipynb
+│   └── ...
+│
+├── docs/                # Sphinx documentation (optional, but recommended)
+│   ├── conf.py
+│   ├── index.rst
+│   └── ...
+│
+├── .gitignore           # Files and directories to ignore in Git
+├── requirements.txt      # Project dependencies
+└── README.md            # Project description and instructions
+
+```
+
 ## Key Features
 
 *   **Modular Design:**  Built on a modular architecture with clear separation of concerns, making it easy to extend and customize.
@@ -31,10 +74,17 @@ The Scientific Data Simulator is a Python framework designed for creating and ma
 pip install scientific-data-simulator  # This will work once the package is on PyPI
 ```
 ```bash
-git clone https://github.com/sandner-art/scientific_data_simulator.git 
-cd scientific_data_simulator
+git clone https://github.com/sandner-art/scientific-data-simulator.git 
+cd scientific-data-simulator
 pip install -e .
 ```
+
+From scientific-data-simulator folder run:
+
+```bash
+python -m examples.run_example_experiment --config examples/config.yaml
+```
+
 ## Citation
 
 If you use Scientific Data Simulator in your research, please cite it as follows:
