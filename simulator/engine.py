@@ -56,10 +56,27 @@ class SimulatorEngine:
         }
         record.set_system_info(system_info)
 
+
+
         # Get Software versions
         try:
+            # --- MODIFIED: Get versions from requirements.txt ---
+            with open("requirements.txt", "r") as req_file:
+                required_packages = [line.strip() for line in req_file if line.strip() and not line.startswith("#")]
+
             installed_packages = {p.project_name: p.version for p in pkg_resources.working_set}
-            record.set_software_versions(installed_packages)
+            relevant_versions = {}
+            for package_name in required_packages:
+                # Handle packages with version specifiers (e.g., numpy>=1.20)
+                req = pkg_resources.Requirement.parse(package_name) # using Requirement
+
+                if req.project_name in installed_packages:
+                        relevant_versions[req.project_name] = installed_packages[req.project_name]
+                else:
+                    logger.warning(f"Package required not found: {req.project_name}")
+
+            record.set_software_versions(relevant_versions)
+            # --- END MODIFIED ---
         except Exception as e:
             record.add_log_message(f"Failed to get software versions: {e}")
             logger.warning(f"Failed to get software versions: {e}")
