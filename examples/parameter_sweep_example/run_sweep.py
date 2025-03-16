@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # examples/parameter_sweep_example/run_sweep.py
 import os
 import argparse
@@ -67,14 +66,23 @@ def main():
     # --- Example Visualization (using matplotlib) ---
     plt.figure()
     for label, row in results_table.iterrows():
-        param_combination = ", ".join(f"{k}={v}" for k, v in row[:2].items())
-        # find column for prey_population and time. The column index could change, so we look for name.
+        param_combination = ", ".join(f"{k}={v}" for k, v in row[:2].items())  # First 2 columns
+
+        # --- Corrected Plotting ---
+        # Extract the relevant columns *by name*
         prey_columns = [col for col in results_table.columns if 'prey_population_' in col]
         time_columns = [col for col in results_table.columns if 'time_' in col]
-
         if len(prey_columns) > 0 and len(time_columns) > 0: # Check if we have columns
-            # we plot all steps.
-            plt.plot(row[time_columns[0]:time_columns[-1]+1], row[prey_columns[0]:prey_columns[-1]+1], label=param_combination)
+            # Extract data.
+            time_data = results_table[time_columns].values.flatten()
+            prey_data = row[prey_columns].values.flatten()
+            # Trim arrays
+            min_len = min(len(time_data), len(prey_data))
+            time_data = time_data[:min_len]
+            prey_data = prey_data[:min_len]
+            plt.plot(time_data, prey_data, label=param_combination)
+        # --- End Correction ---
+
     plt.xlabel("Step")
     plt.ylabel("Prey Population")
     plt.title("Predator-Prey Parameter Sweep")
@@ -82,8 +90,6 @@ def main():
     plt.grid(True)
     plt.savefig(os.path.join(args.output_dir, 'parameter_sweep_plot.png'))
     plt.show()
-
-
 
 if __name__ == "__main__":
     main()

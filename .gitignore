@@ -174,3 +174,5 @@ cython_debug/
 .pypirc
 /experiments_output
 tests/testlog
+/parameter_sweep_results
+/doe_example_results

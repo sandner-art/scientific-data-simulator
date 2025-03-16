@@ -1,5 +1,4 @@
 # tests/test_visualization.py
-
 import pytest
 from simulator.visualization import generate_plots
 from simulator.utils import DataDescriptor, DataType
@@ -96,7 +95,13 @@ def test_generate_plots_histogram(example_results, tmp_path):
     assert os.path.exists(os.path.join(output_dir, "histogram_matplotlib.png"))
     assert os.path.exists(os.path.join(output_dir, "histogram_plotly.html"))
 
-def test_generate_plots_no_time(example_results_no_time, tmp_path):
+def test_generate_plots_no_default_time(example_results_no_time, tmp_path):
+    output_dir = str(tmp_path)
+    generate_plots(example_results_no_time, output_dir)
+    assert not os.path.exists(os.path.join(output_dir, "time_series_matplotlib.png"))
+    assert not os.path.exists(os.path.join(output_dir, "time_series_plotly.html"))
+
+def test_generate_plots_no_x(example_results_no_time, tmp_path):
     output_dir = str(tmp_path)
     generate_plots(example_results_no_time, output_dir)
     assert not os.path.exists(os.path.join(output_dir, "time_series_matplotlib.png"))

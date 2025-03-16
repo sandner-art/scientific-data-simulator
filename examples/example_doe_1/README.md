@@ -16,14 +16,14 @@ This example demonstrates using the `simulator.doe` module to perform a paramete
 To run this example, navigate to the project root directory in your terminal and execute:
 
 ```bash
-python -m examples.example_doe_1.run_doe_example
+python -m examples.example_doe_1.run_sweep
 ```
 
 You can also specify a different output directory and the output format using command-line arguments:
 
 ```bash
-python -m examples.example_doe_1.run_doe_example --output_dir my_results --output_format nested
-python -m examples.example_doe_1.run_doe_example --help # To get help
+python -m examples.example_doe_1.run_sweep --output_dir my_results --output_format nested
+python -m examples.example_doe_1.run_sweep --help # To get help
 ```
 By default, result is saved in `parameter_sweep_results` directory.
 
