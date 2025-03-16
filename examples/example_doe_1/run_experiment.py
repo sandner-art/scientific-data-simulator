@@ -9,6 +9,7 @@ import pandas as pd
 from simulator.doe import run_parameter_sweep, create_doe_table, append_results_to_doe_table
 from experiments.linear_function.logic import LinearFunctionExperiment  # Import
 from simulator.visualization import generate_plots
+import matplotlib.pyplot as plt  # Import matplotlib
 
 
 def main():
@@ -93,21 +94,39 @@ def main():
         if args.output_format == 'list':
             for run_data in results:
                 record_id = run_data['record_id']
-                # Construct the path to the experiment directory - CORRECTED
+                # Construct the path to the experiment directory
                 experiment_dir = None
-                for item in os.listdir(sweep_output_dir):  # Search in sweep_output_dir
+                for item in os.listdir(sweep_output_dir):
                     item_path = os.path.join(sweep_output_dir, item)
                     if os.path.isdir(item_path) and record_id in item:
                         experiment_dir = item_path
                         break
                 if experiment_dir is not None:
                     # Call generate_plots with the experiment directory and static format
-                    generate_plots(run_data['results'], experiment_dir, static_format=args.static_plot_format)
+                    generate_plots(run_data['results'], experiment_dir, static_format = args.static_plot_format)
                 else:
-                     print(f"Warning: No output directory found for record ID {record_id}")
+                    print("No output directory")
 
         elif args.output_format == 'nested':
             # In this case you will need to load records.
             print("\nPlotting for nested format is not supported")
+
+        # --- Combined Sweep Plot (NEW) ---
+        plt.figure()
+        for run_data in results:
+            params = run_data['params']
+            results_dict = run_data['results']
+            # Create a label for the plot legend
+            label = f"m={params['m']}, c={params['c']}"
+            plt.plot(results_dict['x']['data'], results_dict['y']['data'], label=label)
+
+        plt.xlabel("x (x_units)")  # Use units if you have them in your ExperimentLogic
+        plt.ylabel("y (y_units)")
+        plt.title("Linear Function Parameter Sweep")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(sweep_output_dir, "combined_sweep_plot.png"))  # Save in sweep dir
+        plt.show()
+
 if __name__ == "__main__":
     main()
