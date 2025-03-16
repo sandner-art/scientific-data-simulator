@@ -38,7 +38,10 @@ def test_random_walk_get_results(random_walk_config, monkeypatch):
     monkeypatch.setattr(np.random, 'choice', mock_random_choice)
 
     experiment = RandomWalkExperiment(random_walk_config)
-    # Set a seed and run experiment.
+    # Initialize and run steps:
+    state = experiment.initialize(random_walk_config)
+    for step in range(random_walk_config['n_steps']):
+        state = experiment.run_step(state, step)
     results = experiment.get_results()
 
     assert 'step' in results

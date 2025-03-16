@@ -26,7 +26,7 @@ def test_data_descriptor_to_dict():
     assert isinstance(data_dict, dict)
     assert data_dict == {
         "name": "test_data",
-        "data_type": "np.ndarray",  # Check that enum is converted to string
+        "data_type": "pd.DataFrame",  # Check that enum is converted to string
         "shape": (5, 3),
         "units": "seconds",
         "group": "data",
