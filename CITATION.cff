@@ -1,0 +1,20 @@
+# CITATION.cff (Example for Scientific Data Simulator)
+cff-version: 1.2.0
+message: "If you use Scientific Data Simulator, please cite it as below."
+authors:
+  - family-names: "Sandner"  
+    given-names: "Daniel"  
+    orcid: "https://orcid.org/0000-0002-1041-814X"  # Replace with your ORCID iD (if you have one)
+title: "Scientific Data Simulator: A Modular Concept for Reproducible Experiment Design and Synthetic Data Generation"
+version: 0.1.0
+date-released: 2025-03-16 # Replace with the actual release date
+url: "https://github.com/sandner-art/scientific-data-simulator"  # Replace with your repository URL
+preferred-citation:
+  type: software
+  authors:
+    - family-names: "Sandner"
+      given-names: "Daniel"
+  title: "Scientific Data Simulator"
+  version: "0.1.0"
+  # doi: "10.5281/zenodo.XXXXXXX"  # Add this *after* you get a DOI from Zenodo
+  date-released: 2025-03-16
