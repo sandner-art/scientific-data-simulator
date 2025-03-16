@@ -1,4 +1,4 @@
-# examples/config.yaml
-experiment_type: experiments.example_experiment.logic.ExampleExperiment
+# examples/example_2/config.yaml
+experiment_type: experiments.example_random_walk.logic.RandomWalkExperiment
 n_steps: 100
-amplitude: 2.5
+step_size: 1.0
