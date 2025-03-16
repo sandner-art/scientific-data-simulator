@@ -1,0 +1,4 @@
+# examples/config.yaml
+experiment_type: experiments.example_experiment.logic.ExampleExperiment
+n_steps: 100
+amplitude: 2.5
