@@ -1,0 +1,8 @@
+# examples/example_doe_1/config_base.yaml
+experiment_type: experiments.linear_function.logic.LinearFunctionExperiment
+experiment_description: "Base configuration for the linear function DOE example."
+n_points: 20   # Use a fixed number of points
+x_min: -5.0   # Fixed x range
+x_max: 5.0
+# m and c are defined in parameter sweep
+save_csv: True  # Enable CSV output

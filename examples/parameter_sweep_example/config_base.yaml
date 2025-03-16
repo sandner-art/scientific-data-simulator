@@ -1,0 +1,12 @@
+# examples/parameter_sweep_example/config_base.yaml
+experiment_type: experiments.predator_prey.logic.PredatorPreyExperiment
+experiment_description: "Base configuration for Predator-Prey parameter sweep."
+n_steps: 200  # Note:  We're using a fixed n_steps here.
+initial_prey: 100
+initial_predators: 20
+# prey_growth_rate:  # These will be defined by the parameter sweep
+# prey_death_rate:   # These will be defined by the parameter sweep
+predator_growth_rate: 0.01
+predator_death_rate: 0.05
+save_csv: True  # Enable CSV output
+static_plot_format: 'svg' # Example: Generate SVG plots
