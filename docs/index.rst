@@ -75,6 +75,7 @@ Using `venv` (Recommended)
         pip install -r requirements.txt
 
 4. **Install in editable mode:**
+
    .. code-block:: bash
 
         pip install -e .
@@ -99,10 +100,13 @@ Using `conda`
     .. code-block:: bash
 
         pip install -r requirements.txt
+
 4. **Install in editable mode:**
-    ```bash
-    pip install -e .
-    ```
+
+    .. code-block:: bash
+   
+      pip install -e .
+   
 
 .. _getting_started:
 
