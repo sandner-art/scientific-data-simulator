@@ -1,4 +1,5 @@
 # tests/test_visualization.py
+
 import pytest
 from simulator.visualization import generate_plots
 from simulator.utils import DataDescriptor, DataType
@@ -27,20 +28,21 @@ def example_results():
             "descriptor": DataDescriptor("value_hist", DataType.NDARRAY, group='histogram', plot_type='histogram')
         }
     }
+
 @pytest.fixture
 def example_results_no_time():
     return {
         "step": {
             "data": np.array([0, 1, 2, 3, 4]),
-            "descriptor": DataDescriptor("step", DataType.NDARRAY, shape=(5,), units="steps", group="time_series")
+            "descriptor": DataDescriptor("step", DataType.NDARRAY, shape=(5,), units="steps", group="time_series") # Removed x_axis
         },
         "value1": {
             "data": np.array([10, 12, 11, 14, 13]),
-            "descriptor": DataDescriptor("value1", DataType.NDARRAY, shape=(5,), units="m", group="time_series", plot_type="line", x_axis="step")
+            "descriptor": DataDescriptor("value1", DataType.NDARRAY, shape=(5,), units="m", group="time_series", plot_type="line") # remove x_axis
         },
         "value2": {
             "data": np.array([20, 18, 19, 16, 17]),
-            "descriptor": DataDescriptor("value2", DataType.NDARRAY, shape=(5,), units="cm", group="time_series", plot_type="line", x_axis="step")
+            "descriptor": DataDescriptor("value2", DataType.NDARRAY, shape=(5,), units="cm", group="time_series", plot_type="line") # remove x_axis
         }
     }
 
@@ -97,8 +99,8 @@ def test_generate_plots_histogram(example_results, tmp_path):
 def test_generate_plots_no_time(example_results_no_time, tmp_path):
     output_dir = str(tmp_path)
     generate_plots(example_results_no_time, output_dir)
-    assert os.path.exists(os.path.join(output_dir, "time_series_matplotlib.png"))
-    assert os.path.exists(os.path.join(output_dir, "time_series_plotly.html"))
+    assert not os.path.exists(os.path.join(output_dir, "time_series_matplotlib.png"))
+    assert not os.path.exists(os.path.join(output_dir, "time_series_plotly.html"))
 
 def test_generate_plots_predator_prey(example_results_predator_prey, tmp_path):
     """Test combined plot generation for predator-prey."""

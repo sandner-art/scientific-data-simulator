@@ -41,7 +41,7 @@ def test_random_walk_get_results(random_walk_config, monkeypatch):
     # Initialize and run steps:
     state = experiment.initialize(random_walk_config)
     for step in range(random_walk_config['n_steps']):
-        state = experiment.run_step(state, step)
+        state = experiment.run_step(state, step) # Added loop
     results = experiment.get_results()
 
     assert 'step' in results

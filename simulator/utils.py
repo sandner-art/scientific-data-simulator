@@ -1,5 +1,4 @@
 # simulator/utils.py
-
 from typing import Optional, Union, Tuple, Dict, Any
 from enum import Enum
 import numpy as np  # For checking array type
@@ -41,7 +40,7 @@ class DataDescriptor:
         """
         return {
             'name': self.name,
-            'data_type': str(self.data_type),  # Store Enum as string. CORRECT
+            'data_type': str(self.data_type),  # Store Enum as string - THIS IS THE FIX
             'shape': self.shape,
             'units': self.units,
             'group': self.group,

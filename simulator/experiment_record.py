@@ -1,5 +1,4 @@
 # simulator/experiment_record.py
-
 from typing import Optional, Dict, Any, List, Type
 from datetime import datetime
 import uuid
