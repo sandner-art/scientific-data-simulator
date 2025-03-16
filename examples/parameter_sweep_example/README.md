@@ -4,21 +4,21 @@ This example demonstrates how to perform a parameter sweep using the `Scientific
 
 ## Files
 
-*   **`run_sweep.py`:**  The script that sets up and runs the parameter sweep.  It:
+*   **`run_experiment.py`:**  The script that sets up and runs the parameter sweep.  It:
     *   Loads a base configuration from `config_base.yaml`.
     *   Defines the parameter ranges to sweep.
     *   Calls the `run_parameter_sweep` function (from `simulator.doe`) to execute the simulations.
     *   Creates a DOE table using `create_doe_table`.
     *   Appends the results to the DOE table using `append_results_to_doe_table`.
     *   Performs some basic analysis and plotting (you can customize this).
-*   **`config_base.yaml`:**  A base configuration file that defines the parameters that are *not* being varied in the sweep.  The parameters that *are* being varied are defined within the `run_sweep.py` script itself.
+*   **`config_base.yaml`:**  A base configuration file that defines the parameters that are *not* being varied in the sweep.  The parameters that *are* being varied are defined within the `run_experiment.py` script itself.
 
 ## Running the Example
 
 To run this example, navigate to the project root directory in your terminal and execute:
 
 ```bash
-python -m examples.parameter_sweep_example.run_sweep
+python -m examples.parameter_sweep_example.run_experiment
 ```
 
 This will create a directory named `parameter_sweep_results` (or the directory you specify with the `--output_dir` argument) containing:
@@ -31,18 +31,18 @@ You can then analyze the results in the `parameter_sweep_results` directory, usi
 
 **How to Run:**
 
-1.  **Save:** Save the code above as `examples/parameter_sweep_example/run_sweep.py` and `examples/parameter_sweep_example/config_base.yaml`.
+1.  **Save:** Save the code above as `examples/parameter_sweep_example/run_experiment.py` and `examples/parameter_sweep_example/config_base.yaml`.
 2.  **Execute:** From the project root directory, run:
 
     ```bash
-    python -m examples.parameter_sweep_example.run_sweep
+    python -m examples.parameter_sweep_example.run_experiment
     ```
 
 **Key Points:**
 
 *   **Self-Contained:** This example is self-contained within the `examples/parameter_sweep_example/` directory.
-*   **`config_base.yaml`:**  This file contains the *base* configuration.  The parameters that are being varied in the sweep are defined *within* the `run_sweep.py` script itself. This is a common pattern: a base configuration file for fixed parameters, and then the sweep parameters defined separately.
-*   **`run_sweep.py`:** This script does the following:
+*   **`config_base.yaml`:**  This file contains the *base* configuration.  The parameters that are being varied in the sweep are defined *within* the `run_experiment.py` script itself. This is a common pattern: a base configuration file for fixed parameters, and then the sweep parameters defined separately.
+*   **`run_experiment.py`:** This script does the following:
     *   **Argument Parsing:** Uses `argparse` to handle command-line arguments (e.g., `--config` and `--output_dir`).
     *   **Loads Base Config:** Loads the `config_base.yaml` file.
     *   **Defines Parameter Ranges:** Defines the `param_ranges` dictionary, specifying the parameters to vary and their values.
