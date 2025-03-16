@@ -131,9 +131,13 @@ class SimulatorEngine:
                 raise TypeError(f"Data for '{data_name}' must be a float (based on descriptor).")
             # ... add checks for other data types as in previous examples ...
 
+    # simulator/engine.py
     def _save_experiment_record(self, record: ExperimentRecord):
         """Saves the ExperimentRecord to a JSON file."""
-        experiment_dir = os.path.join(self.output_dir, record.experiment_id)
+        # --- MODIFIED: Use timestamped directory name ---
+        timestamp = record.start_time.strftime("%Y-%m-%d_%H-%M-%S")  # Format: YYYY-MM-DD_HH-MM-SS
+        experiment_dir = os.path.join(self.output_dir, f"{timestamp}_{record.experiment_id}")
+        # --- END MODIFIED ---
         os.makedirs(experiment_dir, exist_ok=True)
         record_path = os.path.join(experiment_dir, "experiment_record.json")
         with open(record_path, "w") as f:
