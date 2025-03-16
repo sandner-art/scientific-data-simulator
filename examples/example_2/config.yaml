@@ -1,4 +1,5 @@
 # examples/example_2/config.yaml
 experiment_type: experiments.example_random_walk.logic.RandomWalkExperiment
+experiment_description: "A simple random walk experiment."  # Add this line
 n_steps: 100
 step_size: 1.0
