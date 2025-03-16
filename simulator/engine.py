@@ -6,16 +6,16 @@ import importlib
 import sys
 import logging
 import psutil
-# import subprocess # Removed
-from packaging import version # Added
-import pkg_resources # Added
+from packaging import version
+import pkg_resources
 
 from .base import ExperimentLogic
 from .experiment_record import ExperimentRecord
 from .config import load_config
 from .utils import DataDescriptor, DataType
 from typing import Dict, Any, Type
-from datetime import datetime # Added import
+from datetime import datetime
+from .visualization import generate_plots  # Import the new function
 
 
 # Configure logging
@@ -47,6 +47,12 @@ class SimulatorEngine:
         record = ExperimentRecord(config, experiment_logic_class)
         logger.info(f"Starting experiment: {record.experiment_id}")
 
+        # --- Corrected: Create experiment directory *before* anything else ---
+        timestamp = record.start_time.strftime("%Y-%m-%d_%H-%M-%S")
+        experiment_dir = os.path.join(self.output_dir, f"{timestamp}_{record.experiment_id}")
+        os.makedirs(experiment_dir, exist_ok=True)  # Ensure directory exists
+        # --- End Correction ---
+
         # System Info
         system_info = {
             "os": platform.platform(),
@@ -56,27 +62,21 @@ class SimulatorEngine:
         }
         record.set_system_info(system_info)
 
-
-
-        # Get Software versions
+        # Get Software versions (using requirements.txt)
         try:
-            # --- MODIFIED: Get versions from requirements.txt ---
+            installed_packages = {p.project_name: p.version for p in pkg_resources.working_set}
+            relevant_versions = {}
             with open("requirements.txt", "r") as req_file:
                 required_packages = [line.strip() for line in req_file if line.strip() and not line.startswith("#")]
 
-            installed_packages = {p.project_name: p.version for p in pkg_resources.working_set}
-            relevant_versions = {}
             for package_name in required_packages:
-                # Handle packages with version specifiers (e.g., numpy>=1.20)
-                req = pkg_resources.Requirement.parse(package_name) # using Requirement
-
+                req = pkg_resources.Requirement.parse(package_name)
                 if req.project_name in installed_packages:
-                        relevant_versions[req.project_name] = installed_packages[req.project_name]
+                    relevant_versions[req.project_name] = installed_packages[req.project_name]
                 else:
-                    logger.warning(f"Package required not found: {req.project_name}")
-
+                  logger.warning(f"Package required not found: {req.project_name}")
             record.set_software_versions(relevant_versions)
-            # --- END MODIFIED ---
+
         except Exception as e:
             record.add_log_message(f"Failed to get software versions: {e}")
             logger.warning(f"Failed to get software versions: {e}")
@@ -88,7 +88,7 @@ class SimulatorEngine:
 
             # Run simulation steps (if applicable)
             if hasattr(experiment_logic, "run_step"):
-                for step in range(config.get("n_steps", 1)):  # Default to 1 step if not specified
+                for step in range(config.get("n_steps", 1)):  # Default to 1 step
                     state = experiment_logic.run_step(state, step)
                     logger.debug(f"Step {step}: State = {state}")
 
@@ -100,8 +100,9 @@ class SimulatorEngine:
             for data_name, data_info in results.items():
                 record.add_output_data(data_name, data_info['data'], data_info['descriptor'])
 
-            # Optional Visualization
-            experiment_logic.visualize(results)
+            # --- Corrected: Pass experiment_dir to generate_plots ---
+            generate_plots(results, experiment_dir)
+            # --- End Correction ---
 
             record.set_end_time()
             logger.info(f"Experiment completed: {record.experiment_id}")
@@ -112,9 +113,9 @@ class SimulatorEngine:
             record.add_log_message(traceback.format_exc())
             self._save_experiment_record(record)  # Save even on failure
             logger.error(f"Experiment failed: {e}", exc_info=True)
-            raise  # Re-raise the exception to inform the user
+            raise  # Re-raise
 
-        self._save_experiment_record(record)  # save the record
+        self._save_experiment_record(record)
         return record.experiment_id
 
     def _get_experiment_logic_class(self, config: Dict[str, Any]) -> Type[ExperimentLogic]:
@@ -148,18 +149,18 @@ class SimulatorEngine:
                 raise TypeError(f"Data for '{data_name}' must be a float (based on descriptor).")
             # ... add checks for other data types as in previous examples ...
 
-    # simulator/engine.py
     def _save_experiment_record(self, record: ExperimentRecord):
         """Saves the ExperimentRecord to a JSON file."""
-        # --- MODIFIED: Use timestamped directory name ---
-        timestamp = record.start_time.strftime("%Y-%m-%d_%H-%M-%S")  # Format: YYYY-MM-DD_HH-MM-SS
+        # --- No change here, we now create directory earlier
+        timestamp = record.start_time.strftime("%Y-%m-%d_%H-%M-%S")
         experiment_dir = os.path.join(self.output_dir, f"{timestamp}_{record.experiment_id}")
         # --- END MODIFIED ---
-        os.makedirs(experiment_dir, exist_ok=True)
+        # os.makedirs(experiment_dir, exist_ok=True) # Moved up
         record_path = os.path.join(experiment_dir, "experiment_record.json")
         with open(record_path, "w") as f:
             json.dump(record.to_dict(), f, indent=4)
         logger.info(f"Experiment record saved to: {record_path}")
+
 
     def load_experiment_record(self, experiment_id: str) -> ExperimentRecord:
         """Loads an experiment record from disk."""
@@ -186,6 +187,7 @@ class SimulatorEngine:
         record.config = data['config']
         record.experiment_logic_class_name = data['experiment_logic_class_name']
         record.experiment_logic_module = data['experiment_logic_module']
+        record.experiment_description = data['experiment_description'] # Load description
         record.input_data_descriptors = input_descriptors
         record.output_data = output_data
         record.log_messages = data['log_messages']
