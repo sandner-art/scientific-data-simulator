@@ -4,9 +4,16 @@
 [![Python Version](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 <!-- Add other badges as needed (e.g., build status, code coverage, DOI) -->
 
+| Author: Daniel Sandner | Scientific Data Simulator: A Modular Concept for Reproducible Experiment Design and Synthetic Data Generation
+- part of the **100 Scientific Visions** project (2025-2027)
+
+
 ## Overview
 
 The Scientific Data Simulator is a Python framework designed for creating and managing reproducible scientific simulations and generating synthetic data. It aims to address the challenges of reproducibility, extensibility, and ease of use in computational science. The framework emphasizes modularity, allowing users to easily define and extend simulation models, incorporate various data sources, and integrate with external tools. A key feature is the optional integration of Large Language Models (LLMs) to assist in experiment design, lowering the barrier to entry for users and accelerating the research process.
+
+![simulator](https://github.com/user-attachments/assets/1c627a6a-b575-4474-8bd8-1e748db05c15)
+
 
 ## Key Features
 
