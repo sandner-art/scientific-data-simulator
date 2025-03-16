@@ -1,0 +1,4 @@
+# examples/example_5/config.yaml
+experiment_type: examples.example_5.logic.DataAnalysisExperiment  # Note: We'll create this logic
+experiment_description: "Loads data from a CSV file, performs analysis, and generates plots."
+input_data_path: "examples/example_5/data.csv"  # Relative path to the data file

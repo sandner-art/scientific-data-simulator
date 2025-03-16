@@ -1,0 +1,11 @@
+# examples/example_6/config.yaml
+experiment_type: experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment
+experiment_description: "Calibration of the Predator-Prey model using observed data."
+n_steps: 500  # Simulate for a longer time
+initial_prey: 100  # Initial values - these might be adjusted
+initial_predators: 25 # Initial values
+prey_growth_rate: 0.1 # Initial parameter values - these will be adjusted
+prey_death_rate: 0.02
+predator_growth_rate: 0.01
+predator_death_rate: 0.05
+observed_data_path: "examples/example_6/observed_data.csv"  # Path to observed data

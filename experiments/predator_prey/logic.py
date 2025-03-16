@@ -13,10 +13,10 @@ class PredatorPreyExperiment(ExperimentLogic):
         self.predator_growth_rate = config['predator_growth_rate']
         self.predator_death_rate = config['predator_death_rate']
 
-        # Store data for plotting
-        self.prey_populations = [self.initial_prey]
-        self.predator_populations = [self.initial_predators]
-        self.time_points = [0]
+        # Store data for plotting (can be protected, for use in subclasses)
+        self._prey_populations = [self.initial_prey]
+        self._predator_populations = [self.initial_predators]
+        self._time_points = [0]
 
 
     def initialize(self, config):
@@ -37,9 +37,9 @@ class PredatorPreyExperiment(ExperimentLogic):
         new_predators = max(0, predators + delta_predators)
 
         # Store data
-        self.prey_populations.append(new_prey)
-        self.predator_populations.append(new_predators)
-        self.time_points.append(step + 1)
+        self._prey_populations.append(new_prey)
+        self._predator_populations.append(new_predators)
+        self._time_points.append(step + 1)
 
         return {
             'prey': new_prey,
@@ -49,15 +49,15 @@ class PredatorPreyExperiment(ExperimentLogic):
     def get_results(self):
         return {
             "time": {
-                "data": np.array(self.time_points),
+                "data": np.array(self._time_points),
                 "descriptor": DataDescriptor("time", DataType.NDARRAY, shape=(self.n_steps + 1,), units="steps", group="time_series")
             },
             "prey_population": {
-                "data": np.array(self.prey_populations),
+                "data": np.array(self._prey_populations),
                 "descriptor": DataDescriptor("prey_population", DataType.NDARRAY, shape=(self.n_steps + 1,), units="individuals", group="time_series", plot_type="line", x_axis="time")
             },
             "predator_population": {
-                "data": np.array(self.predator_populations),
+                "data": np.array(self._predator_populations),
                 "descriptor": DataDescriptor("predator_population", DataType.NDARRAY, shape=(self.n_steps+1,), units="individuals", group="time_series", plot_type="line", x_axis="time")
             }
         }

@@ -17,7 +17,7 @@ Scientific Data Simulator - User Guide
    visualization
    experiment_records
    testing
-   extending
+   extending  
    api_reference
    contributing
 
@@ -302,13 +302,73 @@ Each test should follow structure:
 *   Call the function or method you're testing.
 *   Assert that the results are as expected (using `assert` statements).
 
+You're absolutely right. Highlighting inheritance as a key mechanism for extending and customizing the `Scientific Data Simulator` is crucial for the documentation. We need to explain *how* and *why* users would use inheritance to create variations of existing experiments or build upon existing logic.
+
+Here's how we can incorporate this into the `docs/index.rst` file, specifically within the "Extending the Framework" section. I'll also add a brief mention in the "Creating New Experiments" section to point users towards this more advanced technique.
+
+**1. Modifications to `docs/index.rst`:**
+
+
 .. _extending:
+
 Extending the Framework
 =======================
 
-The Scientific Data Simulator is designed to be extensible. Here's how you can extend the framework:
-* **Adding New Experiments:** Create a new directory in `experiments/`, add a `logic.py` file, and implement the `ExperimentLogic` interface.
+The Scientific Data Simulator is designed to be easily extensible. Here's how you can extend the framework:
+
+* **Adding New Experiments:** Create a new directory in `experiments/`, add a `logic.py` file, and implement the `ExperimentLogic` interface (see :ref:`experiment_logic`).
+
 * **Adding Visualization:** You can add new plot types to `visualization.py` module.
+
+* **Adding Data Input:** Implement new input methods in `data_handler.py` module.
+
+* **Inheriting from Existing Experiments (Advanced):**  You can create variations of existing experiments by using *inheritance*. This allows you to reuse code and avoid duplication.  See the section below for details.
+
+**Using Inheritance for Experiment Variations**
+
+Inheritance is a powerful object-oriented programming technique that allows you to create new classes (called *subclasses* or *derived classes*) that inherit the attributes and methods of existing classes (called *base classes* or *parent classes*).
+
+In the context of the `Scientific Data Simulator`, you can use inheritance to:
+
+*   **Create specialized versions of existing experiments:** For example, you could create a `PredatorPreyCalibrationExperiment` that inherits from the `PredatorPreyExperiment` and adds functionality for loading and comparing with observed data (as shown in Example 6).
+*   **Add new features to existing experiments:**  You could add a new method to an existing `ExperimentLogic` class without modifying the original code.
+*   **Share common logic between multiple experiments:** If you have several experiments that share some common functionality, you can create a base class that contains the shared logic and then have the individual experiment classes inherit from that base class.
+
+**Example: Predator-Prey Calibration**
+
+The `PredatorPreyCalibrationExperiment` (in `experiments/predator_prey_calibration/logic.py`) provides a concrete example of inheritance.  Here's how it works:
+
+.. code-block:: python
+
+    from simulator.base import ExperimentLogic
+    from simulator.utils import DataDescriptor, DataType
+    from simulator.data_handler import load_csv
+    from experiments.predator_prey.logic import PredatorPreyExperiment  # Import the base class
+    import numpy as np
+
+    class PredatorPreyCalibrationExperiment(PredatorPreyExperiment):  # Inherit
+        def __init__(self, config):
+            super().__init__(config)  # Call the base class constructor
+            self.observed_data_info = None
+            if 'observed_data_path' in config:
+                self.observed_data_info = load_csv(config['observed_data_path'])
+        def get_results(self):
+            results = super().get_results() # Get result from parent class
+            if self.observed_data_info:
+                results['observed_data'] = self.observed_data_info
+            return results
+
+*   **`class PredatorPreyCalibrationExperiment(PredatorPreyExperiment):`:** This line defines the new class and indicates that it *inherits* from `PredatorPreyExperiment`.
+*   **`super().__init__(config)`:** This line calls the constructor of the base class (`PredatorPreyExperiment`). This is *essential* to ensure that the base class is properly initialized.
+*   **Adding New Functionality:** The `PredatorPreyCalibrationExperiment` adds a new attribute (`observed_data_info`) and overrides method `get_results()` to handle observed data.
+
+By inheriting from `PredatorPreyExperiment`, the `PredatorPreyCalibrationExperiment` automatically gets all the methods and attributes of the base class (like `initialize`, `run_step`, and the core Lotka-Volterra simulation logic). This avoids code duplication and makes the code more maintainable.
+
+**Key Principles of Inheritance:**
+
+*   **"Is-A" Relationship:**  The subclass *is a* specialized version of the base class.  A `PredatorPreyCalibrationExperiment` *is a* type of `PredatorPreyExperiment`.
+*   **Code Reuse:**  Avoid repeating code by inheriting common functionality from a base class.
+*   **Polymorphism:**  You can use instances of the subclass wherever instances of the base class are expected.  The `SimulatorEngine` can work with *any* `ExperimentLogic` subclass, regardless of whether it's the base class or a derived class.
 
 .. _api_reference:
 
@@ -316,3 +376,20 @@ API Reference
 =============
 
 [TODO: This will be generated automatically by Sphinx from your docstrings.]
+
+.. _contributing:
+
+Contributing
+============
+[TODO]
+
+
+Key changes and explanations:
+
+*   **New Section:** Added a new section titled "Using Inheritance for Experiment Variations" within the "Extending the Framework" section.
+*   **Explanation of Inheritance:**  Provides a clear explanation of inheritance in the context of the `Scientific Data Simulator`.
+*   **Concrete Example:**  Uses the `PredatorPreyCalibrationExperiment` as a concrete example to illustrate how inheritance works.
+*   **Key Principles:**  Highlights the key principles of inheritance ("is-a" relationship, code reuse, polymorphism).
+* **Creating new experiments:** Added link to :ref:`experiment_logic` in "Adding New Experiments".
+
+This addition to the documentation significantly improves its value to users who want to go beyond the basic examples and create more sophisticated simulations. It also reinforces the importance of good object-oriented design principles in scientific software development. The example code is clear and well-commented, and the explanation of the key principles is concise and easy to understand.
