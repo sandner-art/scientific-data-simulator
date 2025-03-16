@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from .utils import DataDescriptor, DataType
 from typing import Dict, Any, Union, List, Optional
+import os  # Import os
 
 
 def load_csv(file_path: str, delimiter: str = ',', header: bool = True) -> Dict[str, Any]:
@@ -94,7 +95,7 @@ def load_numpy(file_path: str) -> Dict[str, Any]:
         raise RuntimeError(f"Error loading NumPy file: {e}") from e
 
 
-def create_descriptor_from_data(data: Any, name:str, group: str = 'data', plot_type: Optional[str] = None) -> DataDescriptor:
+def create_descriptor_from_data(data: Any, name:str, group: str = 'data', plot_type: Optional[str] = None, x_axis: Optional[str] = None) -> DataDescriptor:
     """
     Creates a DataDescriptor for data.
 
@@ -107,16 +108,16 @@ def create_descriptor_from_data(data: Any, name:str, group: str = 'data', plot_t
         DataDescriptor for provided data.
     """
     if isinstance(data, np.ndarray):
-        return DataDescriptor(name, DataType.NDARRAY, shape = data.shape, group=group, plot_type=plot_type)
+        return DataDescriptor(name, DataType.NDARRAY, shape = data.shape, group=group, plot_type=plot_type, x_axis=x_axis)
     elif isinstance(data, pd.DataFrame):
-        return DataDescriptor(name, DataType.DATAFRAME, shape = data.shape, group=group, plot_type=plot_type)
+        return DataDescriptor(name, DataType.DATAFRAME, shape = data.shape, group=group, plot_type=plot_type, x_axis=x_axis)
     elif isinstance(data, list):
-        return DataDescriptor(name, DataType.LIST, group=group, plot_type=plot_type) # No shape
+        return DataDescriptor(name, DataType.LIST, group=group, plot_type=plot_type, x_axis=x_axis) # No shape
     elif isinstance(data, float):
-        return DataDescriptor(name, DataType.FLOAT, group=group, plot_type=plot_type) # No shape
+        return DataDescriptor(name, DataType.FLOAT, group=group, plot_type=plot_type, x_axis=x_axis)  # No shape
     elif isinstance(data, int):
-        return DataDescriptor(name, DataType.INT, group=group, plot_type=plot_type)  # No shape
+        return DataDescriptor(name, DataType.INT, group=group, plot_type=plot_type, x_axis=x_axis)  # No shape
     elif isinstance(data, str):
-        return DataDescriptor(name, DataType.STRING, group=group, plot_type=plot_type)  # No shape
+        return DataDescriptor(name, DataType.STRING, group=group, plot_type=plot_type, x_axis=x_axis)  # No shape
     else:
         raise TypeError(f"Unsupported data type for descriptor creation: {type(data)}")

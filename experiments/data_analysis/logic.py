@@ -1,11 +1,12 @@
-# examples/example_5/logic.py
+# experiments/data_analysis/logic.py
 from simulator.base import ExperimentLogic
 from simulator.utils import DataDescriptor, DataType
 from simulator.data_handler import load_csv
 import numpy as np
 import pandas as pd
+import os # For the file name
 
-class DataAnalysisExperiment(ExperimentLogic):
+class DataAnalysisExperiment(ExperimentLogic): # Corrected Class name
     def __init__(self, config):
         self.config = config
         self.data_info = None  # Store loaded data and descriptor here
