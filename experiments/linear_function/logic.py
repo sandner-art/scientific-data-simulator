@@ -25,7 +25,7 @@ class LinearFunctionExperiment(ExperimentLogic):
         return {
             "x": {
                 "data": x_values,
-                "descriptor": DataDescriptor("x", DataType.NDARRAY, shape=x_values.shape, units="x_units", group="time_series")
+                "descriptor": DataDescriptor("x", DataType.NDARRAY, shape=x_values.shape, units="x_units", group="time_series",  x_axis='x')
             },
             "y": {
                 "data": y_values,

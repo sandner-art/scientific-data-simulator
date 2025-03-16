@@ -35,7 +35,7 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
         if group_name == "time_series":
             first_data_info = data_list[0]
             first_descriptor = first_data_info['descriptor']
-            # Determine x_axis_name: correctly
+            # Determine x_axis_name: correctly.
             x_axis_name =  first_descriptor.x_axis if first_descriptor.x_axis else 'time'
             if x_axis_name not in results:
                 print(f"Warning: X-axis data '{x_axis_name}' not found. Skipping time series plot for {group_name}.")
@@ -43,7 +43,6 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
 
             x_axis_data = results[x_axis_name]['data']
             x_axis_descriptor = results[x_axis_name]['descriptor']
-
             # --- Matplotlib ---
             plt.figure()
             for data_info in data_list:
