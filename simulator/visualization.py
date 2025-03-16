@@ -35,13 +35,8 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
         if group_name == "time_series":
             first_data_info = data_list[0]
             first_descriptor = first_data_info['descriptor']
-            # Determine x_axis_name:
-            x_axis_name =  'time'
-            if 'time' not in results: # Check time axis
-                x_axis_name = first_descriptor.x_axis if first_descriptor.x_axis else None
-                if x_axis_name is None:
-                    print(f"Warning: X-axis data not found and 'time' data not found. Skipping time series plot for {group_name}.")
-                    continue # Skip the entire group
+            # Determine x_axis_name: correctly
+            x_axis_name =  first_descriptor.x_axis if first_descriptor.x_axis else 'time'
             if x_axis_name not in results:
                 print(f"Warning: X-axis data '{x_axis_name}' not found. Skipping time series plot for {group_name}.")
                 continue
@@ -78,12 +73,12 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
             # Corrected y label
             fig = px.line(df, x=x_axis_name, y=[col for col in df.columns if col != x_axis_name], # all columns except x
                             labels={'x': x_axis_descriptor.units if x_axis_descriptor.units else x_axis_name,
-                                    'y': descriptor.units if descriptor.units else "Value",
+                                    'y': "Value",  # Generic y-axis label
                                     'variable': 'Series'},
                             title=f"Time Series Plot ({group_name})")
             fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
             if static_format:
-                # Remove mathjax=None
+                # Explicitly set mathjax to None when using a static renderer
                 fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
 
 
@@ -118,7 +113,7 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
                               opacity=0.7) # transparency
             fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
             if static_format:
-                # Remove mathjax=None
+                # Explicitly set mathjax to None when using a static renderer
                 fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
 
         # Add support for other groups as needed
@@ -171,5 +166,5 @@ def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str,
                     title="Predator-Prey Population Dynamics")
     fig.write_html(os.path.join(output_dir, "combined_populations_plotly.html"))
     if static_format:
-      # Remove mathjax=None argument
+      # Explicitly set mathjax to None when using a static renderer
       fig.write_image(os.path.join(output_dir, f"combined_populations_plotly.{static_format}"), format=static_format)

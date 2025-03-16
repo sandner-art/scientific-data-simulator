@@ -22,7 +22,6 @@ def main():
     parser.add_argument('--append', action='store_true', help='Append results to DOE table')
     parser.add_argument('--plot', action='store_true', help='Generate plots')
     parser.add_argument('--static_plot_format', type=str, default="svg", help="Format for static plots")
-
     args = parser.parse_args()
 
     # --- Load Base Config (same as before) ---
@@ -89,23 +88,23 @@ def main():
         print("\nResults Table:")
         print(results_table)
 
-    # --- Generate Plots (NEW) ---
+    # --- Generate Plots (CORRECTED) ---
     if args.plot:
         if args.output_format == 'list':
             for run_data in results:
                 record_id = run_data['record_id']
-                # Construct the path to the experiment directory
+                # Construct the path to the experiment directory - CORRECTED
                 experiment_dir = None
-                for item in os.listdir(sweep_output_dir):
-                  item_path = os.path.join(sweep_output_dir, item)
-                  if os.path.isdir(item_path) and record_id in item:
-                    experiment_dir = item_path
-                    break
+                for item in os.listdir(sweep_output_dir):  # Search in sweep_output_dir
+                    item_path = os.path.join(sweep_output_dir, item)
+                    if os.path.isdir(item_path) and record_id in item:
+                        experiment_dir = item_path
+                        break
                 if experiment_dir is not None:
-                  # Call generate_plots with the experiment directory and static format
-                  generate_plots(run_data['results'], experiment_dir, static_format = args.static_plot_format)
+                    # Call generate_plots with the experiment directory and static format
+                    generate_plots(run_data['results'], experiment_dir, static_format=args.static_plot_format)
                 else:
-                    print("No output directory")
+                     print(f"Warning: No output directory found for record ID {record_id}")
 
         elif args.output_format == 'nested':
             # In this case you will need to load records.
