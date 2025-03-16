@@ -5,7 +5,7 @@ import platform
 import importlib
 import sys
 import logging
-import psutil
+import psutil  # psutil is now a required dependency
 from packaging import version
 import pkg_resources
 
@@ -15,7 +15,7 @@ from .config import load_config
 from .utils import DataDescriptor, DataType
 from typing import Dict, Any, Type
 from datetime import datetime
-from .visualization import generate_plots  # Import the new function
+from .visualization import generate_plots
 
 
 # Configure logging
@@ -74,7 +74,7 @@ class SimulatorEngine:
                 if req.project_name in installed_packages:
                     relevant_versions[req.project_name] = installed_packages[req.project_name]
                 else:
-                  logger.warning(f"Package required not found: {req.project_name}")
+                    logger.warning(f"Package required not found: {req.project_name}")
             record.set_software_versions(relevant_versions)
 
         except Exception as e:
@@ -187,7 +187,7 @@ class SimulatorEngine:
         record.config = data['config']
         record.experiment_logic_class_name = data['experiment_logic_class_name']
         record.experiment_logic_module = data['experiment_logic_module']
-        record.experiment_description = data['experiment_description'] # Load description
+        record.experiment_description = data['experiment_description']  # Load description
         record.input_data_descriptors = input_descriptors
         record.output_data = output_data
         record.log_messages = data['log_messages']
