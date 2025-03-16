@@ -34,6 +34,7 @@ class DataDescriptor:
         self.plot_type = plot_type
         self.x_axis = x_axis
 
+# simulator/utils.py
     def to_dict(self) -> Dict[str, Any]:
         """
         Converts the DataDescriptor to a dictionary for serialization

@@ -43,6 +43,10 @@ def test_calibration_initialize(calibration_config):
 
 def test_calibration_get_results(calibration_config):
     experiment = PredatorPreyCalibrationExperiment(calibration_config)
+    # Initialize and run
+    state = experiment.initialize(calibration_config)
+    for step in range(calibration_config['n_steps']):
+        state = experiment.run_step(state, step) # No step argument
     results = experiment.get_results()
 
     assert 'observed_data' in results

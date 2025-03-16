@@ -20,6 +20,7 @@ def analysis_config(tmp_path):
 
 def test_data_analysis_initialize(analysis_config):
     experiment = DataAnalysisExperiment(analysis_config)
+    experiment.initialize(analysis_config)  # Load the data
     assert experiment.data_info is not None
     assert isinstance(experiment.data, pd.DataFrame)
     assert 'time' in experiment.data.columns
@@ -27,7 +28,7 @@ def test_data_analysis_initialize(analysis_config):
 
 def test_data_analysis_get_results(analysis_config):
     experiment = DataAnalysisExperiment(analysis_config)
-    experiment.initialize(analysis_config)  # Load the data
+    experiment.initialize(analysis_config)
     results = experiment.get_results()
 
     assert 'time' in results
@@ -38,6 +39,6 @@ def test_data_analysis_get_results(analysis_config):
     assert 'min' in results
     assert 'loaded_data' in results
 
-    # Check a few values
+     # Check a few values using sample standard deviation calculation
     assert np.isclose(results['mean']['data'], 11.0)
-    assert np.isclose(results['std']['data'], 0.816496580927726) # np.std([10,12,11])
+    assert np.isclose(results['std']['data'], np.std([10, 12, 11], ddof=1)) # Corrected STD

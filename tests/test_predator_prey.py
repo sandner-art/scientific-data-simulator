@@ -40,6 +40,10 @@ def test_predator_prey_run_step(predator_prey_config):
 
 def test_predator_prey_get_results(predator_prey_config):
     experiment = PredatorPreyExperiment(predator_prey_config)
+    # Initialize and run steps:
+    state = experiment.initialize(predator_prey_config)
+    for step in range(predator_prey_config['n_steps']):
+        state = experiment.run_step(state, step)
     results = experiment.get_results()
 
     assert 'time' in results

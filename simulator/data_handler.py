@@ -121,3 +121,35 @@ def create_descriptor_from_data(data: Any, name:str, group: str = 'data', plot_t
         return DataDescriptor(name, DataType.STRING, group=group, plot_type=plot_type, x_axis=x_axis)  # No shape
     else:
         raise TypeError(f"Unsupported data type for descriptor creation: {type(data)}")
+
+def save_csv(data: Union[pd.DataFrame, Dict[str, Any]], file_path: str,
+             delimiter: str = ',', index: bool = False) -> None:
+    """
+    Saves data to a CSV file.  Handles both DataFrames and results dictionaries.
+
+    Args:
+        data: The data to save (either a Pandas DataFrame or a dictionary of results).
+        file_path: The path to the CSV file to be created.
+        delimiter:  Delimiter to use.
+        index: Add index to output or not.
+    """
+    try:
+        if isinstance(data, pd.DataFrame):
+            df = data
+        elif isinstance(data, dict):
+            # Convert results dictionary to DataFrame
+            df = pd.DataFrame()
+            for data_name, data_info in data.items():
+                if isinstance(data_info, dict) and 'data' in data_info: # Check if the structure is right
+                    if isinstance(data_info['data'], (np.ndarray, list)):
+                         df[data_name] = pd.Series(data_info['data']) # use pandas series
+                    elif isinstance(data_info['data'], (int, float, str)):
+                        df[data_name] = [data_info['data']] # scalar values to list
+
+        else:
+            raise TypeError(f"Unsupported data type for CSV export: {type(data)}")
+        df.to_csv(file_path, sep=delimiter, index=index)
+
+
+    except Exception as e:
+        raise RuntimeError(f"Error saving data to CSV: {e}") from e

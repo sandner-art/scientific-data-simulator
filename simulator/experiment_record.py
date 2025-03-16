@@ -78,12 +78,13 @@ class ExperimentRecord:
         }
 
 
+# simulator/experiment_record.py
 # Add a helper function to convert non-serializable data
 def _convert_to_serializable(data):
     if isinstance(data, np.ndarray):
         return data.tolist()  # Convert NumPy arrays to lists
     elif isinstance(data, pd.DataFrame):
-        return data.to_dict(orient='records')  # Convert DataFrame to list of dicts
+        return data.to_dict(orient='records')  # Convert DataFrame to list of dicts, Correct orient specified
     elif isinstance(data, dict):
         return {k: _convert_to_serializable(v) for k, v in data.items()}
     elif isinstance(data, list):

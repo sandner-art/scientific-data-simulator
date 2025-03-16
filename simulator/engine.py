@@ -1,6 +1,5 @@
 # simulator/engine.py
 import os
-import json
 import platform
 import importlib
 import sys
@@ -15,9 +14,10 @@ from .config import load_config
 from .utils import DataDescriptor, DataType
 from typing import Dict, Any, Type, Optional
 from datetime import datetime
-import pandas as pd  # Import pandas
-import numpy as np  # Import numpy
-from .visualization import generate_plots  # Import the new function
+import numpy as np
+import pandas as pd
+from .visualization import generate_plots
+from .persistence import save_experiment_record, load_experiment_record  # Import the functions
 
 
 # Configure logging
@@ -124,11 +124,12 @@ class SimulatorEngine:
             record.add_log_message(f"Experiment failed: {e}")
             import traceback
             record.add_log_message(traceback.format_exc())
-            self._save_experiment_record(record)  # Save even on failure
+            save_experiment_record(record, self.output_dir)  # Save even on failure.
             logger.error(f"Experiment failed: {e}", exc_info=True)
             raise  # Re-raise
 
-        experiment_id = self._save_experiment_record(record) # get experiment id
+        experiment_dir = save_experiment_record(record, self.output_dir) # get experiment id
+        logger.info(f"Experiment record saved to: {os.path.join(experiment_dir, 'experiment_record.json')}")
 
         # --- ADDED: Output file summary ---
         print("\nExperiment completed successfully. Output files:")
@@ -148,7 +149,7 @@ class SimulatorEngine:
                 print(f"  - {filename}: {size_str}")
         print(f"Output directory: {experiment_dir}\n")
         # --- END ADDED ---
-        return experiment_id # return id
+        return record.experiment_id # return id
 
     def _get_experiment_logic_class(self, config: Dict[str, Any]) -> Type[ExperimentLogic]:
         """Loads the ExperimentLogic class based on the configuration."""
@@ -192,56 +193,7 @@ class SimulatorEngine:
 
             # ... add checks for other data types as in previous examples ...
 
-    def _save_experiment_record(self, record: ExperimentRecord):
-        """Saves the ExperimentRecord to a JSON file."""
-        timestamp = record.start_time.strftime("%Y-%m-%d_%H-%M-%S")
-        experiment_dir = os.path.join(self.output_dir, f"{timestamp}_{record.experiment_id}")
-        record_path = os.path.join(experiment_dir, "experiment_record.json")
-        with open(record_path, "w") as f:
-            json.dump(record.to_dict(), f, indent=4)
-        logger.info(f"Experiment record saved to: {record_path}")
-        return record.experiment_id # Return experiment ID
-
 
     def load_experiment_record(self, experiment_id: str) -> ExperimentRecord:
-        """Loads an experiment record from disk."""
-        # record_path = os.path.join(self.output_dir, experiment_id, "experiment_record.json") # Incorrect
-        # Find the experiment directory (it will have the timestamp prefix)
-        experiment_dir = None
-        for item in os.listdir(self.output_dir):
-            item_path = os.path.join(self.output_dir, item)
-            if os.path.isdir(item_path) and experiment_id in item:
-                experiment_dir = item_path
-                break
-        if experiment_dir is None:
-            raise FileNotFoundError(f"Experiment directory with ID '{experiment_id}' not found in '{self.output_dir}'.")
-        record_path = os.path.join(experiment_dir, "experiment_record.json")
-        with open(record_path, "r") as f:
-            data = json.load(f)
-
-        # Re-create DataDescriptor objects (important!)
-        input_descriptors = {
-            name: DataDescriptor(**desc_data)
-            for name, desc_data in data["input_data_descriptors"].items()
-        }
-        output_data = {
-            name: {
-                "data": data_info["data"],
-                "descriptor": DataDescriptor(**data_info["descriptor"])
-            } for name, data_info in data["output_data"].items()
-        }
-        # recreate experiment record:
-        record = ExperimentRecord(data['config'], None)  # Pass the *loaded* config
-        record.experiment_id = data['experiment_id']
-        record.start_time = datetime.fromisoformat(data['start_time'])
-        record.end_time = datetime.fromisoformat(data['end_time']) if data['end_time'] else None
-        record.experiment_logic_class_name = data['experiment_logic_class_name']
-        record.experiment_logic_module = data['experiment_logic_module']
-        record.experiment_description = data['experiment_description']  # Load description
-        record.input_data_descriptors = input_descriptors
-        record.output_data = output_data
-        record.log_messages = data['log_messages']
-        record.system_info = data['system_info']
-        record.software_versions = data['software_versions']
-        record.llm_usage = data['llm_usage']
-        return record
+        """Loads an experiment record from disk, using persistence module."""
+        return load_experiment_record(self.output_dir, experiment_id)

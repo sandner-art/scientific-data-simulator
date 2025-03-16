@@ -86,11 +86,11 @@ def test_load_json_file_not_found():
         load_json("nonexistent_file.json")
 
 def test_load_json_invalid(temp_test_files):
-    invalid_json = temp_test_files['test_dir'] / 'invalid.json'
+    invalid_json = os.path.join(temp_test_files['test_dir'], 'invalid.json') # Corrected
     with open(invalid_json, 'w') as f:
         f.write("invalid json")  # Write invalid JSON content
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError):  # Expect a ValueError for invalid JSON
         load_json(str(invalid_json))
 
 def test_load_numpy_npy(temp_test_files):
