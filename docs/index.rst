@@ -75,6 +75,7 @@ Using `venv` (Recommended)
         pip install -r requirements.txt
 
 4. **Install in editable mode:**
+
    .. code-block:: bash
 
         pip install -e .
@@ -99,10 +100,13 @@ Using `conda`
     .. code-block:: bash
 
         pip install -r requirements.txt
+
 4. **Install in editable mode:**
-    ```bash
-    pip install -e .
-    ```
+
+    .. code-block:: bash
+   
+      pip install -e .
+   
 
 .. _getting_started:
 
@@ -301,12 +305,6 @@ Each test should follow structure:
 *   Set up any necessary preconditions (e.g., create a configuration dictionary).
 *   Call the function or method you're testing.
 *   Assert that the results are as expected (using `assert` statements).
-
-You're absolutely right. Highlighting inheritance as a key mechanism for extending and customizing the `Scientific Data Simulator` is crucial for the documentation. We need to explain *how* and *why* users would use inheritance to create variations of existing experiments or build upon existing logic.
-
-Here's how we can incorporate this into the `docs/index.rst` file, specifically within the "Extending the Framework" section. I'll also add a brief mention in the "Creating New Experiments" section to point users towards this more advanced technique.
-
-**1. Modifications to `docs/index.rst`:**
 
 
 .. _extending:
