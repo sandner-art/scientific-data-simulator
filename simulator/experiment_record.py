@@ -1,4 +1,5 @@
 # simulator/experiment_record.py
+
 from typing import Optional, Dict, Any, List, Type
 from datetime import datetime
 import uuid
@@ -78,7 +79,6 @@ class ExperimentRecord:
         }
 
 
-# simulator/experiment_record.py
 # Add a helper function to convert non-serializable data
 def _convert_to_serializable(data):
     if isinstance(data, np.ndarray):

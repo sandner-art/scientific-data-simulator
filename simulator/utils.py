@@ -1,7 +1,8 @@
 # simulator/utils.py
+
 from typing import Optional, Union, Tuple, Dict, Any
 from enum import Enum
-import numpy as np # For checking array type
+import numpy as np  # For checking array type
 import pandas as pd
 
 class DataType(str, Enum):
@@ -34,25 +35,16 @@ class DataDescriptor:
         self.plot_type = plot_type
         self.x_axis = x_axis
 
-# simulator/utils.py
     def to_dict(self) -> Dict[str, Any]:
         """
         Converts the DataDescriptor to a dictionary for serialization
         """
         return {
             'name': self.name,
-            'data_type': str(self.data_type),  # Store Enum as string
+            'data_type': str(self.data_type),  # Store Enum as string. CORRECT
             'shape': self.shape,
             'units': self.units,
             'group': self.group,
             'plot_type': self.plot_type,
             'x_axis': self.x_axis
         }
-
-
-def load_config(config_path: str) -> Dict[str, Any]:
-    """
-    Loads a configuration file (placeholder for now).
-    """
-    # Implementation will be in config.py, but we need this here for now.
-    raise NotImplementedError("This function will be implemented in config.py")

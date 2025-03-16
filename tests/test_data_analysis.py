@@ -39,6 +39,6 @@ def test_data_analysis_get_results(analysis_config):
     assert 'min' in results
     assert 'loaded_data' in results
 
-     # Check a few values using sample standard deviation calculation
+    # Check a few values using sample standard deviation calculation
     assert np.isclose(results['mean']['data'], 11.0)
     assert np.isclose(results['std']['data'], np.std([10, 12, 11], ddof=1)) # Corrected STD
