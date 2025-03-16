@@ -15,42 +15,44 @@ The Scientific Data Simulator is a Python framework designed for creating and ma
 scientific_data_simulator/
 ├── simulator/           # The core engine
 │   ├── __init__.py
-│   ├── base.py          # Abstract base classes (ExperimentLogic, LLMClient)
-│   ├── engine.py        # Core engine logic (execution, logging, etc.)
-│   ├── config.py       # Configuration management
-│   ├── data_handler.py # Data loading and saving
-│   ├── visualization.py # Visualization adapters/wrappers
-│   ├── utils.py         # Utility functions
-│   ├── doe.py           # Design of Experiments functions
-│   ├── llm_client.py    # LLM client abstraction
-│   └── experiment_record.py  # ExperimentRecord class
+│   ├── base.py
+│   ├── engine.py
+│   ├── config.py
+│   ├── data_handler.py
+│   ├── visualization.py
+│   ├── utils.py
+│   ├── doe.py
+│   ├── llm_client.py
+│   └── experiment_record.py
 │
-├── experiments/         # Specific experiment implementations
+├── experiments/         # Specific experiment implementations (ExperimentLogic)
 │   ├── __init__.py
-│   ├── example_experiment/  # Example: A simple experiment
+│   ├── example_experiment/  # For the reusable ExperimentLogic
 │   │   ├── __init__.py
-│   │   └── logic.py     # Implements ExperimentLogic
-│   └── ... # Other experiments
+│   │   └── logic.py
+│   └── ...
 │
-├── tests/              # Unit and integration tests
+├── tests/
 │   ├── __init__.py
 │   ├── test_engine.py
-│   ├── test_example_experiment.py
+│   ├── test_example_experiment.py  # Tests for the ExperimentLogic
 │   └── ...
 │
 ├── examples/            # Example usage scripts/notebooks
-│   ├── run_example_experiment.py
-│   ├── example_notebook.ipynb
-│   └── ...
+│   ├── example_1/        # NEW: Renamed for clarity
+│   │   ├── run_experiment.py
+│   │   └── config.yaml
+│   └── example_notebook.ipynb  # Notebooks can stay at the top level
 │
-├── docs/                # Sphinx documentation (optional, but recommended)
+├── docs/
 │   ├── conf.py
 │   ├── index.rst
 │   └── ...
 │
-├── .gitignore           # Files and directories to ignore in Git
-├── requirements.txt      # Project dependencies
-└── README.md            # Project description and instructions
+├── .gitignore
+├── requirements.txt
+├── README.md
+└── CITATION.cff
 
 ```
 
@@ -82,7 +84,11 @@ pip install -e .
 From scientific-data-simulator folder run:
 
 ```bash
-python -m examples.run_example_experiment --config examples/config.yaml
+# From the project root:
+python -m examples.example_1.run_experiment
+
+# Or, explicitly specifying the config file:
+python -m examples.example_1.run_experiment --config examples/example_1/config.yaml
 ```
 
 ## Citation
