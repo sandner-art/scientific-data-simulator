@@ -16,7 +16,7 @@ This example demonstrates using the `simulator.doe` module to perform a paramete
 To run this example, navigate to the project root directory in your terminal and execute:
 
 ```bash
-python -m examples.example_doe_1.run_experiment
+python -m examples.example_doe_1.run_experiment --plot
 ```
 
 You can also specify a different output directory and the output format using command-line arguments:

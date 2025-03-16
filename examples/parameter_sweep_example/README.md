@@ -18,7 +18,7 @@ This example demonstrates how to perform a parameter sweep using the `Scientific
 To run this example, navigate to the project root directory in your terminal and execute:
 
 ```bash
-python -m examples.parameter_sweep_example.run_experiment
+python -m examples.parameter_sweep_example.run_experiment --plot
 ```
 
 This will create a directory named `parameter_sweep_results` (or the directory you specify with the `--output_dir` argument) containing:
