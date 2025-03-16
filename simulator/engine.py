@@ -13,8 +13,10 @@ from .base import ExperimentLogic
 from .experiment_record import ExperimentRecord
 from .config import load_config
 from .utils import DataDescriptor, DataType
-from typing import Dict, Any, Type
+from typing import Dict, Any, Type, Optional
 from datetime import datetime
+import pandas as pd  # Import pandas
+import numpy as np  # Import numpy
 from .visualization import generate_plots  # Import the new function
 
 
@@ -177,6 +179,17 @@ class SimulatorEngine:
             data = data_info['data']
             if descriptor.data_type == DataType.FLOAT and not isinstance(data, float):
                 raise TypeError(f"Data for '{data_name}' must be a float (based on descriptor).")
+            if descriptor.data_type == DataType.INT and not isinstance(data, int):
+                raise TypeError(f"Data for '{data_name}' must be an int (based on descriptor).")
+            if descriptor.data_type == DataType.STRING and not isinstance(data, str):
+                raise TypeError(f"Data for '{data_name}' must be a string (based on descriptor).")
+            if descriptor.data_type == DataType.LIST and not isinstance(data, list):
+                raise TypeError(f"Data for '{data_name}' must be a list (based on descriptor).")
+            if descriptor.data_type == DataType.NDARRAY and not isinstance(data, np.ndarray):
+                raise TypeError(f"Data for '{data_name}' must be a numpy array (based on descriptor).")
+            if descriptor.data_type == DataType.DATAFRAME and not isinstance(data, pd.DataFrame):
+                raise TypeError(f"Data for '{data_name}' must be a pandas DataFrame (based on descriptor).")
+
             # ... add checks for other data types as in previous examples ...
 
     def _save_experiment_record(self, record: ExperimentRecord):
@@ -192,7 +205,17 @@ class SimulatorEngine:
 
     def load_experiment_record(self, experiment_id: str) -> ExperimentRecord:
         """Loads an experiment record from disk."""
-        record_path = os.path.join(self.output_dir, experiment_id, "experiment_record.json")
+        # record_path = os.path.join(self.output_dir, experiment_id, "experiment_record.json") # Incorrect
+        # Find the experiment directory (it will have the timestamp prefix)
+        experiment_dir = None
+        for item in os.listdir(self.output_dir):
+            item_path = os.path.join(self.output_dir, item)
+            if os.path.isdir(item_path) and experiment_id in item:
+                experiment_dir = item_path
+                break
+        if experiment_dir is None:
+            raise FileNotFoundError(f"Experiment directory with ID '{experiment_id}' not found in '{self.output_dir}'.")
+        record_path = os.path.join(experiment_dir, "experiment_record.json")
         with open(record_path, "r") as f:
             data = json.load(f)
 
@@ -208,11 +231,10 @@ class SimulatorEngine:
             } for name, data_info in data["output_data"].items()
         }
         # recreate experiment record:
-        record = ExperimentRecord({}, None)  # dummy values
+        record = ExperimentRecord(data['config'], None)  # Pass the *loaded* config
         record.experiment_id = data['experiment_id']
         record.start_time = datetime.fromisoformat(data['start_time'])
         record.end_time = datetime.fromisoformat(data['end_time']) if data['end_time'] else None
-        record.config = data['config']
         record.experiment_logic_class_name = data['experiment_logic_class_name']
         record.experiment_logic_module = data['experiment_logic_module']
         record.experiment_description = data['experiment_description']  # Load description

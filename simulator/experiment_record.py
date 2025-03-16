@@ -1,24 +1,26 @@
 # simulator/experiment_record.py
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Type
 from datetime import datetime
 import uuid
 from .utils import DataDescriptor  # Import from utils
 import numpy as np  # Import numpy
-import pandas as pd # Import pandas
-
+import pandas as pd
 
 class ExperimentRecord:
     """
     Represents a complete record of a single experiment run.
     """
 
-    def __init__(self, config: Dict[str, Any], experiment_logic_class: type):
+    def __init__(self, config: Dict[str, Any], experiment_logic_class: Optional[Type] = None):
         self.experiment_id: str = str(uuid.uuid4())  # Unique ID
         self.start_time: datetime = datetime.now()
         self.end_time: Optional[datetime] = None
         self.config: Dict[str, Any] = config  # Store the configuration
-        self.experiment_logic_class_name: str = experiment_logic_class.__name__
-        self.experiment_logic_module: str = experiment_logic_class.__module__
+        self.experiment_logic_class_name: str = "" # Provide defaults
+        self.experiment_logic_module: str = "" # Provide defaults
+        if experiment_logic_class: # Check if experiment logic class provided
+            self.experiment_logic_class_name = experiment_logic_class.__name__
+            self.experiment_logic_module = experiment_logic_class.__module__
         self.experiment_description: str = config.get("experiment_description", "")
         self.input_data_descriptors: Dict[str, DataDescriptor] = {}  # Descriptors used
         self.output_data: Dict[str, Dict[str, Any]] = {}  # Store results (as before)
@@ -87,4 +89,4 @@ def _convert_to_serializable(data):
     elif isinstance(data, list):
         return [_convert_to_serializable(item) for item in data]
     else:
-        return data  # For other types, assume they are serializable
+        return data
