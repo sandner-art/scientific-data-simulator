@@ -78,13 +78,13 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
             # Corrected y label
             fig = px.line(df, x=x_axis_name, y=[col for col in df.columns if col != x_axis_name], # all columns except x
                             labels={'x': x_axis_descriptor.units if x_axis_descriptor.units else x_axis_name,
-                                    'y': "Value",  # Generic y-axis label
+                                    'y': descriptor.units if descriptor.units else "Value",
                                     'variable': 'Series'},
                             title=f"Time Series Plot ({group_name})")
             fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
             if static_format:
-                # Explicitly set mathjax to None when using a static renderer
-                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format, mathjax=None)
+                # Remove mathjax=None
+                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
 
 
         elif group_name == 'histogram':
@@ -118,8 +118,8 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
                               opacity=0.7) # transparency
             fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
             if static_format:
-                # Explicitly set mathjax to None when using a static renderer
-                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format, mathjax=None)
+                # Remove mathjax=None
+                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
 
         # Add support for other groups as needed
 
@@ -171,5 +171,5 @@ def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str,
                     title="Predator-Prey Population Dynamics")
     fig.write_html(os.path.join(output_dir, "combined_populations_plotly.html"))
     if static_format:
-      # Explicitly set mathjax to None when using a static renderer
-      fig.write_image(os.path.join(output_dir, f"combined_populations_plotly.{static_format}"), format=static_format, mathjax=None)
+      # Remove mathjax=None argument
+      fig.write_image(os.path.join(output_dir, f"combined_populations_plotly.{static_format}"), format=static_format)
