@@ -1,0 +1,9 @@
+# requirements.txt
+numpy
+scipy
+matplotlib
+plotly
+pyyaml
+python-dotenv
+pytest # For testing
+packaging
