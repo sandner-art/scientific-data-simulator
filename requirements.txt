@@ -12,7 +12,9 @@ psutil>=5.9
 matplotlib>=3.6
 plotly>=5.0
 # optional extras
-kaleido
+kaleido>=1.0
+plotly>=6.1.1
+pint>=0.24
 pyarrow>=12
 h5py>=3.8
 # development

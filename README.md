@@ -48,25 +48,57 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
   * questions with answers and tolerances computed from the exact curves (peaks, extremes, values, comparisons, parameter estimates);
   * the mechanism graph (JSON and Graphviz).
 
-  Files are marked public (what a system under test sees) or private (the answers). Hiding the exact curves (`show_latent: false`) turns figure-reading questions into inference questions. A design collects all of its runs' questions into `questions.jsonl` (public) and `qa.jsonl` (private).
+  Models that describe a diagram (`figure_elements()`) get a geometric drawing instead of a chart, and can add their own exact questions (`questions()`). Files are marked public (what a system under test sees) or private (the answers and the numeric tolerances, which would reveal them). Hiding the exact curves (`show_latent: false`) turns figure-reading questions into inference questions. A design collects all of its runs' questions into `questions.jsonl` (public) and `qa.jsonl` (private).
 * **Model fidelity labels.** Every model declares a fidelity level with a short reason, recorded in each run (see [Model fidelity](#model-fidelity-reference-and-deliberately-weak-models)).
+* **Exporters** (`simulator.export`):
+  * questions as scored tasks (`tasks.jsonl`);
+  * Hugging Face dataset folders with a dataset card and Croissant 1.0 metadata (validated with `mlcroissant`, loadable with `datasets`);
+  * (θ, x) training sets and a batch simulator for simulation-based inference (`sbi`);
+  * OpenEnv environment packages and verifiers tasksets for reinforcement learning.
+
+  Ground truth is withheld unless you ask for it.
+* **Interactive discovery environments** (`simulator.envs`). An agent runs a limited number of noisy experiments on a system with hidden parameters, then reports an estimate, which is scored automatically. It has a Gymnasium-style `reset`/`step`/`state` API and no dependencies.
+* **Physical units** (optional `pint`). Parameters can be given with units (`stiffness: "2 kN/m"`) and are converted to the model's declared units. Output units are checked, including traps such as `units` (pint reads it as *micronit*) and `au` (astronomical unit).
+* **Model checker** (`simulator.checker`). A gate for new and LLM-written models:
+  * a static scan of the source;
+  * determinism and untouched global random state;
+  * finite outputs;
+  * convergence order when `dt` is halved;
+  * invariant drift;
+  * dead parameters;
+  * units.
+
+  `simulator.llm.draft_model` asks any LLM for a model, runs the checker in a separate time-limited process, and retries with the findings.
 * **Automatic plots.** matplotlib PNG and interactive Plotly HTML, driven by output descriptors; observed points are drawn over the latent curves. Static SVG/PDF export needs the optional `kaleido` package.
 
 ### Planned
 
-* Law-discovery and symbolic-regression packs; geometry diagrams with exact coordinates.
-* Exporters: Hugging Face datasets with Croissant metadata, verifiers/OpenEnv tasks, `sbi` (θ, x) pairs, The Well HDF5 layout.
-* Physical units (pint) and LLM-assisted experiment authoring gated by automatic numerical checks. The abstract `LLMClient` interface in `simulator/base.py` is the placeholder for this.
+* Law-discovery and symbolic-regression packs (hidden equation forms, counterfactual laws at scale).
+* More geometry: polygons, 3-D and n-dimensional constructions.
+* The Well HDF5 export; more deliberately weak (`audit`) models, each documented with its flaw.
 
 ## Installation
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"            # core + pytest, pyarrow, h5py
+pip install -e ".[dev]"            # core + pytest, pyarrow, h5py, pint, kaleido
 ```
 
-Optional extras are `static-plots` (kaleido; static Plotly export needs Chrome), `parquet`, `hdf5` and `all`. Python 3.9 or newer is required.
+Python 3.9 or newer is required. Optional extras:
+
+| Extra | Adds |
+|---|---|
+| `static-plots` | kaleido and plotly ≥ 6.1.1. Static SVG/PDF export also needs Chrome. |
+| `parquet`, `huggingface` | pyarrow |
+| `hdf5` | h5py |
+| `units` | pint |
+| `validate` | mlcroissant and datasets, to check exported datasets |
+| `openenv` | the OpenEnv library (Python ≥ 3.10), to use exported RL packages |
+| `verifiers` | the verifiers library (Python ≥ 3.11), to use exported RL packages |
+| `all` | static-plots, parquet, hdf5 and units |
+
+Install `openenv` and `verifiers` in separate environments: their current releases pin incompatible versions of `mcp`.
 
 ## Quick start
 
@@ -139,7 +171,48 @@ Not every bundled model is meant to be correct. Some are kept, or will be added,
 
 **Lotka–Volterra.** The predator–prey model's default configuration (`integrator: euler`, `dt: 1`, clamping of negative populations) reproduces version 0.1.0. It is labelled `audit`: forward Euler at this step size carries first-order integrator error and violates the conserved Lotka–Volterra quantity by more than 1 %. Use `integrator: rk4` with `dt ≤ 0.04` for `reference` data; larger steps are labelled `unverified`.
 
-A model sets its level with the class attributes `fidelity_level` and `fidelity_note`, or overrides `fidelity(config)` when the level depends on the configuration.
+**Oscillator.** `integrator: euler` is the second deliberately weak model. Explicit Euler adds energy to an undamped oscillator at every step, so its amplitude grows; it is labelled `audit`. The closed-form (`exact`) and DOP853 options are `reference`.
+
+A model sets its level with the class attributes `fidelity_level` and `fidelity_note`, or overrides `fidelity(config)` when the level depends on the configuration. The model checker never promotes a model to `reference`: that needs verification tests against independent knowledge.
+
+## Exporting and using the data
+
+```python
+from simulator.export.tasks import collect_bundle_tasks, write_tasks_jsonl, score
+from simulator.export.huggingface import export_huggingface
+from simulator.export.sbi import generate_training_data
+from simulator.export.rl import export_openenv, export_verifiers_qa
+
+tasks = collect_bundle_tasks("experiments_output/my_design")          # questions from bundles
+write_tasks_jsonl(tasks, "tasks.jsonl")                              # public (no answers)
+score(tasks[0], "The maximum is about 13.7")                         # 1.0 or 0.0
+
+export_huggingface("experiments_output/my_design", "hf_dataset", name="my-benchmark")
+data = generate_training_data(config, {"prey_growth_rate": [0.6, 1.6]}, n=1000, seed=1)  # theta, x
+export_openenv("examples/example_9_discovery_env/env.yaml", "rl/", name="lv_discovery")
+export_verifiers_qa(tasks, "rl/", name="lv_figure_qa")
+```
+
+Ground truth stays private by default:
+- The Hugging Face export omits latent and label arrays, `ground_truth.json`, run configurations, answers and numeric tolerances.
+- `include_seeds=False` also withholds seeds, since a seed plus the simulator regenerates the data.
+
+The OpenEnv package serves the interactive environment over HTTP/WebSocket and passes `openenv validate`. Use a WebSocket session for multi-step episodes: plain HTTP `/step` calls are stateless. The verifiers taskset scores answers with `score`, and verifiers' `openenv` taskset can drive the OpenEnv package for multi-turn training.
+
+## Checking a model (and drafting one with an LLM)
+
+```bash
+python -m simulator.checker experiments.oscillator.logic.OscillatorExperiment config.yaml --markdown check.md
+```
+
+```python
+from simulator.llm import CallableLLMClient, draft_model
+draft = draft_model(CallableLLMClient(my_llm_function), "A pendulum with linear drag ...", config)
+if draft.accepted:
+    draft.save("experiments/pendulum/logic.py")      # writes logic_check.md next to it
+```
+
+`my_llm_function(prompt) -> text` wraps any provider SDK; the simulator itself depends on none. Generated code is scanned before it runs, then checked in a separate process with a time limit. Rejected drafts cannot be saved.
 
 ## Writing a model
 
@@ -194,6 +267,8 @@ experiments_output/<timestamp>_<experiment_id>/
 | Random walk | `experiments.example_random_walk.logic.RandomWalkExperiment` | `reference`: seeded; increment statistics tested |
 | Linear function | `experiments.linear_function.logic.LinearFunctionExperiment` | `reference`: closed form |
 | Lotka–Volterra | `experiments.predator_prey.logic.PredatorPreyExperiment` | `reference` with `integrator: rk4`, `dt ≤ 0.04`; `audit` with the 0.1.0 default (forward Euler, dt = 1). Options: `holling2`, logistic prey. |
+| Oscillator | `experiments.oscillator.logic.OscillatorExperiment` | SI units. `reference`: closed form (linear) or DOP853 (Duffing cubic term); `audit` with `integrator: euler`. |
+| Triangle geometry | `experiments.geometry.logic.TriangleExperiment` | `reference`: exact constructions (circumcircle, incircle, centroid, orthocentre, medians, altitudes, Euler line); diagrams and questions in bundles. |
 | Calibration overlay | `experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment` | overlays observed CSV data (manual calibration); fidelity as for Lotka–Volterra |
 | CSV summary | `experiments.data_analysis.logic.DataAnalysisExperiment` | `observed`: real data, recorded as `synthetic: false` |
 
@@ -202,7 +277,9 @@ experiments_output/<timestamp>_<experiment_id>/
 ```
 simulator/        engine.py, base.py, config.py, schema.py, rng.py, observation.py,
                   bundle.py, storage.py, persistence.py, provenance.py, experiment_record.py,
-                  doe.py, data_handler.py, visualization.py, utils.py
+                  doe.py, data_handler.py, visualization.py, utils.py,
+                  envs.py, units.py, checker.py, llm.py,
+                  export/ (tasks, huggingface, sbi, rl)
 experiments/      bundled reference models (one package per model)
 examples/         runnable examples (python -m examples.<name>.run_experiment)
 tests/            pytest suite, incl. test_verification.py (numerical verification)
@@ -213,7 +290,7 @@ docs/             Sphinx sources
 
 If you use Scientific Data Simulator in your research, please cite it:
 
-> Daniel Sandner. (2025). Scientific Data Simulator (Version 0.2.0.dev0) [Computer software]. https://github.com/sandner-art/scientific-data-simulator
+> Daniel Sandner. (2025). Scientific Data Simulator (Version 0.3.0.dev0) [Computer software]. https://github.com/sandner-art/scientific-data-simulator
 
 Full citation metadata is in [`CITATION.cff`](CITATION.cff).
 

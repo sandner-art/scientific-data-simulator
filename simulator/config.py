@@ -1,11 +1,35 @@
 # simulator/config.py
 import copy
 import os
+import re
 from typing import Any, Dict, Mapping
 
 import numpy as np
 import yaml
 from dotenv import load_dotenv
+
+class ScientificLoader(yaml.SafeLoader):
+    """SafeLoader that also reads ``1e-3`` and ``5E6`` as floats.
+
+    YAML 1.1 (PyYAML) only treats exponent notation with a decimal point as a
+    float (``1.0e-3``); ``1e-3`` would silently become the *string* "1e-3".
+    """
+
+
+ScientificLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:float",
+    re.compile(r"""^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+]?[0-9]+)?
+                 |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
+                 |[-+]?\.[0-9_]+(?:[eE][-+]?[0-9]+)?
+                 |[-+]?\.(?:inf|Inf|INF)
+                 |\.(?:nan|NaN|NAN))$""", re.X),
+    list("-+0123456789."))
+
+
+def yaml_load(stream: Any) -> Any:
+    """``yaml.safe_load`` with scientific notation read as floats (see :class:`ScientificLoader`)."""
+    return yaml.load(stream, Loader=ScientificLoader)
+
 
 def load_config(config_path: str, secrets_path: str = ".env") -> Dict[str, Any]:
     """
@@ -23,7 +47,7 @@ def load_config(config_path: str, secrets_path: str = ".env") -> Dict[str, Any]:
     load_dotenv(secrets_path)
 
     with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+        config = yaml_load(f)
 
     # Overlay environment variables (allows overriding config file values)
     for key, value in config.items():

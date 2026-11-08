@@ -40,8 +40,10 @@ def test_bundle_files_and_visibility(tmp_path):
     files = run.record.bundle["files"]
     public = {n for n, f in files.items() if f["visibility"] == "public"}
     private = {n for n, f in files.items() if f["visibility"] == "private"}
-    assert public == {"figure.png", "plot_figure.py", "table.csv", "caption.txt", "questions.json"}
-    assert private == {"qa.json", "graph.json", "graph.dot", "description.md"}
+    assert public == {"figure.png", "plot_figure.py", "caption.txt", "questions.json"}
+    assert private == {"qa.json", "graph.json", "graph.dot", "description.md", "table.csv"}
+    training = _run(tmp_path / "training", bundle={"public_table": True})
+    assert training.record.bundle["files"]["table.csv"]["visibility"] == "public"
     for name, entry in files.items():
         assert file_sha256(os.path.join(run.experiment_dir, entry["path"])) == entry["sha256"]
     # the record on disk carries the manifest too
@@ -155,6 +157,7 @@ def test_qa_options(tmp_path):
     no_qa = _run(tmp_path / "noqa", bundle={"qa": {"enabled": False}, "graph": False})
     assert set(no_qa.record.bundle["files"]) == {"figure.png", "plot_figure.py", "table.csv",
                                                  "caption.txt", "description.md"}
+    assert no_qa.record.bundle["files"]["table.csv"]["visibility"] == "private"
 
 
 @pytest.mark.parametrize("bad", [{"colour": "red"}, {"figure": {"format": "gif"}},
@@ -230,3 +233,16 @@ def test_unknown_fidelity_level_is_rejected(tmp_path):
         SimulatorEngine(str(tmp_path), verbose=False).run_config(
             {"n_points": 3, "m": 1.0, "c": 0.0, "x_min": 0.0, "x_max": 1.0, "generate_plots": False},
             experiment_logic_class=Bad)
+
+
+def test_public_files_do_not_leak_answers_through_tolerances(tmp_path):
+    """A parameter question's tolerance is 5 % of the answer; it must stay private."""
+    from simulator.export.tasks import collect_bundle_tasks, public_view
+    run = _run(tmp_path)
+    with open(os.path.join(_bundle(run), "questions.json")) as f:
+        public = json.load(f)
+    assert all("tolerance" not in q and "answer" not in q for q in public)
+    assert all(q["tolerance_rule"] for q in public)
+    assert {q["tolerance_rule"] for q in public if q["template"] == "parameter"} == {"5 % of the true value"}
+    for task in collect_bundle_tasks(run.experiment_dir):
+        assert "tolerance" not in public_view(task) and "tolerance" in task

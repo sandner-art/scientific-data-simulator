@@ -32,6 +32,6 @@ class ExampleExperiment(ExperimentLogic):
             },
             "value": {
                 "data": value_data,
-                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=value_data.shape, units="arbitrary", group="time_series", plot_type="line", role="latent")
+                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=value_data.shape, units="arbitrary_unit", group="time_series", plot_type="line", role="latent")
             }
         }

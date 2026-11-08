@@ -40,6 +40,6 @@ class RandomWalkExperiment(ExperimentLogic):
             },
             "position": {
                 "data": np.array(self.positions, dtype=float),
-                "descriptor": DataDescriptor("position", DataType.NDARRAY, units="units", group="time_series", plot_type="line", x_axis="step", role="latent")
+                "descriptor": DataDescriptor("position", DataType.NDARRAY, units="dimensionless", group="time_series", plot_type="line", x_axis="step", role="latent")
             }
         }

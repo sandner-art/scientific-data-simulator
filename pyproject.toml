@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scientific-data-simulator"
-version = "0.2.0.dev0"
+version = "0.3.0.dev0"
 description = "Reproducible, provenance-first generation of simulated scientific reference data."
 readme = "README.md"
 license = "Apache-2.0"
@@ -31,15 +31,25 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Static export of plotly figures (svg/pdf/png). Kaleido >= 1.0 needs a Chrome install.
-static-plots = ["kaleido"]
-# Columnar storage of DataFrame outputs.
+# Static export of plotly figures (svg/pdf/png). Kaleido >= 1.0 needs a Chrome install
+# and plotly >= 6.1.1 (older plotly prints deprecation warnings about 'engine').
+static-plots = ["kaleido>=1.0", "plotly>=6.1.1"]
+# Columnar storage of DataFrame outputs; Hugging Face dataset export.
 parquet = ["pyarrow>=12"]
+huggingface = ["pyarrow>=12"]
 # Single-file HDF5 storage of array outputs.
 hdf5 = ["h5py>=3.8"]
-dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido"]
+# Physical units (unit-bearing parameters, unit checks of outputs).
+units = ["pint>=0.24"]
+# Validate exported datasets (Croissant metadata, loading with datasets).
+validate = ["mlcroissant>=1.0", "datasets>=2.18"]
+# Using exported RL packages (writing them needs nothing extra). openenv and
+# verifiers pin incompatible 'mcp' versions: install them in separate environments.
+openenv = ["openenv>=0.12; python_version >= '3.10'"]
+verifiers = ["verifiers>=0.4.1; python_version >= '3.11'"]
 docs = ["sphinx>=7", "sphinx-rtd-theme", "myst-parser"]
-all = ["kaleido", "pyarrow>=12", "h5py>=3.8"]
+dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido>=1.0", "plotly>=6.1.1", "pint>=0.24"]
+all = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24"]
 
 [project.urls]
 Homepage = "https://github.com/sandner-art/scientific-data-simulator"

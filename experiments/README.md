@@ -34,8 +34,14 @@ A model whose outputs are meant as reference data should:
 3. **Expose its parameters.** The default `ground_truth_parameters(config)` exports the model's config values; override it for derived quantities.
 4. **Set `synthetic = False`** on the class if its outputs come from loaded real data rather than from a model.
 5. **Declare its fidelity**: set `fidelity_level` and `fidelity_note`, or override `fidelity(config)`. Use `reference`, `audit`, `unverified` or `observed`; see the main README. Deliberately weak models must use `audit`, with a note saying *what* is wrong and *why* the model is kept.
-6. **Optionally** list `inferable_parameters` (bundles ask to estimate them) and implement `mechanism_graph(config)` (exported in bundles).
-7. **Be verified** in `tests/test_verification.py` against a closed form, a high-accuracy solver, a convergence order or a conserved quantity, before its outputs are called reference data. Deliberately simplified models are welcome (for example, to audit whether a method detects model error), but document their error and pin it with a test, as done for the default Lotka–Volterra configuration.
+6. **Optionally** add any of these:
+   - `inferable_parameters`: bundles ask to estimate them, and the checker tests that they influence the output.
+   - `parameter_units`: config values can then carry units.
+   - `mechanism_graph(config)`: exported in bundles.
+   - `invariants(results)`: conserved quantities whose drift the checker measures.
+   - `figure_elements(results)`, `figure_caption(results)` and `questions(results, rng)`: diagram models.
+7. **Run the model checker**: `python -m simulator.checker experiments.<name>.logic.<Class> config.yaml`.
+8. **Be verified** in `tests/test_verification.py` against a closed form, a high-accuracy solver, a convergence order or a conserved quantity, before its outputs are called reference data. Deliberately simplified models are welcome (for example, to audit whether a method detects model error), but document their error and pin it with a test, as done for the default Lotka–Volterra configuration.
 
 The rest of this file is a step-by-step guide to adding a new experiment: the `ExperimentLogic` class, its configuration, an example script, and tests.
 

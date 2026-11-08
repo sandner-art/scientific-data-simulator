@@ -6,7 +6,7 @@ keys the engine itself interprets are validated here.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -17,7 +17,7 @@ STATIC_FORMATS = (None, "svg", "pdf", "png", "jpeg", "webp")
 ENGINE_KEYS = frozenset({
     "experiment_type", "experiment_description", "n_steps", "seed",
     "generate_plots", "static_plot_format", "save_csv",
-    "observation", "law_shift", "storage", "bundle",
+    "observation", "law_shift", "storage", "bundle", "unit_check",
 })
 
 
@@ -41,6 +41,7 @@ class EngineConfig(BaseModel):
     law_shift: Optional[Dict[str, Any]] = None
     storage: Optional[Dict[str, Any]] = None
     bundle: Any = None
+    unit_check: Literal["warn", "error", "off"] = "warn"
 
     @field_validator("static_plot_format", mode="before")
     @classmethod

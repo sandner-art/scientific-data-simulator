@@ -2,7 +2,7 @@
 # examples/parameter_sweep_example/run_experiment.py
 import os
 import argparse
-import yaml
+from simulator.config import yaml_load
 import pandas as pd
 from simulator.doe import run_parameter_sweep, create_doe_table, append_results_to_doe_table
 from experiments.predator_prey.logic import PredatorPreyExperiment
@@ -29,7 +29,7 @@ def main():
         raise FileNotFoundError(f"Base configuration file not found: {config_path}")
 
     with open(config_path, 'r') as f:
-        base_config = yaml.safe_load(f)
+        base_config = yaml_load(f)
 
     # --- Parameter Ranges (same as before) ---
     param_ranges = {

@@ -208,7 +208,8 @@ short reason. The engine records the label in ``provenance.fidelity`` and
 * ``observed`` - outputs come from loaded real data.
 
 The predator-prey default (forward Euler, ``dt = 1``, clamping; the 0.1.0
-behaviour) is labelled ``audit``. ``integrator: rk4`` with ``dt <= 0.04`` is
+behaviour) and the oscillator with ``integrator: euler`` (which gains energy)
+are labelled ``audit``. ``integrator: rk4`` with ``dt <= 0.04`` is
 ``reference``. Models set ``fidelity_level`` / ``fidelity_note`` or override
 ``fidelity(config)``.
 
@@ -217,7 +218,11 @@ behaviour) is labelled ``audit``. ``integrator: rk4`` with ``dt <= 0.04`` is
 Multimodal Run Bundles
 ======================
 
-With ``bundle: true`` (or a ``bundle:`` mapping) each run writes ``bundle/``:
+With ``bundle: true`` (or a ``bundle:`` mapping) each run writes ``bundle/``.
+Models that describe a diagram (``figure_elements()``) get a geometric drawing
+from ``elements.csv`` instead of a chart, and may add exact questions
+(``questions()``). Public question files carry a ``tolerance_rule``; the numeric
+tolerance is private because it is derived from the answer or the data.
 
 * ``figure.png`` (or svg/pdf), rendered by executing ``plot_figure.py``, which
   reads ``table.csv``. Code, data and image therefore always agree, and the
@@ -244,6 +249,83 @@ With ``bundle: true`` (or a ``bundle:`` mapping) each run writes ``bundle/``:
 then become inference tasks. :func:`simulator.doe.run_design` collects the
 questions of all runs into ``questions.jsonl`` (public) and ``qa.jsonl``
 (private).
+
+.. _units:
+
+Physical Units
+==============
+
+With ``pip install "scientific-data-simulator[units]"`` (pint), a model can
+declare the units it computes in::
+
+    class OscillatorExperiment(ExperimentLogic):
+        parameter_units = {"mass": "kg", "stiffness": "N/m", "x0": "m", "dt": "s"}
+
+Config values may then carry any compatible units (``stiffness: "2 kN/m"`` or
+``x0: {value: 5, units: cm}``). They are converted before the model runs; the
+stored config keeps what was written, and ``ground_truth.parameter_units``
+records the units of the exported parameters. Output units are parsed and
+reported in ``provenance.units``. Unknown units and traps are logged, or raise
+with ``unit_check: error``: pint reads ``units`` as *micronit* and ``au`` as
+*astronomical unit*. Simulator units: ``individual``, ``step``, ``index``,
+``arbitrary_unit`` and ``time_unit`` (a model time without physical scale).
+
+.. _exports:
+
+Exporting Data and Tasks
+========================
+
+* :mod:`simulator.export.tasks` - bundle questions as tasks with prompts, figure
+  paths and answer formats; ``score(task, response)`` accepts free text.
+* :mod:`simulator.export.huggingface` - ``export_huggingface(source, out, name)``
+  writes a dataset folder: dataset card, ``croissant.json`` (Croissant 1.0),
+  ``data/runs.parquet``, ``data/questions.parquet`` with embedded figures. Ground
+  truth, answers and tolerances are withheld unless requested.
+* :mod:`simulator.export.sbi` - ``generate_training_data(config, prior, n, seed)``
+  gives ``theta``/``x`` arrays (and files); ``BatchSimulator`` is a seeded
+  ``theta -> x`` simulator; ``to_sbi_prior`` builds an ``sbi`` ``BoxUniform``.
+* :mod:`simulator.export.rl` - ``export_openenv(spec, out)`` writes an OpenEnv
+  package serving an interactive environment; ``export_verifiers_qa(tasks, out)``
+  writes a verifiers taskset. Install openenv and verifiers in separate
+  environments (their current releases pin incompatible ``mcp`` versions).
+
+.. _environments:
+
+Interactive Environments
+========================
+
+:class:`simulator.envs.ExperimentEnv` turns any model into a discovery task.
+Hidden parameters are drawn per episode from priors. The agent sets the
+controlled inputs of up to ``budget`` experiments, receives the noisy
+observations, and answers. A numeric target is correct within ``tolerance``
+(relative); a categorical target such as a functional form must match. The
+interface follows Gymnasium (``reset(seed)``, ``step(action)``, ``state``), and
+episodes are reproducible from their seed. See
+``examples/example_9_discovery_env``.
+
+.. _checker:
+
+Model Checker and LLM-Drafted Models
+====================================
+
+:func:`simulator.checker.check_model` (or ``python -m simulator.checker
+module.Class config.yaml``) is the gate for new and generated models:
+
+* a static scan of the source: global random-number use, eval/exec, subprocess,
+  network modules, file deletion;
+* runtime checks: the model runs and its outputs validate; outputs are finite;
+  roles are declared; the same seed reproduces the outputs; the global random
+  state is untouched; the config is not modified; fidelity and units are valid;
+* the observed convergence order when ``dt`` is halved;
+* the drift of quantities from ``invariants(results)``;
+* that every parameter in ``inferable_parameters`` changes the output.
+
+:func:`simulator.checker.check_source` runs the same checks on source code in a
+separate, time-limited process, after the static scan.
+:func:`simulator.llm.draft_model` asks any LLM (wrapped with
+``CallableLLMClient``) for a model, gates it, and retries with the checker's
+findings. Accepted drafts are still ``unverified``: passing the gate never makes
+a model ``reference``.
 
 .. _data_handling:
 
@@ -366,6 +448,30 @@ API Reference
 
 .. automodule:: simulator.bundle
    :members: resolve_bundle_config, build_bundle, generate_questions, check_answer
+
+.. automodule:: simulator.envs
+   :members: ExperimentEnv, ExperimentTaskSpec, render_observation
+
+.. automodule:: simulator.checker
+   :members: check_model, check_source, lint_source, CheckReport
+
+.. automodule:: simulator.llm
+   :members: CallableLLMClient, draft_model, Draft
+
+.. automodule:: simulator.units
+   :members: check_units, convert_parameters, parse_units
+
+.. automodule:: simulator.export.tasks
+   :members: collect_bundle_tasks, write_tasks_jsonl, score
+
+.. automodule:: simulator.export.huggingface
+   :members: export_huggingface, write_croissant
+
+.. automodule:: simulator.export.sbi
+   :members: BatchSimulator, generate_training_data, training_data_from_runs, to_sbi_prior
+
+.. automodule:: simulator.export.rl
+   :members: export_openenv, export_verifiers_qa, verifiers_openenv_taskset_config
 
 .. automodule:: simulator.doe
    :members: create_doe_table, add_replicates_and_seeds, run_design, DesignRun, run_parameter_sweep, append_results_to_doe_table

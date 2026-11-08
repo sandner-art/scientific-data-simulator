@@ -42,6 +42,10 @@ class ExperimentLogic(ABC):
         """
         return {"level": self.fidelity_level, "note": self.fidelity_note}
 
+    # Optional: ``def invariants(self, results) -> Dict[str, array]`` returning
+    # quantities that must stay constant (energy, Lotka-Volterra V, ...); the
+    # model checker (simulator.checker) measures their drift.
+
     def mechanism_graph(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Optional causal/interaction graph of the mechanism, in node-link form::
 

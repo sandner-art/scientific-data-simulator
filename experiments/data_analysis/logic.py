@@ -43,23 +43,23 @@ class DataAnalysisExperiment(ExperimentLogic):
             },
             "value": { # Return values
                 "data": value_data,
-                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=value_data.shape, units="measurement", group="time_series", plot_type='line', x_axis='time', role="observation")
+                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=value_data.shape, units=self.config.get("value_units"), group="time_series", plot_type='line', x_axis='time', role="observation")
             },
             "mean": {
                 "data": mean_value,
-                "descriptor": DataDescriptor("mean", DataType.FLOAT, units="measurement", group="summary", role="auxiliary")
+                "descriptor": DataDescriptor("mean", DataType.FLOAT, units=self.config.get("value_units"), group="summary", role="auxiliary")
             },
             "std": {
                 "data": std_value,
-                "descriptor": DataDescriptor("std", DataType.FLOAT, units="measurement", group="summary", role="auxiliary")
+                "descriptor": DataDescriptor("std", DataType.FLOAT, units=self.config.get("value_units"), group="summary", role="auxiliary")
             },
             "max": {
                 "data": max_value,
-                "descriptor": DataDescriptor("max", DataType.FLOAT, units="measurement", group="summary", role="auxiliary")
+                "descriptor": DataDescriptor("max", DataType.FLOAT, units=self.config.get("value_units"), group="summary", role="auxiliary")
             },
             "min": {
                 "data": min_value,
-                "descriptor": DataDescriptor("min", DataType.FLOAT, units="measurement", group="summary", role="auxiliary")
+                "descriptor": DataDescriptor("min", DataType.FLOAT, units=self.config.get("value_units"), group="summary", role="auxiliary")
             },
             # Return also loaded data
             "loaded_data": {

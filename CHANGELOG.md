@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+### Added
+- **Exporters** (`simulator/export/`):
+  - `tasks`: bundle questions as scored tasks (`collect_bundle_tasks`, `write_tasks_jsonl`, `score` with free-text parsing).
+  - `huggingface`: dataset folder with a dataset card and Croissant 1.0 metadata (`export_huggingface`, `write_croissant`).
+    - Validated with mlcroissant and loaded with `datasets`.
+    - Figures are embedded as images; the export is byte-reproducible.
+    - Ground truth, answers and tolerances are withheld by default.
+  - `sbi`: `BatchSimulator` (theta -> x with recorded seeds), `generate_training_data` and `training_data_from_runs` for simulation-based inference.
+  - `rl`: `export_openenv` writes an OpenEnv 0.12 package that passes `openenv validate`; `export_verifiers_qa` writes a verifiers v1 taskset; `verifiers_openenv_taskset_config` covers multi-turn training.
+- **`simulator.envs.ExperimentEnv`**: an interactive environment. An agent runs noisy experiments on a system with hidden parameters within a budget, then reports a numeric or categorical answer that is scored automatically.
+- **`simulator.engine.simulate()`**: in-memory runs, with the same seeding, law shift and observation as the engine but no files written.
+- **Physical units** (`simulator/units.py`, optional pint):
+  - `parameter_units` on models; unit-bearing config values (`"2 kN/m"`) are converted to the model's declared units.
+  - Output unit checks, with known traps flagged (`units` parses as micronit, `au` as astronomical unit).
+  - `unit_check: warn | error | off`.
+- **Model checker** (`simulator/checker.py`, also `python -m simulator.checker`):
+  - a static scan of the source;
+  - runtime checks: determinism, global random-state isolation, config isolation, finite outputs, roles, fidelity, units, convergence order under halving of `dt`, invariant drift, dead parameters;
+  - `check_source` checks code in a separate, time-limited process.
+- **LLM drafting** (`simulator/llm.py`): `draft_model` asks any LLM through `CallableLLMClient`, gates the answer with the checker and retries with its findings. Rejected drafts cannot be saved.
+- **Models:**
+  - `OscillatorExperiment`: damped / Duffing oscillator in SI units; closed form or DOP853 as `reference`, explicit Euler as a documented `audit` model.
+  - `TriangleExperiment`: exact triangle constructions with diagram bundles and geometry questions.
+- **Bundles:**
+  - diagram figures from `figure_elements()`, drawn by a shipped script from `elements.csv`;
+  - model-specific exact questions from `questions()`;
+  - a `tolerance_rule` on every question; a `bundle` random stream.
+- **Model hooks:** `invariants(results)`, `parameter_units`, `figure_elements()`, `figure_caption()`, `questions()`.
+- **Examples:** `example_8_geometry_benchmark` (geometry benchmark with Hugging Face export) and `example_9_discovery_env` (interactive environment with a scripted baseline).
+- **Extras:** `units`, `huggingface`, `validate`, `openenv`, `verifiers`. `static-plots` and `dev` require plotly >= 6.1.1, which silences the kaleido 'engine' deprecation warnings.
+
+### Changed
+- Public question files no longer contain the numeric `tolerance`. It is derived from the answer (5 % of a parameter) or from the data (3 % of a series' range), so it leaked them; it is now private like the answer.
+- Unit labels of bundled models are now valid pint units: `units` -> `dimensionless`, `arbitrary` -> `arbitrary_unit`, Lotka-Volterra time -> `time_unit`, and the linear function's units are configurable via `x_units`/`y_units`.
+- The engine's model execution is factored into `prepare_config`, `_execute_model`, `validate_results` and `resolve_experiment_type`, shared by `run_config` and `simulate`.
+
 ## 0.2.0 (unreleased)
 
 The aim of this release is to make the generated data trustworthy as reference data. Every result can now be reproduced from a recorded seed, the measurement process is explicit and recorded, ground truth is stored separately from observations, and the bundled models are numerically verified.

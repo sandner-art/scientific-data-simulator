@@ -13,7 +13,9 @@ Configuration::
       targets: [prey_population, predator_population]  # default: outputs with role "latent"
       sampling: {every: 5}            # or {n: 20, method: random|uniform}, or {indices: [...]}
       operators:                      # applied in order
-        - {type: gaussian, snr_db: 20}          # or sigma: 2.0
+        - {type: gaussian, snr_db: 20}          # or sigma: 2.0; snr_db uses the RMS of the whole
+                                                # series (one noise level), so prefer multiplicative
+                                                # noise for series spanning orders of magnitude
         - {type: multiplicative, sigma: 0.05}   # log-normal factor
         - {type: poisson, scale: 1.0}           # counts; scale = counts per unit
         - {type: quantize, step: 1.0}

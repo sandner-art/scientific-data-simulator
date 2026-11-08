@@ -25,6 +25,18 @@ FUNCTIONAL_RESPONSES = ("linear", "holling2")
 
 class PredatorPreyExperiment(ExperimentLogic):
     inferable_parameters = ("prey_growth_rate", "prey_death_rate", "predator_growth_rate", "predator_death_rate")
+    # Model time has no physical scale ("time_unit"); rates are per time unit.
+    parameter_units = {
+        "prey_growth_rate": "1/time_unit",
+        "prey_death_rate": "1/(individual*time_unit)",
+        "predator_growth_rate": "1/(individual*time_unit)",
+        "predator_death_rate": "1/time_unit",
+        "initial_prey": "individual",
+        "initial_predators": "individual",
+        "prey_carrying_capacity": "individual",
+        "handling_time": "time_unit",
+        "dt": "time_unit",
+    }
 
     def __init__(self, config):
         self.n_steps = config['n_steps']
@@ -73,6 +85,19 @@ class PredatorPreyExperiment(ExperimentLogic):
         if self.clamp_negative:
             note += " Clamping of negative values is enabled (inactive for positive trajectories)."
         return {"level": "reference", "note": note}
+
+    def invariants(self, results):
+        """Conserved quantity of the classical system (linear response, no carrying capacity):
+        V = c x - d ln x + b y - a ln y."""
+        if self.functional_response != 'linear' or self.carrying_capacity is not None:
+            return {}
+        x = np.asarray(results["prey_population"]["data"], dtype=float)
+        y = np.asarray(results["predator_population"]["data"], dtype=float)
+        if np.any(x <= 0) or np.any(y <= 0):
+            return {}
+        a, b = self.prey_growth_rate, self.prey_death_rate
+        c, d = self.predator_growth_rate, self.predator_death_rate
+        return {"lotka_volterra_V": c * x - d * np.log(x) + b * y - a * np.log(y)}
 
     def mechanism_graph(self, config):
         prey, pred = "prey_population", "predator_population"
@@ -147,7 +172,7 @@ class PredatorPreyExperiment(ExperimentLogic):
 
     def get_results(self):
         n = len(self._time_points)
-        time_units = "steps" if self.dt == 1.0 else "a.u."
+        time_units = "time_unit"
         return {
             "time": {
                 "data": np.array(self._time_points),

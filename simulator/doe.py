@@ -23,6 +23,7 @@ import pandas as pd
 
 from .base import ExperimentLogic
 from .config import apply_overrides, get_by_path, set_by_path, to_python as _to_python  # noqa: F401 (re-exported)
+from .bundle import public_question
 from .engine import SimulatorEngine
 from .rng import derive_seeds, new_seed, validate_seed
 
@@ -294,7 +295,7 @@ def _write_question_index(output_dir: str, table: pd.DataFrame, outcomes: List[D
             base = {"experiment_id": outcome["experiment_id"], "design_point": row.get("design_point"),
                     "replicate": row.get("replicate"), "figure": figure}
             private_lines.append({**base, **item})
-            public_lines.append({**base, **{k: v for k, v in item.items() if k != "answer"}})
+            public_lines.append({**base, **public_question(item)})
     if not private_lines:
         return
     for name, lines in (("questions.jsonl", public_lines), ("qa.jsonl", private_lines)):
