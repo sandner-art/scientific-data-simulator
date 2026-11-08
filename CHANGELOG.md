@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+### Added
+- **`simulator.ai`**: language models in defined roles through one logged, replayable client. Answers always come from the simulator.
+  - `LoggedClient` writes one JSON line per call (role, model, settings, prompt, output, hashes, latency). `ReplayClient` regenerates results from a log without the model. `llm_provenance` / `write_llm_provenance` summarise model use for a release, without prompt text. `roles_of` shows which models played which roles.
+  - `LLMAgent`: a model playing an `ExperimentEnv`. The prompt is rebuilt from the episode each turn, so episodes replay exactly. The remaining budget, which counts failed experiments, is stated each turn, and the agent is told to answer when none is left. The last valid JSON action in a reply is used. Replies that cannot be parsed get a correction round, then an answer that scores as invalid.
+  - `llm_attack`: the model answers a release's questions from its evidence-free view (`evidence_free_view` / `build_view`). The view has no figures, figure scripts, measurement columns, data tables, answer keys or files a bundle marks private. Accuracy per template is tested against the blind baseline, chance and a 0.5/n floor (binomial, Bonferroni). The verdict is PASS, FLAGGED (answerable without the evidence: inspect) or INCONCLUSIVE (too few answers, or a truncated view). Replies are accepted as an id-to-answer mapping or a list of records.
+  - `paraphrase_tasks`: model-rephrased questions, accepted only if they keep the numbers (in order, no number words added), keep the answer options (in order, without emphasis), add no answer from the dataset vocabulary and no negation, and fit in one line. The question must occur exactly once in the prompt. Rejections are reported by reason (`check_rewrite`, `answer_vocabulary`). Synonyms and subtle changes of meaning are not caught, so review a sample.
+  - `solve_tasks`: a model answering bundle questions as text; replies are scored by `simulator.export.tasks.score`.
+- Example 12: attacker, writer and agent on the law-discovery suite, with provenance and replay; runs offline with a scripted stand-in or with `--model module:function --model-name ...`.
+
 ## 0.5.0 (unreleased)
 
 ### Added

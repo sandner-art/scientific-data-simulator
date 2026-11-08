@@ -362,6 +362,26 @@ and agents (see ``examples/example_11_testbed``):
   (:func:`experiments.law_discovery.logic.textbook_counterpart`), evaluated only where
   the alternative differs from the truth by more than the tolerance.
 
+Language Models in Roles
+------------------------
+
+:mod:`simulator.ai` connects any ``prompt -> text`` function to the simulator in four roles,
+always through :class:`~simulator.ai.clients.LoggedClient`:
+
+* agent - :class:`~simulator.ai.agent.LLMAgent` plays an ``ExperimentEnv``; pair it with
+  :func:`~simulator.diagnostics.episodes.run_episodes` and ``diagnose_episode``;
+* attacker - :func:`~simulator.ai.attacker.llm_attack` answers a release's questions with
+  the evidence removed and is tested against the blind baseline;
+* writer - :func:`~simulator.ai.writer.paraphrase_tasks` rephrases questions; a rewrite is
+  kept only if it has the same numbers, names every option and introduces no answer;
+* solver - :func:`~simulator.ai.solver.solve_tasks` answers bundle questions as text.
+
+Each call is logged (role, model, settings, prompt, output). A
+:class:`~simulator.ai.clients.ReplayClient` answers the same prompts from the log, so a
+dataset or evaluation that used a model can be regenerated without it, and
+:func:`~simulator.ai.clients.llm_provenance` summarises model use for a release. A model
+never supplies an answer: ground truth comes from the simulator.
+
 Law Discovery
 -------------
 
