@@ -318,7 +318,7 @@ def _split_design(run: _Run) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------- tables
-def _runs_rows(runs: List[_Run], include_ground_truth: bool, include_seeds: bool
+def _runs_rows(runs: List[_Run], include_ground_truth: bool, include_seeds: bool, hide_design: bool = False
                ) -> Tuple[List[str], Dict[str, List[Any]], Dict[str, str]]:
     fixed: Dict[str, List[Any]] = {k: [] for k in (
         "experiment_id", "design_point", "replicate", "seed", "model", "fidelity",
@@ -338,6 +338,8 @@ def _runs_rows(runs: List[_Run], include_ground_truth: bool, include_seeds: bool
     }
     if not include_seeds:
         del fixed["seed"]
+    if hide_design:
+        del fixed["design_point"]
     if not include_ground_truth:
         # The hash covers the hidden parameters; for grid designs it can be brute-forced.
         del fixed["config_sha256"]
@@ -860,6 +862,12 @@ def export_huggingface(source: Source, output_dir: str, name: str, license: str 
     """
     _require_pyarrow()
     runs = _load_runs(source)
+    # When design columns are withheld, the design-point index and the run order (execution
+    # order follows the design table) would map runs back to the withheld conditions of a
+    # public or regenerable design: drop the index and order runs by their random ids.
+    hide_design = not include_ground_truth and any(_split_design(run)[1] for run in runs)
+    if hide_design:
+        runs = sorted(runs, key=lambda run: run.experiment_id)
     output_dir = os.path.abspath(output_dir)
     if os.path.isdir(output_dir):
         existing = [p for p in MANAGED_PATHS if os.path.exists(os.path.join(output_dir, p))]
@@ -876,7 +884,7 @@ def export_huggingface(source: Source, output_dir: str, name: str, license: str 
         f"Simulated scientific reference data from {', '.join(summary['models']) or 'a simulation model'}: "
         "noisy, sampled observations of known mechanisms, generated reproducibly by Scientific Data Simulator.")
 
-    run_names, run_columns, run_desc = _runs_rows(runs, include_ground_truth, include_seeds)
+    run_names, run_columns, run_desc = _runs_rows(runs, include_ground_truth, include_seeds, hide_design)
     pa, _ = _require_pyarrow()
     run_types = {"design_point": pa.int64(), "replicate": pa.int64(), "seed": pa.int64()}
     for key in ("model", "fidelity", "simulator_version", "config_sha256", "observation_model"):

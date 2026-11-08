@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scientific-data-simulator"
-version = "0.3.0.dev0"
+version = "0.4.0.dev0"
 description = "Reproducible, provenance-first generation of simulated scientific reference data."
 readme = "README.md"
 license = "Apache-2.0"
@@ -39,6 +39,7 @@ parquet = ["pyarrow>=12"]
 huggingface = ["pyarrow>=12"]
 # Single-file HDF5 storage of array outputs.
 hdf5 = ["h5py>=3.8"]
+the-well = ["h5py>=3.8", "pyyaml>=5.4"]
 # Physical units (unit-bearing parameters, unit checks of outputs).
 units = ["pint>=0.24"]
 # Validate exported datasets (Croissant metadata, loading with datasets).

@@ -210,7 +210,17 @@ short reason. The engine records the label in ``provenance.fidelity`` and
 The predator-prey default (forward Euler, ``dt = 1``, clamping; the 0.1.0
 behaviour) and the oscillator with ``integrator: euler`` (which gains energy)
 are labelled ``audit``. ``integrator: rk4`` with ``dt <= 0.04`` is
-``reference``. Models set ``fidelity_level`` / ``fidelity_note`` or override
+``reference``. Further ``audit`` models, each with a pinning test that keeps the
+flaw present and of the documented size:
+
+* pendulum, ``approximation: small_angle`` - exact solution of the linearised
+  equation, a model-form error (period 7 % short at 60 degrees, 15 % at 90);
+* random walk, ``generator: randu`` - the RANDU generator, whose consecutive
+  triples lie on 15 planes; the raw uniforms are stored for diagnostics;
+* heat equation, ``integrator: ftcs`` - explicit finite differences, unstable
+  above the stability limit (the fidelity note says so).
+
+Models set ``fidelity_level`` / ``fidelity_note`` or override
 ``fidelity(config)``.
 
 .. _bundles:
@@ -288,6 +298,51 @@ Exporting Data and Tasks
   package serving an interactive environment; ``export_verifiers_qa(tasks, out)``
   writes a verifiers taskset. Install openenv and verifiers in separate
   environments (their current releases pin incompatible ``mcp`` versions).
+* :mod:`simulator.export.the_well` - ``export_the_well(source, out, dataset_name)``
+  writes PDE fields as HDF5 in the schema of The Well, with ``stats.yaml``;
+  load the result with ``the_well.data.WellDataset(path=out)``.
+
+Leak audit
+----------
+
+:func:`simulator.audit.audit_export` attacks a public export with the private
+runs as the answer key and reports what it recovers:
+
+* ``private_field`` - answers, numeric tolerances or ground truth in public records;
+* ``seed_replay`` - published run seeds (with the open simulator, a seed
+  regenerates the run and its answers);
+* ``config_hash`` - published configuration hashes (enumerable designs can be
+  brute-forced);
+* ``tolerance_inversion`` - numeric tolerances that are a fixed fraction of the
+  answer;
+* ``answer_lookup`` - non-trivial answers that appear verbatim among public
+  numbers or text (e.g. an exact table next to a figure question); values on
+  the public coordinate grid are not counted;
+* ``latent_exposure`` - hidden (noise-free) arrays found among public numbers
+  (arrays quoted in the public questions, such as given coordinates, are exempt;
+  ``ignore=[...]`` exempts others);
+* ``design_point`` (medium) - public design-point indices, which map runs to the
+  conditions of a public or regenerable design table;
+* ``unreadable`` / ``nothing_scanned`` - a supported file that cannot be parsed,
+  or no file read at all: neither can be cleared, so both fail the audit.
+
+``python -m simulator.audit PUBLIC --private RUNS`` exits with status 1 on a
+high-severity finding. :func:`simulator.audit.audit_environment` checks that an
+interactive environment's public observations and state reveal neither the
+episode seed nor the hidden truth. Passing the audit is necessary, not
+sufficient: it covers the known shortcut kinds only.
+
+Law Discovery
+-------------
+
+:class:`experiments.law_discovery.logic.HiddenLawExperiment` hides a law
+``y = f(x)`` from nine families; ``counterfactual: true`` moves structural
+constants (exponents, Hill coefficient) off their textbook values. Formula
+answers (``answer_type: expression``) are parsed safely by
+:mod:`simulator.expressions` (AST whitelist, no ``eval``) and scored by relative
+RMS error on the data domain, so any equivalent form is accepted.
+``law_suite_design()`` builds a benchmark design; see
+``examples/example_10_law_discovery``.
 
 .. _environments:
 
@@ -300,8 +355,10 @@ controlled inputs of up to ``budget`` experiments, receives the noisy
 observations, and answers. A numeric target is correct within ``tolerance``
 (relative); a categorical target such as a functional form must match. The
 interface follows Gymnasium (``reset(seed)``, ``step(action)``, ``state``), and
-episodes are reproducible from their seed. See
-``examples/example_9_discovery_env``.
+episodes are reproducible from their seed. With ``target_type: expression``
+the target is a label output (e.g. ``law_expression``) answered with a formula
+and scored on ``domain``. See ``examples/example_9_discovery_env`` and
+``examples/example_10_law_discovery``.
 
 .. _checker:
 

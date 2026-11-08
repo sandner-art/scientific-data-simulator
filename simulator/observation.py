@@ -196,9 +196,14 @@ def apply_observation(results: Dict[str, Dict[str, Any]], obs: Dict[str, Any],
     suffix = obs.get("suffix", "_observed")
     targets = obs.get("targets")
     if targets is None:
-        targets = [name for name, info in results.items() if info["descriptor"].role == Role.LATENT]
+        # Default: every 1-D numeric latent series (fields of higher dimension, e.g.
+        # PDE solutions, need explicit targets and are not supported by the
+        # operators yet).
+        targets = [name for name, info in results.items() if info["descriptor"].role == Role.LATENT
+                   and isinstance(info["data"], np.ndarray) and info["data"].ndim == 1
+                   and np.issubdtype(info["data"].dtype, np.number)]
         if not targets:
-            raise ValueError("observation.targets not given and no output has role 'latent'")
+            raise ValueError("observation.targets not given and no output is a 1-D latent series")
     for name in targets:
         if name not in results:
             raise KeyError(f"observation target '{name}' is not an output of the model")

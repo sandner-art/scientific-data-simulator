@@ -19,7 +19,8 @@ Specification (YAML or dict)::
     controls:                   # the agent sets these per experiment (dotted keys allowed)
       initial_prey: [1, 50]
       initial_predators: [1, 20]
-    target: prey_growth_rate    # what must be reported
+    target: prey_growth_rate    # what must be reported (a hidden parameter, or with
+                                # target_type: expression a formula label such as law_expression)
     budget: 5                   # number of experiments
     tolerance: 0.05             # relative tolerance for numeric targets
     max_points: 60              # observed series are thinned to at most this many points
@@ -59,6 +60,10 @@ class ExperimentTaskSpec:
     max_points: int = 60
     description: str = ""
     measured: Optional[List[str]] = None  # default: all outputs with role "observation"
+    # "auto": numeric/choice from the hidden prior; "expression": a formula scored on
+    # ``domain`` (default: the range of the model's first coordinate output).
+    target_type: str = "auto"
+    domain: Optional[List[float]] = None
 
     @classmethod
     def from_dict(cls, spec: Dict[str, Any]) -> "ExperimentTaskSpec":
@@ -67,7 +72,7 @@ class ExperimentTaskSpec:
         if isinstance(base, str):
             base = load_config(base)
         unknown = set(spec) - {"hidden", "controls", "target", "budget", "tolerance", "max_points",
-                               "description", "measured"}
+                               "description", "measured", "target_type", "domain"}
         if unknown:
             raise ValueError(f"Unknown environment spec keys: {sorted(unknown)}")
         task = cls(base_config=dict(base), **spec)
@@ -77,8 +82,11 @@ class ExperimentTaskSpec:
     def validate(self) -> None:
         if not self.hidden:
             raise ValueError("spec.hidden must name at least one hidden parameter")
-        if self.target not in self.hidden:
-            raise ValueError(f"spec.target '{self.target}' must be one of the hidden parameters")
+        if self.target_type not in ("auto", "expression"):
+            raise ValueError("spec.target_type must be 'auto' or 'expression'")
+        if self.target_type == "auto" and self.target not in self.hidden:
+            raise ValueError(f"spec.target '{self.target}' must be one of the hidden parameters "
+                             "(or a label output with target_type: expression)")
         overlap = set(self.hidden) & set(self.controls)
         if overlap:
             raise ValueError(f"Parameters cannot be both hidden and controlled: {sorted(overlap)}")
@@ -92,12 +100,13 @@ class ExperimentTaskSpec:
             raise ValueError("spec.tolerance must be > 0")
 
     def target_is_categorical(self) -> bool:
-        return isinstance(self.hidden[self.target], dict)
+        return self.target_type == "auto" and isinstance(self.hidden[self.target], dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {"base_config": self.base_config, "hidden": self.hidden, "controls": self.controls,
                 "target": self.target, "budget": self.budget, "tolerance": self.tolerance,
-                "max_points": self.max_points, "description": self.description, "measured": self.measured}
+                "max_points": self.max_points, "description": self.description, "measured": self.measured,
+                "target_type": self.target_type, "domain": self.domain}
 
 
 def _check_range(name: str, spec: Any, allow_choices: bool) -> None:
@@ -144,8 +153,25 @@ class ExperimentEnv:
                 self._truth[name] = prior["choices"][int(rng.integers(len(prior["choices"])))]
             else:
                 self._truth[name] = float(rng.uniform(float(prior[0]), float(prior[1])))
-        self._experiment_seeds = derive_seeds(self._episode_seed, int(self.spec.budget))
+        self._experiment_seeds = derive_seeds(self._episode_seed, int(self.spec.budget) + 1)
         self._history, self._done, self._steps = [], False, 0
+        self._target_truth, self._domain = None, None
+        if self.spec.target_type == "expression":
+            # the target is a label of the mechanism (e.g. the law): read it from a noise-free run
+            config = apply_overrides(self.spec.base_config, self._truth)
+            config.pop("observation", None)
+            config.pop("bundle", None)
+            config["seed"] = self._experiment_seeds[-1]
+            sim = simulate(config)
+            if self.spec.target not in sim.results:
+                raise ValueError(f"target '{self.spec.target}' is not an output of the model")
+            self._target_truth = str(sim.results[self.spec.target]["data"])
+            if self.spec.domain:
+                self._domain = [float(v) for v in self.spec.domain]
+            else:
+                coordinate = next(i for i in sim.results.values()
+                                  if i["descriptor"].role is Role.COORDINATE)["data"]
+                self._domain = [float(np.min(coordinate)), float(np.max(coordinate))]
         return self._task_observation()
 
     def step(self, action: Dict[str, Any]) -> Dict[str, Any]:
@@ -177,12 +203,19 @@ class ExperimentEnv:
     @property
     def truth(self) -> Dict[str, Any]:
         """The hidden values of the current episode (for graders, never for agents)."""
-        return dict(self._truth)
+        truth = dict(self._truth)
+        if self.spec.target_type == "expression" and self._target_truth is not None:
+            truth[self.spec.target] = self._target_truth
+        return truth
 
     # ------------------------------------------------------------------ internals
     def _task_observation(self) -> Dict[str, Any]:
         spec = self.spec
-        if spec.target_is_categorical():
+        if spec.target_type == "expression":
+            goal = (f"Find a formula for the hidden law ('{spec.target}') that reproduces the noise-free "
+                    f"relation on [{self._domain[0]:.4g}, {self._domain[1]:.4g}] within "
+                    f"{spec.tolerance:.0%} relative RMS. Answer with a formula in x, e.g. 2.5*x**1.3.")
+        elif spec.target_is_categorical():
             goal = (f"Determine which of {spec.hidden[spec.target]['choices']} the hidden "
                     f"'{spec.target}' is. Answer with one of these strings.")
         else:
@@ -229,7 +262,16 @@ class ExperimentEnv:
         config = apply_overrides(self.spec.base_config, {**self._truth, **inputs})
         config["seed"] = self._experiment_seeds[index]
         config.pop("bundle", None)
-        sim = simulate(config)
+        try:
+            sim = simulate(config)
+        except ValueError:
+            # The model refused these inputs. The message could name hidden values, and whether a
+            # run fails can depend on them, so the agent learns only that it failed - and pays
+            # for it like for any experiment, or failures would be a free oracle.
+            self._history.append({"inputs": dict(inputs), "seed": config["seed"], "failed": True})
+            return self._result({"error": "experiment failed for these inputs (no data)", "experiment": index + 1,
+                                 "inputs": dict(inputs), "budget_left": int(self.spec.budget) - len(self._history)},
+                                None, False)
         measured = self.spec.measured or [n for n, i in sim.results.items()
                                           if i["descriptor"].role is Role.OBSERVATION]
         data: Dict[str, Any] = {}
@@ -252,6 +294,15 @@ class ExperimentEnv:
 
     def _answer(self, value: Any) -> Dict[str, Any]:
         self._done = True
+        if self.spec.target_type == "expression":
+            from .expressions import compare, ExpressionError
+            try:
+                error = compare(str(value), self._target_truth, tuple(self._domain))["relative_rms"]
+            except ExpressionError as e:
+                error, value = float("inf"), f"{value} (invalid: {e})"
+            correct = error <= float(self.spec.tolerance)
+            info = {"truth": self.truth, "relative_rms_error": error, "correct": correct}
+            return self._result({"answer": value, "correct": correct}, 1.0 if correct else 0.0, True, info)
         truth = self._truth[self.spec.target]
         if self.spec.target_is_categorical():
             correct = str(value).strip().lower() == str(truth).strip().lower()

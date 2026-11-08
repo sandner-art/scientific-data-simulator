@@ -69,13 +69,15 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
   * units.
 
   `simulator.llm.draft_model` asks any LLM for a model, runs the checker in a separate time-limited process, and retries with the findings.
+* **Law discovery** (`experiments.law_discovery`). Hidden laws y = f(x) from nine families (power law, inverse power, exponential decay, logistic, Michaelis–Menten, Hill, damped oscillation, Gaussian peak, Arrhenius), each with a textbook or a *counterfactual* setting of its structural constants (e.g. an inverse-*2.3* law). Formula answers are scored by evaluating them on the data domain (`simulator.expressions`: a safe parser with no `eval`), so any equivalent form counts. A suite design, a classical curve-fitting baseline and an interactive formula-discovery environment come with it (example 10).
+* **Leak audit** (`simulator.audit`). Before publishing, attack your own export: it tries seed replay, config-hash lookup, tolerance inversion, answer lookup in public files and exposure of hidden arrays, using the private runs as the answer key, and reports what would leak. `audit_environment` does the same for interactive environments.
 * **Automatic plots.** matplotlib PNG and interactive Plotly HTML, driven by output descriptors; observed points are drawn over the latent curves. Static SVG/PDF export needs the optional `kaleido` package.
 
 ### Planned
 
-* Law-discovery and symbolic-regression packs (hidden equation forms, counterfactual laws at scale).
-* More geometry: polygons, 3-D and n-dimensional constructions.
-* The Well HDF5 export; more deliberately weak (`audit`) models, each documented with its flaw.
+* Multi-variable and dynamical (ODE) law discovery; symbolic-regression baselines (e.g. PySR) as optional comparisons.
+* 3-D solids beyond the tetrahedron; dihedral angles.
+* Adapters: Mesa (agent-based), Exponax (PDE), FMPy (FMI models), MLflow/DVC tracking.
 
 ## Installation
 
@@ -92,6 +94,7 @@ Python 3.9 or newer is required. Optional extras:
 | `static-plots` | kaleido and plotly ≥ 6.1.1. Static SVG/PDF export also needs Chrome. |
 | `parquet`, `huggingface` | pyarrow |
 | `hdf5` | h5py |
+| `the-well` | h5py and PyYAML, to write The Well HDF5 (loading it needs `the_well` and PyTorch) |
 | `units` | pint |
 | `validate` | mlcroissant and datasets, to check exported datasets |
 | `openenv` | the OpenEnv library (Python ≥ 3.10), to use exported RL packages |
@@ -173,6 +176,14 @@ Not every bundled model is meant to be correct. Some are kept, or will be added,
 
 **Oscillator.** `integrator: euler` is the second deliberately weak model. Explicit Euler adds energy to an undamped oscillator at every step, so its amplitude grows; it is labelled `audit`. The closed-form (`exact`) and DOP853 options are `reference`.
 
+**Pendulum.** `approximation: small_angle` replaces sin θ by θ. The solution is exact, but of the wrong equation: a *model-form* error, not a numerical one. Its period does not depend on amplitude and is 7 % short at 60° and 15 % short at 90°; the fidelity note states the error for the configured amplitude. The nonlinear DOP853 solution is `reference` (period checked against the elliptic-integral formula).
+
+**Random walk.** `generator: randu` draws the coin flips from RANDU, IBM's notorious linear congruential generator, whose consecutive triples lie on 15 planes. Means and variances look normal; the raw uniforms are stored (`uniforms`, auxiliary) so that randomness diagnostics can find the defect.
+
+**Heat equation.** `integrator: ftcs` is explicit finite differences. It is labelled `audit`: first order in time, second in space, and *unstable* above the stability limit (the fidelity note then says so and gives the growth factor). The spectral `exact` solution is `reference`.
+
+All audit models have pinning tests (`tests/test_audit_models.py`, `tests/test_heat_and_the_well.py`) that check the flaw is still there and still the size documented.
+
 A model sets its level with the class attributes `fidelity_level` and `fidelity_note`, or overrides `fidelity(config)` when the level depends on the configuration. The model checker never promotes a model to `reference`: that needs verification tests against independent knowledge.
 
 ## Exporting and using the data
@@ -182,6 +193,8 @@ from simulator.export.tasks import collect_bundle_tasks, write_tasks_jsonl, scor
 from simulator.export.huggingface import export_huggingface
 from simulator.export.sbi import generate_training_data
 from simulator.export.rl import export_openenv, export_verifiers_qa
+from simulator.export.the_well import export_the_well
+from simulator.audit import audit_export
 
 tasks = collect_bundle_tasks("experiments_output/my_design")          # questions from bundles
 write_tasks_jsonl(tasks, "tasks.jsonl")                              # public (no answers)
@@ -191,11 +204,18 @@ export_huggingface("experiments_output/my_design", "hf_dataset", name="my-benchm
 data = generate_training_data(config, {"prey_growth_rate": [0.6, 1.6]}, n=1000, seed=1)  # theta, x
 export_openenv("examples/example_9_discovery_env/env.yaml", "rl/", name="lv_discovery")
 export_verifiers_qa(tasks, "rl/", name="lv_figure_qa")
+export_the_well("experiments_output/heat_design", "well/", dataset_name="sds_heat")  # PDE fields
+
+print(audit_export("hf_dataset", "experiments_output/my_design").summary())  # PASS / FAIL
 ```
 
 Ground truth stays private by default:
 - The Hugging Face export omits latent and label arrays, `ground_truth.json`, run configurations, answers and numeric tolerances.
 - `include_seeds=False` also withholds seeds, since a seed plus the simulator regenerates the data.
+
+Run the leak audit (`audit_export`, or `python -m simulator.audit PUBLIC --private RUNS`) on anything you publish. It reports, per attack, how many hidden answers it recovered: published seeds (seed replay), config hashes, numeric tolerances that are a fixed fraction of the answer, answers that appear in public tables or text (exactly, rounded to 4 or more digits, or as a formula with other spacing), hidden arrays (noise-free curves) found among public numbers, and public design-point indices. It reads JSON/JSONL, CSV, Parquet, NumPy and HDF5 files and text; a file it cannot read is itself a failure, because it cannot be cleared. It exits with status 1 on a high-severity finding, so it can gate a release. It finds the known kinds of shortcut only: passing it is necessary, not sufficient.
+
+The Well export writes HDF5 files in the schema of [The Well](https://github.com/PolymathicAI/the_well) (fields `t0_fields/u`, dimensions, periodic boundary conditions, scalars, `stats.yaml`), loadable with `the_well.data.WellDataset(path=...)`.
 
 The OpenEnv package serves the interactive environment over HTTP/WebSocket and passes `openenv validate`. Use a WebSocket session for multi-step episodes: plain HTTP `/step` calls are stateless. The verifiers taskset scores answers with `score`, and verifiers' `openenv` taskset can drive the OpenEnv package for multi-turn training.
 
@@ -209,7 +229,7 @@ python -m simulator.checker experiments.oscillator.logic.OscillatorExperiment co
 from simulator.llm import CallableLLMClient, draft_model
 draft = draft_model(CallableLLMClient(my_llm_function), "A pendulum with linear drag ...", config)
 if draft.accepted:
-    draft.save("experiments/pendulum/logic.py")      # writes logic_check.md next to it
+    draft.save("experiments/drag_pendulum/logic.py")      # writes logic_check.md next to it
 ```
 
 `my_llm_function(prompt) -> text` wraps any provider SDK; the simulator itself depends on none. Generated code is scanned before it runs, then checked in a separate process with a time limit. Rejected drafts cannot be saved.
@@ -264,11 +284,16 @@ experiments_output/<timestamp>_<experiment_id>/
 | Model | Path | Notes |
 |---|---|---|
 | Sine wave | `experiments.example_experiment.logic.ExampleExperiment` | `reference`: closed form |
-| Random walk | `experiments.example_random_walk.logic.RandomWalkExperiment` | `reference`: seeded; increment statistics tested |
+| Random walk | `experiments.example_random_walk.logic.RandomWalkExperiment` | `reference`: seeded; increment statistics tested. `audit` with `generator: randu`. |
 | Linear function | `experiments.linear_function.logic.LinearFunctionExperiment` | `reference`: closed form |
 | Lotka–Volterra | `experiments.predator_prey.logic.PredatorPreyExperiment` | `reference` with `integrator: rk4`, `dt ≤ 0.04`; `audit` with the 0.1.0 default (forward Euler, dt = 1). Options: `holling2`, logistic prey. |
 | Oscillator | `experiments.oscillator.logic.OscillatorExperiment` | SI units. `reference`: closed form (linear) or DOP853 (Duffing cubic term); `audit` with `integrator: euler`. |
+| Pendulum | `experiments.pendulum.logic.PendulumExperiment` | SI units. `reference`: nonlinear, DOP853; `audit` with `approximation: small_angle`. |
+| Heat equation | `experiments.heat.logic.HeatExperiment` | 1-D/2-D periodic. `reference`: spectral exact solution; `audit` with `integrator: ftcs`. Export to The Well HDF5. |
+| Hidden laws | `experiments.law_discovery.logic.HiddenLawExperiment` | `reference`: closed forms; nine families, textbook or counterfactual constants; formula questions. |
 | Triangle geometry | `experiments.geometry.logic.TriangleExperiment` | `reference`: exact constructions (circumcircle, incircle, centroid, orthocentre, medians, altitudes, Euler line); diagrams and questions in bundles. |
+| Polygons | `experiments.geometry.polygons.PolygonExperiment` | `reference`: regular, convex or simple polygons; area, centroid, angles, convexity, reflex corners. |
+| n-simplex | `experiments.geometry.simplex.SimplexExperiment` | `reference`: simplices in 2–6 dimensions; volume (Cayley–Menger checked), facets, circum- and in-sphere; projected diagrams. |
 | Calibration overlay | `experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment` | overlays observed CSV data (manual calibration); fidelity as for Lotka–Volterra |
 | CSV summary | `experiments.data_analysis.logic.DataAnalysisExperiment` | `observed`: real data, recorded as `synthetic: false` |
 
@@ -278,8 +303,8 @@ experiments_output/<timestamp>_<experiment_id>/
 simulator/        engine.py, base.py, config.py, schema.py, rng.py, observation.py,
                   bundle.py, storage.py, persistence.py, provenance.py, experiment_record.py,
                   doe.py, data_handler.py, visualization.py, utils.py,
-                  envs.py, units.py, checker.py, llm.py,
-                  export/ (tasks, huggingface, sbi, rl)
+                  envs.py, units.py, checker.py, llm.py, expressions.py, audit.py,
+                  export/ (tasks, huggingface, sbi, rl, the_well)
 experiments/      bundled reference models (one package per model)
 examples/         runnable examples (python -m examples.<name>.run_experiment)
 tests/            pytest suite, incl. test_verification.py (numerical verification)

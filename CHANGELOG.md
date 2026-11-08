@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+### Added
+- **Law-discovery pack** (`experiments/law_discovery/`, example 10):
+  - `HiddenLawExperiment`: nine law families (power law, inverse power, exponential decay, logistic, Michaelis–Menten, Hill, damped oscillation, Gaussian peak, Arrhenius) with seeded priors; `counterfactual: true` moves the structural constants (exponents, Hill coefficient) off their textbook values.
+  - Questions: law family (choice), formula (`answer_type: expression`), extrapolation; parameter questions only on request (their wording names the family).
+  - All families share one x range by default (a family-specific range would identify the family).
+  - `law_suite_design()` crosses families, textbook/counterfactual and noise levels, in a shuffled, unrecorded row order unless `seed` is given.
+  - Example 10: a classical baseline (curve fit over all families, AIC selection), the interactive formula-discovery environment, and a Hugging Face export that is leak-audited.
+- **`simulator.expressions`**: a safe formula parser (AST whitelist, no `eval`) that normalises LaTeX, `^`, `y =` and implicit products; `matches()` scores formulas by relative RMS error on a domain, so equivalent forms are accepted.
+- **Expression answers** in bundles, the tasks exporter (`score` extracts formulas from free text) and `ExperimentEnv` (`target_type: expression`, `domain`).
+- **`simulator.audit`**: leak audit of public exports (`audit_export`, `python -m simulator.audit`) and of interactive environments (`audit_environment`). Attacks: published private fields, seed replay, config-hash lookup, tolerance inversion, answer lookup (exact, rounded or re-spaced), exposure of hidden arrays, design-point indices. Reads JSON/JSONL, CSV, Parquet, NumPy and HDF5; unreadable files fail the audit.
+- **Models:**
+  - `HeatExperiment` (1-D/2-D periodic heat equation): spectral exact solution (`reference`) and FTCS (`audit`, with an explicit instability warning above the stability limit).
+  - `PendulumExperiment`: nonlinear pendulum (`reference`, period checked against the elliptic integral) and the small-angle approximation (`audit`, a model-form error).
+  - `PolygonExperiment` (regular, convex, simple polygons) and `SimplexExperiment` (n-simplices in 2–6 dimensions, Cayley–Menger verified, projected diagrams).
+  - Random walk: `generator: randu` (`audit`), the RANDU generator whose triples lie on 15 planes.
+- **`simulator.export.the_well`**: export PDE runs as HDF5 in The Well's schema (checked with `the_well` 1.2.0's `WellDataset`); fractional splits work when every run has its own parameters; `the-well` extra.
+
+### Changed
+- Observation operators without explicit `targets` now apply only to 1-D numeric latent series (fields such as a 2-D temperature map are left alone).
+- `ExperimentEnv`: an experiment the model rejects returns a generic error (the model's message could name hidden values) and uses budget (whether a run fails can depend on hidden values, so failures must not be a free oracle); the episode truth includes label targets.
+- Hugging Face export: when design columns are withheld, `design_point` is dropped and runs are ordered by their random ids (row order and design-point index would map runs back to a public or regenerable design table).
+
 ## 0.3.0 (unreleased)
 
 ### Added

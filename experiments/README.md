@@ -12,6 +12,11 @@ This directory contains the core implementations of different scientific models 
 | `linear_function`           | Generates data points from linear function.                                                       |
 | `data_analysis`       | Loads data from file, performs basic analysis and visualization.                                                  |
 | `predator_prey_calibration`      | Extends the `predator_prey` experiment to include loading and plotting of observed data for calibration purposes.                       |
+| `oscillator`                     | Damped / Duffing oscillator in SI units (closed form or DOP853; explicit Euler as an `audit` model).                                      |
+| `pendulum`                       | Nonlinear pendulum (DOP853); `approximation: small_angle` is an `audit` model with a documented period error.                            |
+| `heat`                           | 1-D/2-D periodic heat equation: spectral exact solution or FTCS (`audit`, unstable above its limit). Exports to The Well HDF5.            |
+| `law_discovery`                  | Hidden laws y = f(x) from nine families, textbook or counterfactual, with formula questions (law-discovery benchmarks).                  |
+| `geometry`                       | Exact geometry with diagrams: triangles (`logic.py`), polygons (`polygons.py`), n-simplices in 2–6 dimensions (`simplex.py`).            |
 
 `predator_prey` supports `integrator: rk4`, `dt`, Holling type II predation and logistic prey (see its README). The default forward-Euler configuration is a deliberately simple teaching/audit model.
 

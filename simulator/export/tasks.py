@@ -27,6 +27,8 @@ PRIVATE_KEYS = PRIVATE_QUESTION_KEYS  # answer and the (answer-derived) numeric 
 _FORMAT = {
     "number": "Respond with a single number.",
     "integer": "Respond with a single integer.",
+    "expression": "Respond with a single formula, e.g. y = 2.5*x**1.3 (use x, numbers, + - * / ** and exp, log, "
+                  "sqrt, sin, cos, tanh).",
 }
 
 
@@ -102,6 +104,8 @@ def collect_bundle_tasks(paths: Union[str, Sequence[str]], relative_to: Optional
                 "tolerance": item.get("tolerance"),
                 "tolerance_rule": item.get("tolerance_rule"),
                 "choices": item.get("choices"),
+                "domain": item.get("domain"),
+                "variable": item.get("variable"),
                 "answerable_from": item.get("answerable_from"),
                 "template": item.get("template"),
                 "experiment_id": manifest["experiment_id"],
@@ -161,6 +165,51 @@ def extract_number(text: str) -> Optional[str]:
     return numbers[-1] if numbers else None
 
 
+def _formula_candidates(line: str):
+    """Pieces of one line that may hold the formula: after the last '=' or ':', then the whole line;
+    each also without a trailing remark in parentheses ("(exponent ~1.5)")."""
+    import re
+    from ..expressions import CONSTANTS, FUNCTIONS
+    pieces = []
+    for sep in ("=", ":"):
+        if sep in line:
+            pieces.append(line.split(sep)[-1])
+    pieces.append(line)
+    out = []
+    for piece in pieces:
+        piece = piece.strip().rstrip(".,;").strip()
+        out.append(piece)
+        m = re.search(r"\(([^()]*)\)\s*$", piece)
+        if m and any(w.lower() not in FUNCTIONS and w not in CONSTANTS
+                     for w in re.findall(r"[A-Za-z]{2,}", m.group(1))):
+            out.append(piece[:m.start()].strip())
+    return out
+
+
+def extract_expression(text: str, variable: str = "x") -> str:
+    """The formula in free text: a \\boxed{} or code span; else, scanning lines from the end,
+    the first piece that parses as a formula in ``variable`` (prose lines are skipped)."""
+    import re
+    from ..expressions import ExpressionError, parse
+    boxed = re.findall(r"\\boxed\{(.*)\}", text)
+    if boxed:
+        return boxed[-1]
+    code = re.findall(r"`([^`]+)`", text)
+    if code:
+        return code[-1]
+    fallback = None
+    for line in reversed([l for l in text.strip().splitlines() if l.strip()]):
+        for piece in _formula_candidates(line):
+            try:
+                tree = parse(piece, (variable,))
+            except ExpressionError:
+                continue
+            if any(getattr(n, "id", None) == variable for n in __import__("ast").walk(tree)):
+                return piece
+            fallback = fallback or piece
+    return fallback or text.strip()
+
+
 def score(task: Dict[str, Any], response: Any) -> float:
     """1.0 if ``response`` answers ``task`` correctly, else 0.0. Free text is
     accepted (see :func:`extract_number`; for choices, the one choice named)."""
@@ -168,6 +217,8 @@ def score(task: Dict[str, Any], response: Any) -> float:
         response = extract_number(response)
         if response is None:
             return 0.0
+    elif task["answer_type"] == "expression" and isinstance(response, str):
+        response = extract_expression(response, task.get("variable") or "x")
     elif task["answer_type"] == "choice" and isinstance(response, str):
         lowered = response.strip().lower()
         matches = [c for c in task.get("choices") or [] if c.lower() in lowered]

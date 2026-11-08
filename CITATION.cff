@@ -5,7 +5,7 @@ authors:
     given-names: "Daniel"
     orcid: "https://orcid.org/0000-0002-1041-814X"
 title: "Scientific Data Simulator: A Modular Concept for Reproducible Experiment Design and Synthetic Data Generation"
-version: 0.3.0.dev0
+version: 0.4.0.dev0
 license: Apache-2.0
 date-released: 2025-03-16
 url: "https://github.com/sandner-art/scientific-data-simulator"

@@ -502,7 +502,9 @@ def generate_questions(results, plotted: List[Dict[str, Any]], gt: Dict[str, Any
 
 
 def check_answer(item: Dict[str, Any], response: Any) -> bool:
-    """Score a response against a QA item (numeric within tolerance, exact integer, or choice)."""
+    """Score a response against a QA item: numeric within tolerance, exact integer,
+    choice, or expression (same function on the item's domain, see
+    :func:`simulator.expressions.matches`)."""
     kind = item["answer_type"]
     try:
         if kind == "number":
@@ -512,6 +514,10 @@ def check_answer(item: Dict[str, Any], response: Any) -> bool:
             return int(response) == int(item["answer"])
         if kind == "choice":
             return str(response).strip().lower() == str(item["answer"]).strip().lower()
+        if kind == "expression":
+            from .expressions import matches
+            return matches(str(response), str(item["answer"]), tuple(item["domain"]),
+                           item.get("variable", "x"), rtol=float(item.get("tolerance") or 0.01))
     except (TypeError, ValueError):
         return False
     raise ValueError(f"Unknown answer_type {kind!r}")
@@ -573,7 +579,8 @@ def build_bundle(experiment_dir: str, record, results: Dict[str, Dict[str, Any]]
         if callable(model_questions):
             for item in model_questions(results, rng) or []:
                 missing = {"question", "answer", "answer_type"} - set(item)
-                if missing or item["answer_type"] not in ("number", "integer", "choice"):
+                if missing or item["answer_type"] not in ("number", "integer", "choice", "expression") \
+                        or (item["answer_type"] == "expression" and "domain" not in item):
                     raise ValueError(f"{model_name}.questions() returned an invalid item: {item}")
                 item = dict(item)
                 item.setdefault("template", "model")
