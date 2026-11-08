@@ -33,53 +33,7 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
 
     for group_name, data_list in grouped_data.items():
         if group_name == "time_series":
-            first_data_info = data_list[0]
-            first_descriptor = first_data_info['descriptor']
-            # Determine x_axis_name: correctly.
-            x_axis_name =  first_descriptor.x_axis if first_descriptor.x_axis else 'time'
-            if x_axis_name not in results:
-                print(f"Warning: X-axis data '{x_axis_name}' not found. Skipping time series plot for {group_name}.")
-                continue
-
-            x_axis_data = results[x_axis_name]['data']
-            x_axis_descriptor = results[x_axis_name]['descriptor']
-            # --- Matplotlib ---
-            plt.figure()
-            for data_info in data_list:
-                descriptor = data_info['descriptor']
-                if descriptor.plot_type == "line" and descriptor.group == "time_series":
-                    data = data_info['data']
-                    plt.plot(x_axis_data, data, label=descriptor.name)
-
-            plt.xlabel(x_axis_descriptor.units if x_axis_descriptor.units else x_axis_name)
-            plt.ylabel("Value")  # Generic y-axis label
-            plt.title(f"Time Series Plot ({group_name})")
-            plt.legend()
-            plt.grid(True)
-            plt.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
-            plt.close()
-
-            # --- Plotly ---
-            # Use a DataFrame for easier plotting
-            df = pd.DataFrame()
-            df[x_axis_name] = x_axis_data  # Always include the x-axis
-            for data_info in data_list:
-                descriptor = data_info['descriptor']
-                if descriptor.plot_type == 'line' and descriptor.group == "time_series":
-                    data = data_info['data']
-                    df[descriptor.name] = data
-
-            # Corrected y label
-            fig = px.line(df, x=x_axis_name, y=[col for col in df.columns if col != x_axis_name], # all columns except x
-                            labels={'x': x_axis_descriptor.units if x_axis_descriptor.units else x_axis_name,
-                                    'y': "Value",  # Generic y-axis label
-                                    'variable': 'Series'},
-                            title=f"Time Series Plot ({group_name})")
-            fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
-            if static_format:
-                # Explicitly set mathjax to None when using a static renderer
-                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
-
+            _time_series_plot(results, group_name, data_list, output_dir, static_format)
 
         elif group_name == 'histogram':
             # Matplotlib
@@ -120,6 +74,65 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
     # Add combined plot for Predator-Prey (and similar scenarios)
     if "prey_population" in results and "predator_population" in results:
         _generate_combined_plot(results, output_dir, static_format) # Pass static_format
+
+def _time_series_plot(results, group_name, data_list, output_dir, static_format):
+    """Plot each line/scatter series of the group against its own x axis
+    (``descriptor.x_axis``, default ``time``). Observed series that were
+    sampled at a subset of points carry their own coordinate, so latent and
+    observed series can share one figure."""
+    import plotly.graph_objects as go
+
+    series = []
+    for data_info in data_list:
+        descriptor = data_info['descriptor']
+        if descriptor.plot_type not in ("line", "scatter"):
+            continue
+        x_name = descriptor.x_axis or 'time'
+        if x_name not in results:
+            print(f"Warning: X-axis data '{x_name}' not found for '{descriptor.name}'. Skipping it.")
+            continue
+        series.append((descriptor, results[x_name], data_info['data']))
+    if not series:
+        return
+
+    x_descriptor = series[0][1]['descriptor']
+    x_label = x_descriptor.units if x_descriptor.units else (series[0][0].x_axis or 'time')
+
+    # Observed series share the colour of the latent series they observe.
+    palette = plt.rcParams['axes.prop_cycle'].by_key().get('color', ['C0'])
+    colours, next_colour = {}, 0
+    for descriptor, _, _ in series:
+        base = descriptor.name[:-len("_observed")] if descriptor.name.endswith("_observed") else descriptor.name
+        if base not in colours:
+            colours[base] = palette[next_colour % len(palette)]
+            next_colour += 1
+
+    plt.figure()
+    for descriptor, x_info, data in series:
+        base = descriptor.name[:-len("_observed")] if descriptor.name.endswith("_observed") else descriptor.name
+        if descriptor.plot_type == "scatter":
+            plt.plot(x_info['data'], data, linestyle="none", marker="o", markersize=3,
+                     color=colours[base], alpha=0.8, label=descriptor.name)
+        else:
+            plt.plot(x_info['data'], data, color=colours[base], label=descriptor.name)
+    plt.xlabel(x_label)
+    plt.ylabel("Value")
+    plt.title(f"Time Series Plot ({group_name})")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
+    plt.close()
+
+    fig = go.Figure()
+    for descriptor, x_info, data in series:
+        mode = "markers" if descriptor.plot_type == "scatter" else "lines"
+        fig.add_trace(go.Scatter(x=np.asarray(x_info['data']), y=np.asarray(data), mode=mode, name=descriptor.name))
+    fig.update_layout(title=f"Time Series Plot ({group_name})", xaxis_title=x_label,
+                      yaxis_title="Value", legend_title_text="Series")
+    fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
+    if static_format:
+        fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
+
 
 def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str, static_format: str = "svg"):
     """Generates a combined plot of prey and predator populations."""

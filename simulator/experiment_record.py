@@ -28,6 +28,10 @@ class ExperimentRecord:
         self.system_info: Dict[str, Any] = {}  # add this.
         self.software_versions: Dict[str, str] = {}  # and this.
         self.llm_usage: Dict[str, Any] = {} # LLM usage.
+        self.randomness: Dict[str, Any] = {}  # seed and derived streams (see simulator.rng)
+        self.provenance: Dict[str, Any] = {}  # config hash, code hash, git commit, flags
+        self.ground_truth: Dict[str, Any] = {}  # parameters, law shift, observation model, field roles
+        self.bundle: Dict[str, Any] = {}  # manifest of the multimodal run bundle (see simulator.bundle)
 
     def add_input_data_descriptor(self, name: str, descriptor: DataDescriptor):
         self.input_data_descriptors[name] = descriptor
@@ -50,8 +54,17 @@ class ExperimentRecord:
     def set_llm_usage(self, llm_usage: Dict[str, Any]):
         self.llm_usage = llm_usage
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Serialize the entire record to a dictionary (for saving)."""
+    @property
+    def seed(self) -> Optional[int]:
+        return self.randomness.get("seed")
+
+    def to_dict(self, inline_data: bool = True) -> Dict[str, Any]:
+        """Serialize the record to a JSON-friendly dictionary.
+
+        With ``inline_data=False`` output values are omitted (``"data": None``);
+        :func:`simulator.persistence.save_experiment_record` then stores them in
+        data files and adds a ``storage`` entry per output.
+        """
         # Convert everything to JSON-serializable types
         return {
             "experiment_id": self.experiment_id,
@@ -67,7 +80,7 @@ class ExperimentRecord:
             },
             "output_data": {
                 name: {
-                    "data": _convert_to_serializable(data_info["data"]),  # use convert
+                    "data": _convert_to_serializable(data_info["data"]) if inline_data else None,
                     "descriptor": data_info["descriptor"].to_dict()  # Use a to_dict method
                 } for name, data_info in self.output_data.items()
             },
@@ -75,18 +88,25 @@ class ExperimentRecord:
             "system_info": self.system_info,
             "software_versions": self.software_versions,
             'llm_usage': self.llm_usage,
+            'randomness': self.randomness,
+            'provenance': self.provenance,
+            'ground_truth': self.ground_truth,
+            'bundle': self.bundle,
         }
 
 
-# Add a helper function to convert non-serializable data
 def _convert_to_serializable(data):
+    """Recursively convert numpy/pandas objects to JSON-serializable Python types."""
     if isinstance(data, np.ndarray):
-        return data.tolist()  # Convert NumPy arrays to lists
-    elif isinstance(data, pd.DataFrame):
-        return data.to_dict(orient='records')  # Convert DataFrame to list of dicts, Correct orient specified
-    elif isinstance(data, dict):
+        return data.tolist()
+    if isinstance(data, pd.DataFrame):
+        return data.to_dict(orient='records')
+    if isinstance(data, pd.Series):
+        return data.tolist()
+    if isinstance(data, np.generic):  # numpy scalars (np.int64, np.float64, np.bool_)
+        return data.item()
+    if isinstance(data, dict):
         return {k: _convert_to_serializable(v) for k, v in data.items()}
-    elif isinstance(data, list):
+    if isinstance(data, (list, tuple)):
         return [_convert_to_serializable(item) for item in data]
-    else:
-        return data
+    return data

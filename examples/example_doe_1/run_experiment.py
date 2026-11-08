@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# examples/example_doe_1/run_doe_example.py
+# examples/example_doe_1/run_experiment.py
 
 import os
 import argparse
@@ -89,7 +89,7 @@ def main():
         print("\nResults Table:")
         print(results_table)
 
-    # --- Generate Plots (CORRECTED) ---
+    # --- Generate Plots ---
     if args.plot:
         if args.output_format == 'list':
             for run_data in results:

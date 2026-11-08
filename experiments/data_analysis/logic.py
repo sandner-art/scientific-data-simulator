@@ -6,7 +6,11 @@ import numpy as np
 import pandas as pd
 import os # For the file name
 
-class DataAnalysisExperiment(ExperimentLogic): # Corrected Class name
+class DataAnalysisExperiment(ExperimentLogic):
+    synthetic = False  # summarises loaded data; nothing is simulated
+    fidelity_level = "observed"
+    fidelity_note = "Summary statistics of a loaded CSV file; no model is simulated."
+
     def __init__(self, config):
         self.config = config
         self.data_info = None  # Store loaded data and descriptor here
@@ -35,27 +39,27 @@ class DataAnalysisExperiment(ExperimentLogic): # Corrected Class name
         return {
             "time": { # Return time
                 "data": time_data,
-                "descriptor": DataDescriptor("time", DataType.NDARRAY, shape=time_data.shape, units="seconds", group="time_series")
+                "descriptor": DataDescriptor("time", DataType.NDARRAY, shape=time_data.shape, units="seconds", group="time_series", role="coordinate")
             },
             "value": { # Return values
                 "data": value_data,
-                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=value_data.shape, units="measurement", group="time_series", plot_type='line', x_axis='time')
+                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=value_data.shape, units="measurement", group="time_series", plot_type='line', x_axis='time', role="observation")
             },
             "mean": {
                 "data": mean_value,
-                "descriptor": DataDescriptor("mean", DataType.FLOAT, units="measurement", group="summary")
+                "descriptor": DataDescriptor("mean", DataType.FLOAT, units="measurement", group="summary", role="auxiliary")
             },
             "std": {
                 "data": std_value,
-                "descriptor": DataDescriptor("std", DataType.FLOAT, units="measurement", group="summary")
+                "descriptor": DataDescriptor("std", DataType.FLOAT, units="measurement", group="summary", role="auxiliary")
             },
             "max": {
                 "data": max_value,
-                "descriptor": DataDescriptor("max", DataType.FLOAT, units="measurement", group="summary")
+                "descriptor": DataDescriptor("max", DataType.FLOAT, units="measurement", group="summary", role="auxiliary")
             },
             "min": {
                 "data": min_value,
-                "descriptor": DataDescriptor("min", DataType.FLOAT, units="measurement", group="summary")
+                "descriptor": DataDescriptor("min", DataType.FLOAT, units="measurement", group="summary", role="auxiliary")
             },
             # Return also loaded data
             "loaded_data": {

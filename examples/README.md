@@ -1,6 +1,6 @@
 # Examples
 
-This directory contains example scripts and notebooks that demonstrate how to use the Scientific Data Simulator.
+This directory contains example scripts that demonstrate how to use the Scientific Data Simulator.
 
 ## Available Examples
 
@@ -11,9 +11,11 @@ This directory contains example scripts and notebooks that demonstrate how to us
 | `example_3`    | Simulates a predator-prey population dynamics model (Lotka-Volterra equations).                | `experiments.predator_prey.logic.PredatorPreyExperiment`                             | `python -m examples.example_3.run_experiment`      |
 | `example_4`    | Generates data from a linear function (y = mx + c).                                               | `experiments.linear_function.logic.LinearFunctionExperiment`                        | `python -m examples.example_4.run_experiment`          |
 | `example_5`    | Loads data from a CSV file, performs basic analysis (mean, std, min, max), and generates plots. | `experiments.data_analysis.logic.DataAnalysisExperiment`                           | `python -m examples.example_5.run_experiment`    |
-| `example_6`    | Calibrates the parameters of the Predator-Prey model using observed data loaded from a CSV file. | `experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment` | `python -m examples.example_6.run_experiment`    |
-| `example_notebook` | Interactive example using a Jupyter Notebook.                                                     | (Various)                                                                       | Open `example_notebook.ipynb` in Jupyter Notebook.    |
+| `example_6`    | Overlays observed CSV data on the Predator-Prey model for manual calibration. | `experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment` | `python -m examples.example_6.run_experiment`    |
+| `example_7_reference_dataset` | Reference dataset: RK4 ground truth, sampled noisy observations, SNR × replicate design, optional law shift. | `experiments.predator_prey.logic.PredatorPreyExperiment` | `python -m examples.example_7_reference_dataset.run_experiment` |
+| `example_doe_1` | Full-factorial sweep of the linear function. | `experiments.linear_function.logic.LinearFunctionExperiment` | `python -m examples.example_doe_1.run_experiment --plot` |
+| `parameter_sweep_example` | Full-factorial sweep of the predator-prey model. | `experiments.predator_prey.logic.PredatorPreyExperiment` | `python -m examples.parameter_sweep_example.run_experiment --plot` |
 
-Each example has its own subdirectory containing a `run_experiment.py` script and a `config.yaml` file.
+Each example has its own subdirectory containing a `run_experiment.py` script and a `config.yaml` (or `config_base.yaml`) file.
 
 To run an example, navigate to the project root directory in your terminal and use the command listed in the table above.

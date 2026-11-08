@@ -10,7 +10,6 @@ def main():
                         help="Path to the configuration file.")
     args = parser.parse_args()
 
-    # --- Corrected Path Handling ---
     # If the provided config path is absolute, use it directly.
     if os.path.isabs(args.config):
         config_path = args.config

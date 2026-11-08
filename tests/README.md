@@ -35,6 +35,9 @@ The tests are organized into separate files, each focusing on a specific module 
 *   `test_utils.py`: Tests utility functions and classes (e.g., `DataDescriptor`, `DataType`).
 *   `test_data_handler.py`: Tests data loading and saving functions (e.g., `load_csv`, `load_json`, `load_numpy`, `save_csv`).
 *   `test_visualization.py`: Tests the plotting functions.
+*   `test_verification.py`: Numerical verification of the bundled models (closed forms, convergence orders, conserved quantities, agreement with a high-accuracy SciPy solver). A model's output should only be called reference data once it has such tests.
+*   `test_seeds_and_design.py`, `test_observation_and_ground_truth.py`, `test_storage.py`: seeds and reproducibility, design-of-experiments, observation operators (statistical checks of the realised noise), ground truth, law shifts, checksummed storage.
+*   `test_regressions.py`, `test_doe.py`: regression tests for defects fixed in 0.2.0.
 *   `test_<experiment_name>.py`: Tests for specific `ExperimentLogic` implementations (e.g., `test_example_experiment.py`, `test_predator_prey.py`).  These tests focus on the *scientific logic* of each experiment.
 
 ## Writing Tests

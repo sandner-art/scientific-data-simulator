@@ -31,7 +31,8 @@ def test_data_descriptor_to_dict():
         "units": "seconds",
         "group": "data",
         "plot_type": "scatter",
-        "x_axis": "time"
+        "x_axis": "time",
+        "role": None,
     }
 
 def test_data_type_enum():

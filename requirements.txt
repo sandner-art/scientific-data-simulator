@@ -1,12 +1,19 @@
 # requirements.txt
-numpy
-scipy
-matplotlib
-plotly
-pyyaml
-python-dotenv
-pytest
-packaging
-psutil
-pandas
-kaleido 
+# Runtime dependencies are declared in pyproject.toml; prefer:
+#     pip install -e ".[dev]"
+# This file is kept for environments that install from requirements files.
+numpy>=1.22
+scipy>=1.9
+pandas>=1.5
+pyyaml>=6.0
+python-dotenv>=1.0
+pydantic>=2.0
+psutil>=5.9
+matplotlib>=3.6
+plotly>=5.0
+# optional extras
+kaleido
+pyarrow>=12
+h5py>=3.8
+# development
+pytest>=7

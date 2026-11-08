@@ -3,7 +3,7 @@ import csv
 import json
 import numpy as np
 import pandas as pd
-from .utils import DataDescriptor, DataType
+from .utils import DataDescriptor, DataType, Role
 from typing import Dict, Any, Union, List, Optional
 import os  # Import os
 
@@ -122,34 +122,71 @@ def create_descriptor_from_data(data: Any, name:str, group: str = 'data', plot_t
     else:
         raise TypeError(f"Unsupported data type for descriptor creation: {type(data)}")
 
+def results_to_dataframe(results: Dict[str, Any]) -> pd.DataFrame:
+    """Convert a results dictionary to one tidy DataFrame.
+
+    * 1-D arrays and lists become columns; columns of different lengths are
+      aligned on their index and padded with NaN.
+    * DataFrame results contribute their columns as ``<name>.<column>``.
+    * Scalars (int, float, str, numpy scalars) are broadcast to a constant column.
+    * Higher-dimensional arrays are skipped (store them with the data files).
+    * Sampled observations (see ``observation_index``) are placed on the rows of
+      the points they were sampled at, with NaN elsewhere, so every row refers to
+      a single coordinate value.
+    """
+    columns: Dict[str, pd.Series] = {}
+    scalars: Dict[str, Any] = {}
+    index_info = results.get("observation_index")
+    sampled_rows = None
+    if isinstance(index_info, dict) and isinstance(index_info.get("data"), np.ndarray):
+        sampled_rows = np.asarray(index_info["data"], dtype=int)
+        full_length = max((len(i["data"]) for i in results.values()
+                           if isinstance(i, dict) and isinstance(i.get("data"), np.ndarray)
+                           and i["data"].ndim == 1), default=0)
+
+    def _place(name, values):
+        descriptor = results[name].get("descriptor")
+        role = getattr(descriptor, "role", None)
+        if (sampled_rows is not None and len(values) == len(sampled_rows) and len(values) != full_length
+                and (name == "observation_index" or role in (Role.OBSERVATION, Role.COORDINATE))):
+            spread = np.full(full_length, np.nan)
+            spread[sampled_rows] = values
+            return pd.Series(spread)
+        return pd.Series(values)
+
+    for data_name, data_info in results.items():
+        if not (isinstance(data_info, dict) and 'data' in data_info):
+            continue
+        value = data_info['data']
+        if isinstance(value, pd.DataFrame):
+            for col in value.columns:
+                columns[f"{data_name}.{col}"] = value[col].reset_index(drop=True)
+        elif isinstance(value, np.ndarray) and value.ndim > 1:
+            continue
+        elif isinstance(value, (np.ndarray, list, tuple, pd.Series)):
+            columns[data_name] = _place(data_name, np.asarray(value) if not isinstance(value, pd.Series)
+                                        else value.to_numpy())
+        elif isinstance(value, (int, float, str, np.generic)):
+            scalars[data_name] = value.item() if isinstance(value, np.generic) else value
+    df = pd.concat(columns, axis=1) if columns else pd.DataFrame(index=range(1 if scalars else 0))
+    for name, value in scalars.items():
+        df[name] = value
+    return df
+
+
 def save_csv(data: Union[pd.DataFrame, Dict[str, Any]], file_path: str,
              delimiter: str = ',', index: bool = False) -> None:
     """
-    Saves data to a CSV file.  Handles both DataFrames and results dictionaries.
-
-    Args:
-        data: The data to save (either a Pandas DataFrame or a dictionary of results).
-        file_path: The path to the CSV file to be created.
-        delimiter:  Delimiter to use.
-        index: Add index to output or not.
+    Saves data to a CSV file. Handles both DataFrames and results dictionaries
+    (see :func:`results_to_dataframe` for how results are flattened).
     """
+    if isinstance(data, pd.DataFrame):
+        df = data
+    elif isinstance(data, dict):
+        df = results_to_dataframe(data)
+    else:
+        raise TypeError(f"Unsupported data type for CSV export: {type(data)}")
     try:
-        if isinstance(data, pd.DataFrame):
-            df = data
-        elif isinstance(data, dict):
-            # Convert results dictionary to DataFrame
-            df = pd.DataFrame()
-            for data_name, data_info in data.items():
-                if isinstance(data_info, dict) and 'data' in data_info: # Check if the structure is right
-                    if isinstance(data_info['data'], (np.ndarray, list)):
-                         df[data_name] = pd.Series(data_info['data']) # use pandas series
-                    elif isinstance(data_info['data'], (int, float, str)):
-                        df[data_name] = [data_info['data']] # scalar values to list
-
-        else:
-            raise TypeError(f"Unsupported data type for CSV export: {type(data)}")
         df.to_csv(file_path, sep=delimiter, index=index)
-
-
     except Exception as e:
         raise RuntimeError(f"Error saving data to CSV: {e}") from e

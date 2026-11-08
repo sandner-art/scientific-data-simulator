@@ -13,10 +13,31 @@ This directory contains the core implementations of different scientific models 
 | `data_analysis`       | Loads data from file, performs basic analysis and visualization.                                                  |
 | `predator_prey_calibration`      | Extends the `predator_prey` experiment to include loading and plotting of observed data for calibration purposes.                       |
 
+`predator_prey` supports `integrator: rk4`, `dt`, Holling type II predation and logistic prey (see its README). The default forward-Euler configuration is a deliberately simple teaching/audit model.
+
 Each experiment is defined in a separate subdirectory, containing a `logic.py` file (and potentially other supporting modules).
 
 
-> A step-by-step guide on how to design a new experiment using the structure of the `Scientific Data Simulator`, incorporating all the best practices we are using. This will cover creating the `ExperimentLogic`, configuration, running the experiment, and handling the results.
+## Reference-data checklist
+
+A model whose outputs are meant as reference data should:
+
+1. **Draw randomness only from `self.rng`.** The engine sets this generator from the run's recorded seed. Never use the global `np.random` functions; outside the engine, `self.get_rng(config)` falls back to `config['seed']`.
+2. **Tag every output with a `role`** in its `DataDescriptor`:
+   - `coordinate` for time or x axes;
+   - `latent` for exact model states;
+   - `label` for derived ground truth;
+   - `observation` for measured or loaded data;
+   - `auxiliary` for anything else.
+
+   Observation operators target `latent` outputs by default, and data files are grouped by role.
+3. **Expose its parameters.** The default `ground_truth_parameters(config)` exports the model's config values; override it for derived quantities.
+4. **Set `synthetic = False`** on the class if its outputs come from loaded real data rather than from a model.
+5. **Declare its fidelity**: set `fidelity_level` and `fidelity_note`, or override `fidelity(config)`. Use `reference`, `audit`, `unverified` or `observed`; see the main README. Deliberately weak models must use `audit`, with a note saying *what* is wrong and *why* the model is kept.
+6. **Optionally** list `inferable_parameters` (bundles ask to estimate them) and implement `mechanism_graph(config)` (exported in bundles).
+7. **Be verified** in `tests/test_verification.py` against a closed form, a high-accuracy solver, a convergence order or a conserved quantity, before its outputs are called reference data. Deliberately simplified models are welcome (for example, to audit whether a method detects model error), but document their error and pin it with a test, as done for the default Lotka–Volterra configuration.
+
+The rest of this file is a step-by-step guide to adding a new experiment: the `ExperimentLogic` class, its configuration, an example script, and tests.
 
 # **I. Designing a New Experiment: Step-by-Step**
 
@@ -88,7 +109,8 @@ Each experiment is defined in a separate subdirectory, containing a `logic.py` f
             *   `group`:  A string indicating how the data should be grouped for plotting (e.g., "time_series", "histogram", "spatial_data").
             *   `plot_type`: A hint for the default plot type (e.g., "line", "scatter", "histogram").
             *   `x_axis`: The name of the data item to use for the x-axis (for time series, this is usually "time" or "step").
-    *   **Example (`logic.py`):**  See the examples we've already created (e.g., `experiments/example_experiment/logic.py`, `experiments/predator_prey/logic.py`) for concrete implementations.
+            *   `role`: `coordinate`, `latent`, `label`, `parameter`, `observation` or `auxiliary` (see the checklist above).
+    *   **Example (`logic.py`):**  See the bundled experiments (e.g., `experiments/example_experiment/logic.py`, `experiments/predator_prey/logic.py`) for concrete implementations.
 
 4.  **Create the Configuration File (`config.yaml`):**
 
@@ -174,7 +196,7 @@ Each experiment is defined in a separate subdirectory, containing a `logic.py` f
 
 9. **Add tests:**
 
-    *   Add a `tests/test_<your_experiment_name>.py` file with unit tests for your new `ExperimentLogic` class.
+    *   Add a `tests/test_<your_experiment_name>.py` file with unit tests for your new `ExperimentLogic` class, and verification tests if it is meant as a `reference` model.
 
 10. **Run the Experiment:**
 
@@ -217,11 +239,11 @@ class ConstantValueExperiment(ExperimentLogic):
         return {
             "value": {
                 "data": data,
-                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=data.shape, units="constant", group="time_series", plot_type='line', x_axis='step')
+                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=data.shape, units="constant", group="time_series", plot_type='line', x_axis='step', role="latent")
             },
             "step": {
                 "data": np.arange(self.n_steps),
-                "descriptor": DataDescriptor("step", DataType.NDARRAY, shape=(self.n_steps,), units="step", group="time_series", x_axis='step')
+                "descriptor": DataDescriptor("step", DataType.NDARRAY, shape=(self.n_steps,), units="step", group="time_series", x_axis='step', role="coordinate")
             }
 
         }
@@ -246,11 +268,11 @@ class ConstantValueExperiment(ExperimentLogic):
 4.  **Create the Example Directory:**
 
     ```bash
-    mkdir examples/example_7
-    touch examples/example_7/{run_experiment.py, config.yaml, README.md}
+    mkdir examples/example_constant_value
+    touch examples/example_constant_value/{run_experiment.py, config.yaml, README.md}
     ```
 
-5.  **`examples/example_7/config.yaml`:**
+5.  **`examples/example_constant_value/config.yaml`:**
 
     ```yaml
     experiment_type: experiments.constant_value.logic.ConstantValueExperiment
@@ -260,18 +282,18 @@ class ConstantValueExperiment(ExperimentLogic):
     save_csv: True
     ```
 
-6.  **`examples/example_7/run_experiment.py`:**
+6.  **`examples/example_constant_value/run_experiment.py`:**
 
     ```python
     #!/usr/bin/env python3
-    # examples/example_7/run_experiment.py
+    # examples/example_constant_value/run_experiment.py
     import argparse
     import os
     from simulator.engine import SimulatorEngine
 
     def main():
         parser = argparse.ArgumentParser(description="Run the constant value example.")
-        parser.add_argument("--config", type=str, default="examples/example_7/config.yaml",
+        parser.add_argument("--config", type=str, default="examples/example_constant_value/config.yaml",
                             help="Path to the configuration file.")
         args = parser.parse_args()
 
@@ -292,10 +314,10 @@ class ConstantValueExperiment(ExperimentLogic):
         main()
     ```
 
-7.  **`examples/example_7/README.md`:**
+7.  **`examples/example_constant_value/README.md`:**
 
     ```markdown
-    # Example 7: Constant Value
+    # Example: Constant Value
 
     This example demonstrates generating a constant value over a number of steps.
 
@@ -308,7 +330,7 @@ class ConstantValueExperiment(ExperimentLogic):
     ## Running
 
     ```
-    python -m examples.example_7.run_experiment
+    python -m examples.example_constant_value.run_experiment
     ```
     ```
 
@@ -351,6 +373,6 @@ def test_constant_value_get_results(constant_config):
     assert np.allclose(results['value']['data'], 25.4)
 ```
 
-10. **Run:**  `python -m examples.example_7.run_experiment`
+10. **Run:**  `python -m examples.example_constant_value.run_experiment`
 
 This example, although simple, demonstrates all the key steps involved in creating a new experiment and integrating it into the framework. You can follow this same process for more complex simulations. Remember to focus on clear separation of concerns, good documentation, and thorough testing.

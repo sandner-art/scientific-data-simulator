@@ -1,7 +1,10 @@
 # simulator/config.py
-import yaml
+import copy
 import os
-from typing import Dict, Any
+from typing import Any, Dict, Mapping
+
+import numpy as np
+import yaml
 from dotenv import load_dotenv
 
 def load_config(config_path: str, secrets_path: str = ".env") -> Dict[str, Any]:
@@ -56,3 +59,46 @@ def get_api_key(key_name: str, dotenv_path=".env") -> str:
             f"Please set it using: export {key_name}=YOUR_API_KEY  or in .env file"
         )
     return api_key
+
+# ---------------------------------------------------------------- nested config paths
+def set_by_path(config: Dict[str, Any], path: str, value: Any) -> None:
+    """Set ``config['a']['b'][0]['c'] = value`` for ``path='a.b.0.c'``.
+
+    Missing dictionaries are created; list indices must already exist.
+    """
+    keys = path.split(".")
+    node: Any = config
+    for i, key in enumerate(keys[:-1]):
+        nxt = keys[i + 1]
+        if isinstance(node, list):
+            node = node[int(key)]
+            continue
+        if key not in node or node[key] is None:
+            node[key] = [] if nxt.isdigit() else {}
+        node = node[key]
+    last = keys[-1]
+    if isinstance(node, list):
+        node[int(last)] = value
+    else:
+        node[last] = value
+
+
+def get_by_path(config: Mapping[str, Any], path: str) -> Any:
+    node: Any = config
+    for key in path.split("."):
+        node = node[int(key)] if isinstance(node, list) else node[key]
+    return node
+
+
+def apply_overrides(base_config: Mapping[str, Any], overrides: Mapping[str, Any]) -> Dict[str, Any]:
+    """Deep copy of ``base_config`` with (possibly dotted) ``overrides`` applied."""
+    config = copy.deepcopy(dict(base_config))
+    for key, value in overrides.items():
+        set_by_path(config, key, to_python(value))
+    return config
+
+
+def to_python(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    return value

@@ -6,6 +6,21 @@ import os
 import numpy as np
 import pandas as pd
 
+def _static_export_available():
+    """Static plotly export needs kaleido (and, for kaleido >= 1.0, Chrome)."""
+    try:
+        import plotly.graph_objects as go
+        import plotly.io as pio
+        pio.to_image(go.Figure(), format="png")
+        return True
+    except Exception:
+        return False
+
+
+requires_static_export = pytest.mark.skipif(
+    not _static_export_available(), reason="static plotly export unavailable (kaleido/Chrome)")
+
+
 # Fixture to create dummy results for testing
 @pytest.fixture
 def example_results():
@@ -81,46 +96,60 @@ def example_results_predator_prey():
 def test_generate_plots_time_series(example_results, tmp_path):
     """Test generating time series plots."""
     output_dir = str(tmp_path)
-    generate_plots(example_results, output_dir)
+    generate_plots(example_results, output_dir, static_format=None)
 
     # Check that the expected files were created
     assert os.path.exists(os.path.join(output_dir, "time_series_matplotlib.png"))
     assert os.path.exists(os.path.join(output_dir, "time_series_plotly.html"))
-    assert os.path.exists(os.path.join(output_dir, "time_series_plotly.svg")) # Check for default static plot
+    assert not os.path.exists(os.path.join(output_dir, "time_series_plotly.svg"))
+
+
+@requires_static_export
+def test_generate_plots_default_static_svg(example_results, tmp_path):
+    output_dir = str(tmp_path)
+    generate_plots(example_results, output_dir)
+    assert os.path.exists(os.path.join(output_dir, "time_series_plotly.svg"))  # default static format
 
 def test_generate_plots_histogram(example_results, tmp_path):
     output_dir = str(tmp_path)
-    generate_plots(example_results, output_dir)
+    generate_plots(example_results, output_dir, static_format=None)
 
     assert os.path.exists(os.path.join(output_dir, "histogram_matplotlib.png"))
     assert os.path.exists(os.path.join(output_dir, "histogram_plotly.html"))
 
 def test_generate_plots_no_default_time(example_results_no_time, tmp_path):
     output_dir = str(tmp_path)
-    generate_plots(example_results_no_time, output_dir)
+    generate_plots(example_results_no_time, output_dir, static_format=None)
     assert not os.path.exists(os.path.join(output_dir, "time_series_matplotlib.png"))
     assert not os.path.exists(os.path.join(output_dir, "time_series_plotly.html"))
 
 def test_generate_plots_no_x(example_results_no_time, tmp_path):
     output_dir = str(tmp_path)
-    generate_plots(example_results_no_time, output_dir)
+    generate_plots(example_results_no_time, output_dir, static_format=None)
     assert not os.path.exists(os.path.join(output_dir, "time_series_matplotlib.png"))
     assert not os.path.exists(os.path.join(output_dir, "time_series_plotly.html"))
 
 def test_generate_plots_predator_prey(example_results_predator_prey, tmp_path):
     """Test combined plot generation for predator-prey."""
     output_dir = str(tmp_path)
-    generate_plots(example_results_predator_prey, output_dir)
+    generate_plots(example_results_predator_prey, output_dir, static_format=None)
 
     # Check for combined plot files
     assert os.path.exists(os.path.join(output_dir, "combined_populations_matplotlib.png"))
     assert os.path.exists(os.path.join(output_dir, "combined_populations_plotly.html"))
-    assert os.path.exists(os.path.join(output_dir, "combined_populations_plotly.svg"))
 
     # Check for individual plot files as well, in case of future modifications
     assert os.path.exists(os.path.join(output_dir, "time_series_matplotlib.png"))
     assert os.path.exists(os.path.join(output_dir, "time_series_plotly.html"))
 
+@requires_static_export
+def test_generate_plots_predator_prey_static(example_results_predator_prey, tmp_path):
+    output_dir = str(tmp_path)
+    generate_plots(example_results_predator_prey, output_dir)
+    assert os.path.exists(os.path.join(output_dir, "combined_populations_plotly.svg"))
+
+
+@requires_static_export
 def test_generate_plots_custom_format(example_results, tmp_path):
     output_dir = str(tmp_path)
     generate_plots(example_results, output_dir, static_format='png')

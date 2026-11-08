@@ -4,6 +4,16 @@ from simulator.utils import DataDescriptor, DataType
 import numpy as np
 
 class LinearFunctionExperiment(ExperimentLogic):
+    fidelity_level = "reference"
+    fidelity_note = "Closed form y = m x + c; checked exactly in tests."
+    inferable_parameters = ("m", "c")
+
+    def mechanism_graph(self, config):
+        return {"directed": True,
+                "nodes": [{"id": "x", "kind": "input"}, {"id": "y", "kind": "output"}],
+                "edges": [{"source": "x", "target": "y", "sign": "+" if self.m >= 0 else "-",
+                           "parameter": "m", "value": self.m, "term": "slope"}]}
+
     def __init__(self, config):
         self.n_points = config['n_points']
         self.m = config['m']
@@ -25,10 +35,10 @@ class LinearFunctionExperiment(ExperimentLogic):
         return {
             "x": {
                 "data": x_values,
-                "descriptor": DataDescriptor("x", DataType.NDARRAY, shape=x_values.shape, units="x_units", group="time_series",  x_axis='x')
+                "descriptor": DataDescriptor("x", DataType.NDARRAY, shape=x_values.shape, units="x_units", group="time_series", x_axis='x', role="coordinate")
             },
             "y": {
                 "data": y_values,
-                "descriptor": DataDescriptor("y", DataType.NDARRAY, shape=y_values.shape, units="y_units", group="time_series", plot_type="line", x_axis = 'x')
+                "descriptor": DataDescriptor("y", DataType.NDARRAY, shape=y_values.shape, units="y_units", group="time_series", plot_type="line", x_axis='x', role="latent")
             }
         }

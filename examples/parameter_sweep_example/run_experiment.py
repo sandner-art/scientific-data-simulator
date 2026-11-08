@@ -57,35 +57,23 @@ def main():
     results_table = append_results_to_doe_table(doe_table, results)
     print("Results Table:\n", results_table)
 
-     # --- Example Analysis (Simplified) ---
-    try:
-        mean_final_prey = results_table.groupby(['prey_growth_rate', 'prey_death_rate'])['prey_population_199'].mean()
-        print("\nMean Final Prey Population:\n", mean_final_prey)
-    except KeyError:
-        print("\nMean Final Prey Population: Could not calculate (n_steps too small?).")
+    # --- Example Analysis: final prey population per parameter combination ---
+    final_col = f"prey_population_{base_config['n_steps']}"  # trajectories have n_steps + 1 points
+    mean_final_prey = results_table.groupby(['prey_growth_rate', 'prey_death_rate'])[final_col].mean()
+    print("\nFinal Prey Population:\n", mean_final_prey)
 
-    # --- Plotting (Simplified and Corrected) ---
+    # --- Plotting: one prey trajectory per run, against that run's own time axis ---
     if args.plot:
         plt.figure()
-        for label, row in results_table.iterrows():
-            param_combination = ", ".join(f"{k}={v}" for k, v in row[:2].items())  # First 2 columns
-            # Extract the relevant columns *by name*
-            prey_columns = [col for col in results_table.columns if 'prey_population_' in col]
-            time_columns = [col for col in results_table.columns if 'time_' in col]
-            if len(prey_columns) > 0 and len(time_columns) > 0: # added check
-                # Extract the data as NumPy arrays for plotting
-                time_data = results_table[time_columns].values.flatten()
-                prey_data = row[prey_columns].values.flatten()
-                # Trim arrays to same length, use min_len for slicing
-                min_len = min(len(time_data), len(prey_data))
-                plt.plot(time_data[:min_len], prey_data[:min_len], label=param_combination)
-
+        for run in results:
+            label = ", ".join(f"{k}={v}" for k, v in run['params'].items())
+            plt.plot(run['results']['time']['data'], run['results']['prey_population']['data'], label=label)
         plt.xlabel("Step")
         plt.ylabel("Prey Population")
         plt.title("Predator-Prey Parameter Sweep")
-        plt.legend()
+        plt.legend(fontsize="small")
         plt.grid(True)
-        plt.savefig(os.path.join(sweep_output_dir, 'parameter_sweep_plot.png'))  # Use sweep_output_dir
+        plt.savefig(os.path.join(sweep_output_dir, 'parameter_sweep_plot.png'))
         plt.show()
 
 if __name__ == "__main__":
