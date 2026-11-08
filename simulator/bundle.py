@@ -40,6 +40,7 @@ Configuration (``bundle:`` in the experiment config; ``bundle: true`` uses defau
         enabled: true
         value_queries: 2       # random "value at x" questions per series
         parameters: null       # parameter-inference questions; default: model.inferable_parameters
+        exclude: []            # templates to leave out (e.g. ones a quality card shows are degenerate)
       graph: true
       public_table: false      # true: mark table.csv / elements.csv public (training data)
 """
@@ -75,7 +76,7 @@ def public_question(item: Dict[str, Any]) -> Dict[str, Any]:
 DEFAULTS: Dict[str, Any] = {
     "figure": {"format": "png", "dpi": 120, "width": 6.4, "height": 4.8, "show_latent": True,
                "show_observed": True, "legend": True, "grid": True, "title": True, "axes": True},
-    "qa": {"enabled": True, "value_queries": 2, "parameters": None},
+    "qa": {"enabled": True, "value_queries": 2, "parameters": None, "exclude": []},
     "graph": True,
     # The table/elements file holds the exact values drawn (curve values, circle
     # radii) and so answers figure questions verbatim. Private by default (benchmark
@@ -124,6 +125,10 @@ def resolve_bundle_config(spec: Any) -> Optional[Dict[str, Any]]:
             raise ValueError(f"bundle.figure.{key} must be a positive number")
     if int(cfg["qa"]["value_queries"]) < 0:
         raise ValueError("bundle.qa.value_queries must be >= 0")
+    exclude = cfg["qa"].get("exclude") or []
+    if isinstance(exclude, str) or not all(isinstance(t, str) for t in exclude):
+        raise ValueError("bundle.qa.exclude must be a list of template names")
+    cfg["qa"]["exclude"] = list(exclude)
     return cfg
 
 
@@ -589,6 +594,16 @@ def build_bundle(experiment_dir: str, record, results: Dict[str, Dict[str, Any]]
                 item.setdefault("answerable_from", "data")
                 item["id"] = f"q{len(questions) + 1}"
                 questions.append(item)
+        excluded = set(bundle_cfg["qa"].get("exclude") or [])
+        unknown = excluded - {q.get("template") for q in questions}
+        if unknown:
+            import warnings
+            warnings.warn(f"bundle.qa.exclude: no question of template(s) {sorted(unknown)} in this run "
+                          "(misspelled?)", stacklevel=2)
+        if excluded:  # filtered after generation, so the random draws (and other questions) do not change
+            questions = [q for q in questions if q.get("template") not in excluded]
+            for i, q in enumerate(questions):
+                q["id"] = f"q{i + 1}"
         for q in questions:
             q.setdefault("tolerance_rule", "exact" if q.get("tolerance") is None else "set by the model")
         public = [public_question(q) for q in questions]

@@ -332,6 +332,36 @@ interactive environment's public observations and state reveal neither the
 episode seed nor the hidden truth. Passing the audit is necessary, not
 sufficient: it covers the known shortcut kinds only.
 
+Testbed Diagnostics
+-------------------
+
+:mod:`simulator.diagnostics` uses the simulator's knowledge of the truth to test benchmarks
+and agents (see ``examples/example_11_testbed``):
+
+* shortcuts - :func:`~simulator.diagnostics.shortcuts.blind_baseline` answers each
+  question from the other questions' answers only (majority, correct position, median);
+  :func:`~simulator.diagnostics.shortcuts.feature_shortcuts` answers from public per-run
+  cues with a leave-one-out nearest-neighbour rule and a permutation test;
+* quality - :func:`~simulator.diagnostics.quality.quality_card`: answer balance and
+  entropy, correct-position chi-square, numeric spread, duplicates, fidelity, and the
+  accuracy of an optional reference solver;
+* contamination - :func:`~simulator.diagnostics.contamination.make_twin` re-runs a
+  design with new seeds; :func:`~simulator.diagnostics.contamination.contamination_gap`
+  tests score(original) - score(twin) over matched pairs (paired permutation test,
+  bootstrap interval). A gap measures score inflation from memorisation; a model that
+  solves the task anyway hides its exposure, so pair it with canaries
+  (:func:`~simulator.diagnostics.contamination.add_canary`,
+  :func:`~simulator.diagnostics.contamination.canary_probe`);
+* agent fallacies - :func:`~simulator.diagnostics.episodes.run_episodes` records
+  episodes and :func:`~simulator.diagnostics.episodes.diagnose_episode` flags
+  ``answer_without_evidence``, ``premature_commitment``, ``repeated_experiment``,
+  ``narrow_sampling``, ``contradicts_own_data`` (a wrong answer that fits the agent's
+  own measurements more than three times worse than the truth, with a noise floor of
+  tolerance x signal) and ``matches_<name>`` for alternative hypotheses such as the
+  textbook form of a counterfactual law
+  (:func:`experiments.law_discovery.logic.textbook_counterpart`), evaluated only where
+  the alternative differs from the truth by more than the tolerance.
+
 Law Discovery
 -------------
 

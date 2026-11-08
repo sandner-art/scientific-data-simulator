@@ -13,5 +13,7 @@ observation:
 
 bundle:
   figure: {format: png, show_latent: false}   # the exact curve is hidden: inference only
-  qa: {value_queries: 0}
+  # argmax and peak_count are left out: most laws are monotone, so their answers are nearly
+  # constant and a blind guess gets 56-78 % right (found by the quality card in example 11)
+  qa: {value_queries: 0, exclude: [argmax, peak_count]}
 generate_plots: false

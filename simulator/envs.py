@@ -208,6 +208,11 @@ class ExperimentEnv:
             truth[self.spec.target] = self._target_truth
         return truth
 
+    @property
+    def domain(self) -> Optional[List[float]]:
+        """Range on which expression answers are scored (public: stated in the task)."""
+        return list(self._domain) if getattr(self, "_domain", None) is not None else None
+
     # ------------------------------------------------------------------ internals
     def _task_observation(self) -> Dict[str, Any]:
         spec = self.spec

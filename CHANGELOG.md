@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0 (unreleased)
+
+### Added
+- **`simulator.diagnostics`**, the simulator as a testbed for benchmarks and agents:
+  - `shortcuts`: `blind_baseline` (answers from the other answers only: majority, correct position, median), `feature_shortcuts` (leave-one-out nearest neighbours on public per-run cues, with a permutation test), `public_features` (figure size, caption length, public table rows).
+  - `contamination`: `make_twin` (same design, new seeds), `pair_tasks`, `contamination_gap` (paired permutation test and bootstrap interval, per template), canaries (`make_canary`, `add_canary`, `canary_probe` with the chance level of a match).
+  - `episodes`: `run_episodes` records agent episodes; `diagnose_episode` flags answering without evidence, premature commitment, repeated experiments, narrow sampling, answers that contradict the agent's own data, and answers matching an alternative hypothesis (e.g. the textbook form of a counterfactual law); `summarize`.
+  - `quality`: `quality_card` (balance, entropy, correct-position chi-square, spread, duplicates, fidelity, optional reference-solver accuracy) and `card_markdown`.
+  - `stats`: `gap_test` (paired / unpaired permutation test, bootstrap interval; paired tests can be clustered, e.g. by run, and `contamination_gap` clusters by run by default), exact binomial test.
+- `experiments.law_discovery.logic.textbook_counterpart`: the textbook form of a law fitted to it.
+- `bundle.qa.exclude`: leave question templates out (ids stay consecutive; other questions unchanged).
+- `ExperimentEnv.domain`: the public scoring range of expression answers.
+- Example 11: the testbed on the law-discovery suite (shortcuts, leak audit with canary, twin contamination gaps, canary probe, agent-fallacy flags).
+
+### Changed
+- Example 10 excludes the `argmax` and `peak_count` templates, which example 11 shows are answerable without the data (56 % and 78 %).
+
 ## 0.4.0 (unreleased)
 
 ### Added

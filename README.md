@@ -71,6 +71,7 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
   `simulator.llm.draft_model` asks any LLM for a model, runs the checker in a separate time-limited process, and retries with the findings.
 * **Law discovery** (`experiments.law_discovery`). Hidden laws y = f(x) from nine families (power law, inverse power, exponential decay, logistic, Michaelis–Menten, Hill, damped oscillation, Gaussian peak, Arrhenius), each with a textbook or a *counterfactual* setting of its structural constants (e.g. an inverse-*2.3* law). Formula answers are scored by evaluating them on the data domain (`simulator.expressions`: a safe parser with no `eval`), so any equivalent form counts. A suite design, a classical curve-fitting baseline and an interactive formula-discovery environment come with it (example 10).
 * **Leak audit** (`simulator.audit`). Before publishing, attack your own export: it tries seed replay, config-hash lookup, tolerance inversion, answer lookup in public files and exposure of hidden arrays, using the private runs as the answer key, and reports what would leak. `audit_environment` does the same for interactive environments.
+* **Testbed diagnostics** (`simulator.diagnostics`, example 11). Because every hidden value is known and every run can be regenerated, the simulator can test benchmarks and agents: blind and metadata-only baselines (shortcut artefacts), a quality card (answer balance, position bias, duplicates), fresh twins and paired gap tests (contamination), canaries and canary probes, and agent-fallacy flags for interactive episodes (answering without evidence, ignoring one's own data, preferring a textbook law to the counterfactual one, narrow sampling, repeated experiments).
 * **Automatic plots.** matplotlib PNG and interactive Plotly HTML, driven by output descriptors; observed points are drawn over the latent curves. Static SVG/PDF export needs the optional `kaleido` package.
 
 ### Planned
@@ -304,7 +305,8 @@ simulator/        engine.py, base.py, config.py, schema.py, rng.py, observation.
                   bundle.py, storage.py, persistence.py, provenance.py, experiment_record.py,
                   doe.py, data_handler.py, visualization.py, utils.py,
                   envs.py, units.py, checker.py, llm.py, expressions.py, audit.py,
-                  export/ (tasks, huggingface, sbi, rl, the_well)
+                  export/ (tasks, huggingface, sbi, rl, the_well),
+                  diagnostics/ (shortcuts, contamination, episodes, quality, stats)
 experiments/      bundled reference models (one package per model)
 examples/         runnable examples (python -m examples.<name>.run_experiment)
 tests/            pytest suite, incl. test_verification.py (numerical verification)

@@ -20,8 +20,10 @@ moved at least 15 % away from its textbook value (an inverse-2.3 law instead of 
 Hill coefficient of 2.6), so a system that recalls
 textbook formulas instead of fitting the data is caught.
 
-Besides the generic figure questions (extremes, argmax, final value, peak count), each bundle
-asks three questions about the law:
+Besides the generic figure questions (maximum, minimum, final value), each bundle asks three
+questions about the law. The generic `argmax` and `peak_count` questions are excluded in
+`config.yaml`: for mostly monotone laws their answers hardly vary, and a blind guess answers
+them 56–78 % of the time (example 11 measures this).
 
 * **law family**: a multiple-choice question among four families;
 * **law formula**: answered with a formula. It is scored by evaluating the formula on the data

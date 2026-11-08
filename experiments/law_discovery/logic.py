@@ -26,7 +26,7 @@ the parameters, an extrapolated value and the formula itself (scored by
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -215,6 +215,33 @@ class HiddenLawExperiment(ExperimentLogic):
         for item in items:
             item.setdefault("series", "y")
         return items
+
+
+def textbook_counterpart(family: str, expression: str, domain: Tuple[float, float], n: int = 200
+                         ) -> Optional[str]:
+    """The textbook version of a law that best imitates it: structural constants fixed at their
+    textbook values, the other constants least-squares fitted to ``expression`` on ``domain``.
+
+    This is the answer of a solver that recalls the textbook form and fits only its free
+    constants - the "prior over evidence" error that counterfactual laws are built to expose.
+    ``None`` for families without structural constants.
+    """
+    from scipy.optimize import curve_fit
+    spec = LAWS[family]
+    if not spec["structural"]:
+        return None
+    x = np.linspace(float(domain[0]), float(domain[1]), n)
+    y = evaluate(expression, x=x)
+    names = list(spec["priors"])
+    fixed = {k: v[0] for k, v in spec["structural"].items()}
+
+    def model(xv, *p):
+        return evaluate(law_expression(family, {**dict(zip(names, p)), **fixed}, digits=17), x=xv)
+
+    start = [float(np.mean(spec["priors"][k])) for k in names]
+    with np.errstate(all="ignore"):
+        params, _ = curve_fit(model, x, y, p0=start, bounds=(1e-9, np.inf), max_nfev=5000)
+    return law_expression(family, {**dict(zip(names, params)), **fixed})
 
 
 def _finite_max_abs(values) -> float:
