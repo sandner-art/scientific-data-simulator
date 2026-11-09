@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.7.0 (unreleased)
+Versions 0.2–0.6 were development steps; they were first released together in 0.7.0.
+
+## 0.7.0rc1 (2026-11-09)
+
+Release candidate for 0.7.0, the first release since the 0.1.0 prototype.
 
 ### Added
 - **Install and update scripts.** `scripts/install.cmd` / `install.ps1` (Windows) and `scripts/install.sh` (Linux, macOS; bash 3.2 compatible) create `.venv`, install a profile (`core`, `standard`, `all`, `dev`) and run the doctor. `update.*` pulls a git checkout (fast-forward only, never over local changes) and reinstalls the remembered profile. `create_venv.bat` and `run_example.bat` now delegate to them.
@@ -35,6 +39,14 @@
 - **Python 3.11 or newer** is required. Python 3.9 and 3.10 are end-of-life, and Pillow's current security release does not support them. CI tests 3.11–3.14.
 - **Security floor for Pillow:** `pillow>=13.0` (core and UI). Pillow 13.0.0 (16 October 2026) fixes CVE-2026-112900 (EPS filenames reaching Ghostscript) and memory-corruption bugs in its TIFF and JPEG decoders. The UI needs Streamlit 1.67 or newer, the first release that accepts Pillow 13; the floor also makes pip upgrade an older Streamlit that is already installed.
 - Examples 1-6 accept `--output_dir`.
+- Static matplotlib figures are drawn with `matplotlib.figure.Figure`, not pyplot, so the simulator never picks or starts a GUI backend (the images are unchanged).
+- Relative paths written into records and model-facing text use forward slashes on every system: the attacker's release view, audit findings, the design manifest's figure path, task files and `run.json`.
+
+### Fixed
+- Examples 11 and 12 deleted their whole output folder, including the runner's open `run.log`: on Windows the run failed (file in use), elsewhere the log was lost. `simulator.examples.prepare_output_dir` clears earlier results and keeps the runner's files.
+- Task files fall back to absolute paths when no relative path exists (Windows, another drive) instead of failing.
+- The UI shows interactive plots with `st.iframe` (`st.components.v1.html` is deprecated), and `sds ui` turns on colour support in the Windows console, which showed raw escape codes.
+- CI: failed tests are listed, short, on the run's Summary page (`tools/ci_failures.py`).
 
 ## 0.6.0 (unreleased)
 

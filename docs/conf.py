@@ -10,7 +10,7 @@ copyright = '2025-2026, Daniel Sandner'
 author = 'Daniel Sandner'
 
 # The full version, including alpha/beta/rc tags
-release = '0.7.0.dev0'
+release = '0.7.0rc1'
 
 
 # -- General configuration ---------------------------------------------------
