@@ -1,8 +1,10 @@
 # simulator/utils.py
-from typing import Optional, Union, Tuple, Dict, Any
+from __future__ import annotations
+
+import copy
 from enum import Enum
-import numpy as np  # For checking array type
-import pandas as pd
+from typing import Any, Dict, Optional, Tuple, Union
+
 
 class DataType(str, Enum):
     FLOAT = "float"
@@ -11,7 +13,63 @@ class DataType(str, Enum):
     LIST = "list"
     NDARRAY = "np.ndarray"
     DATAFRAME = "pd.DataFrame"
-    # Add other common types as needed
+
+    @classmethod
+    def parse(cls, value: Union["DataType", str]) -> "DataType":
+        """Coerce a DataType, its value ("pd.DataFrame"), its name ("DATAFRAME")
+        or the legacy ``str(enum)`` form ("DataType.DATAFRAME") to a DataType."""
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, str):
+            raise TypeError(f"Cannot interpret {value!r} as a DataType.")
+        try:
+            return cls(value)
+        except ValueError:
+            pass
+        name = value.split(".", 1)[1] if value.startswith("DataType.") else value
+        try:
+            return cls[name]
+        except KeyError:
+            raise ValueError(f"Unknown DataType: {value!r}") from None
+
+
+class Role(str, Enum):
+    """What an output *is* with respect to the generating mechanism.
+
+    * ``parameter``   - a parameter of the mechanism (ground truth)
+    * ``latent``      - the exact, noise-free state/output of the mechanism (ground truth)
+    * ``label``       - a derived ground-truth quantity (e.g. a class, a law, a peak time)
+    * ``observation`` - what a measuring instrument would report (noisy, sampled)
+    * ``coordinate``  - an independent variable (time, x, step)
+    * ``auxiliary``   - anything else (summaries, bookkeeping, loaded inputs)
+    """
+    PARAMETER = "parameter"
+    LATENT = "latent"
+    LABEL = "label"
+    OBSERVATION = "observation"
+    COORDINATE = "coordinate"
+    AUXILIARY = "auxiliary"
+
+    @classmethod
+    def parse(cls, value: Union["Role", str, None]) -> Optional["Role"]:
+        if value is None or isinstance(value, cls):
+            return value
+        try:
+            return cls(value)
+        except ValueError:
+            raise ValueError(f"Unknown role {value!r}; use one of {[r.value for r in cls]}") from None
+
+
+GROUND_TRUTH_ROLES = (Role.PARAMETER, Role.LATENT, Role.LABEL)
+
+#: Model fidelity levels (see ``ExperimentLogic.fidelity``).
+FIDELITY_LEVELS = {
+    "reference": "verified against closed forms, high-accuracy solvers, convergence orders or invariants",
+    "audit": "deliberately simplified or flawed; use to test whether a method notices model error",
+    "unverified": "no verification tests; do not treat as reference data",
+    "observed": "outputs are derived from loaded real data, not simulated",
+}
+
 
 class DataDescriptor:
     """
@@ -20,30 +78,64 @@ class DataDescriptor:
 
     def __init__(self,
                  name: str,
-                 data_type: DataType,
+                 data_type: Union[DataType, str],
                  shape: Optional[Tuple[int, ...]] = None,
                  units: Optional[str] = None,
                  group: str = "default",
                  plot_type: Optional[str] = None,
-                 x_axis: Optional[str] = None):
+                 x_axis: Optional[str] = None,
+                 role: Optional[Union[Role, str]] = None):
         self.name = name
-        self.data_type = data_type
-        self.shape = shape
+        self.data_type = DataType.parse(data_type)
+        self.shape = tuple(shape) if shape is not None else None
         self.units = units
         self.group = group
         self.plot_type = plot_type
         self.x_axis = x_axis
+        self.role = Role.parse(role)
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        Converts the DataDescriptor to a dictionary for serialization
-        """
+        """Converts the DataDescriptor to a JSON-friendly dictionary."""
         return {
             'name': self.name,
-            'data_type': str(self.data_type),  # Store Enum as string - THIS IS THE FIX
+            'data_type': self.data_type.value,
             'shape': self.shape,
             'units': self.units,
             'group': self.group,
             'plot_type': self.plot_type,
-            'x_axis': self.x_axis
+            'x_axis': self.x_axis,
+            'role': self.role.value if self.role is not None else None,
         }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "DataDescriptor":
+        """Inverse of :meth:`to_dict`. Unknown keys are ignored so that records
+        written by newer versions can still be read."""
+        known = {'name', 'data_type', 'shape', 'units', 'group', 'plot_type', 'x_axis', 'role'}
+        return cls(**{k: v for k, v in d.items() if k in known})
+
+    def replace(self, **changes: Any) -> "DataDescriptor":
+        """Return a copy with the given attributes changed."""
+        new = copy.copy(self)
+        for key, value in changes.items():
+            if not hasattr(new, key):
+                raise AttributeError(f"DataDescriptor has no attribute {key!r}")
+            setattr(new, key, value)
+        if 'data_type' in changes:
+            new.data_type = DataType.parse(new.data_type)
+        if 'role' in changes:
+            new.role = Role.parse(new.role)
+        if 'shape' in changes and new.shape is not None:
+            new.shape = tuple(new.shape)
+        return new
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DataDescriptor):
+            return NotImplemented
+        return self.to_dict() == other.to_dict()
+
+    __hash__ = None  # mutable
+
+    def __repr__(self) -> str:
+        fields = ", ".join(f"{k}={v!r}" for k, v in self.to_dict().items() if v is not None)
+        return f"DataDescriptor({fields})"

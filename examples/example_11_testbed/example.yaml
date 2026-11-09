@@ -1,0 +1,13 @@
+title: Testbed for leaks, shortcuts, contamination and agent fallacies
+summary: Quality card, blind baselines, leak audit with a canary, fresh-twin contamination tests and agent-fallacy flags on the law suite.
+entry: examples.example_11_testbed.run_experiment
+fields: [methods, ai]
+level: research
+runtime: {full: 150 s, quick: 60 s}
+extras: [parquet]
+quick_args: [--quick]
+params:
+  - {name: suite_seed, arg: --suite-seed, type: int, default: 11, help: order of the suite}
+outputs:
+  - {path: report.md, kind: markdown}
+  - {path: report.json, kind: json}

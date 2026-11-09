@@ -1,0 +1,13 @@
+title: Reference dataset with ground truth
+summary: Predator-prey ground truth (RK4), sampled noisy observations, a noise x replicate design and an optional counterfactual law shift.
+entry: examples.example_7_reference_dataset.run_experiment
+fields: [physics, methods]
+level: research
+runtime: {full: 20 s, quick: 8 s}
+quick_args: [--replicates, "1"]
+params:
+  - {name: replicates, arg: --replicates, type: int, default: 3, min: 1, max: 50, help: runs per design point}
+  - {name: law_shift, arg: --law-shift, type: flag, default: false, help: also make a counterfactual twin with shifted parameters}
+outputs:
+  - {path: "**/design_results.csv", kind: table}
+  - {path: "*/bundle/figure.png", kind: image}

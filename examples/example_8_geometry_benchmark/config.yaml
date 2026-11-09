@@ -1,0 +1,20 @@
+# examples/example_8_geometry_benchmark/config.yaml
+# Random triangles with exact constructions, drawn as diagrams with verifiable questions.
+experiment_type: experiments.geometry.logic.TriangleExperiment
+experiment_description: "Triangle diagrams with exact constructions and questions."
+seed: 20261108
+extent: 10.0              # triangles are drawn inside a 10 x 10 square
+length_units: cm
+min_angle_deg: 15
+constructions: [circumcircle, incircle, centroid, orthocenter, euler_line]
+
+# Noisy ruler measurements of the three sides (for inference questions)
+observation:
+  targets: [side_lengths]
+  operators:
+    - {type: gaussian, sigma: 0.05}
+    - {type: quantize, step: 0.1}
+
+bundle:
+  figure: {format: png, axes: true}
+generate_plots: false

@@ -20,11 +20,17 @@ class PredatorPreyCalibrationExperiment(PredatorPreyExperiment):  # Inherit
                 print(f"Warning: Error loading observed data: {e}")
 
     def get_results(self):
-        results = super().get_results() # Get result from parent class
+        results = super().get_results()  # simulated trajectories from the parent model
         if self.observed_data_info:
-            results['observed_data'] = self.observed_data_info
-            # Adjust length
-            results['time']['data'] = results['time']['data'][:len(results['observed_data']['data'])]
-            results["prey_population"]['data'] = results["prey_population"]['data'][:len(results['observed_data']['data'])]
-            results["predator_population"]['data'] = results["predator_population"]['data'][:len(results['observed_data']['data'])]
+            results['observed_data'] = {
+                'data': self.observed_data_info['data'],
+                'descriptor': self.observed_data_info['descriptor'].replace(role="observation"),
+            }
+            # Align the simulated series with the observation window and keep the
+            # descriptors consistent with the truncated data.
+            n_obs = len(results['observed_data']['data'])
+            for key in ('time', 'prey_population', 'predator_population'):
+                truncated = results[key]['data'][:n_obs]
+                results[key]['data'] = truncated
+                results[key]['descriptor'] = results[key]['descriptor'].replace(shape=truncated.shape)
         return results

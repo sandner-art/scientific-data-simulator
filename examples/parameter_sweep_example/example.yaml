@@ -1,0 +1,11 @@
+title: Parameter sweep of predator-prey dynamics
+summary: Full-factorial sweep of the Lotka-Volterra parameters, with combined plots.
+entry: examples.parameter_sweep_example.run_experiment
+fields: [physics, methods]
+level: student
+runtime: {full: 40 s, quick: 40 s}
+params:
+  - {name: plot, arg: --plot, type: flag, default: true, help: plot the sweep}
+outputs:
+  - {path: "**/*.csv", kind: table}
+  - {path: "**/*.svg", kind: image}

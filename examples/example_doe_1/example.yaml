@@ -1,0 +1,11 @@
+title: Full-factorial sweep of a linear function
+summary: Design of experiments - every combination of slope and intercept, with the results table.
+entry: examples.example_doe_1.run_experiment
+fields: [methods, mathematics]
+level: student
+runtime: {full: 20 s, quick: 20 s}
+params:
+  - {name: plot, arg: --plot, type: flag, default: true, help: plot the sweep}
+outputs:
+  - {path: "**/*.csv", kind: table}
+  - {path: "**/*.svg", kind: image}

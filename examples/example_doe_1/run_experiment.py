@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-# examples/example_doe_1/run_doe_example.py
+# examples/example_doe_1/run_experiment.py
 
 import os
 import argparse
-import yaml
+from simulator.config import yaml_load
 import numpy as np
 import pandas as pd
 from simulator.doe import run_parameter_sweep, create_doe_table, append_results_to_doe_table
@@ -36,7 +36,7 @@ def main():
         raise FileNotFoundError(f"Base configuration file not found: {config_path}")
 
     with open(config_path, 'r') as f:
-        base_config = yaml.safe_load(f)
+        base_config = yaml_load(f)
 
     # --- Parameter Ranges (same as before) ---
     param_ranges = {
@@ -89,7 +89,7 @@ def main():
         print("\nResults Table:")
         print(results_table)
 
-    # --- Generate Plots (CORRECTED) ---
+    # --- Generate Plots ---
     if args.plot:
         if args.output_format == 'list':
             for run_data in results:

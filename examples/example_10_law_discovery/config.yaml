@@ -1,0 +1,19 @@
+# examples/example_10_law_discovery/config.yaml
+# Base configuration of the law-discovery suite (law, counterfactual and snr_db are swept).
+experiment_type: experiments.law_discovery.logic.HiddenLawExperiment
+experiment_description: "Hidden laws y = f(x), textbook and counterfactual, with noisy observations."
+seed: 20261108
+law: random
+counterfactual: false
+n_points: 40
+
+observation:
+  operators:
+    - {type: gaussian, snr_db: 30}    # swept
+
+bundle:
+  figure: {format: png, show_latent: false}   # the exact curve is hidden: inference only
+  # argmax and peak_count are left out: most laws are monotone, so their answers are nearly
+  # constant and a blind guess gets 56-78 % right (found by the quality card in example 11)
+  qa: {value_queries: 0, exclude: [argmax, peak_count]}
+generate_plots: false

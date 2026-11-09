@@ -1,5 +1,8 @@
 # simulator/visualization.py
-import matplotlib.pyplot as plt
+# Figures are drawn with matplotlib.figure.Figure, never pyplot: the simulator only writes files,
+# so it must not pick or start a GUI backend (Tk on Windows can fail to start, or open windows).
+import matplotlib
+from matplotlib.figure import Figure
 import plotly.express as px
 import plotly.io as pio  # Import plotly.io for static image export
 import os
@@ -33,68 +36,22 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
 
     for group_name, data_list in grouped_data.items():
         if group_name == "time_series":
-            first_data_info = data_list[0]
-            first_descriptor = first_data_info['descriptor']
-            # Determine x_axis_name: correctly.
-            x_axis_name =  first_descriptor.x_axis if first_descriptor.x_axis else 'time'
-            if x_axis_name not in results:
-                print(f"Warning: X-axis data '{x_axis_name}' not found. Skipping time series plot for {group_name}.")
-                continue
-
-            x_axis_data = results[x_axis_name]['data']
-            x_axis_descriptor = results[x_axis_name]['descriptor']
-            # --- Matplotlib ---
-            plt.figure()
-            for data_info in data_list:
-                descriptor = data_info['descriptor']
-                if descriptor.plot_type == "line" and descriptor.group == "time_series":
-                    data = data_info['data']
-                    plt.plot(x_axis_data, data, label=descriptor.name)
-
-            plt.xlabel(x_axis_descriptor.units if x_axis_descriptor.units else x_axis_name)
-            plt.ylabel("Value")  # Generic y-axis label
-            plt.title(f"Time Series Plot ({group_name})")
-            plt.legend()
-            plt.grid(True)
-            plt.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
-            plt.close()
-
-            # --- Plotly ---
-            # Use a DataFrame for easier plotting
-            df = pd.DataFrame()
-            df[x_axis_name] = x_axis_data  # Always include the x-axis
-            for data_info in data_list:
-                descriptor = data_info['descriptor']
-                if descriptor.plot_type == 'line' and descriptor.group == "time_series":
-                    data = data_info['data']
-                    df[descriptor.name] = data
-
-            # Corrected y label
-            fig = px.line(df, x=x_axis_name, y=[col for col in df.columns if col != x_axis_name], # all columns except x
-                            labels={'x': x_axis_descriptor.units if x_axis_descriptor.units else x_axis_name,
-                                    'y': "Value",  # Generic y-axis label
-                                    'variable': 'Series'},
-                            title=f"Time Series Plot ({group_name})")
-            fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
-            if static_format:
-                # Explicitly set mathjax to None when using a static renderer
-                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
-
+            _time_series_plot(results, group_name, data_list, output_dir, static_format)
 
         elif group_name == 'histogram':
             # Matplotlib
-            plt.figure()
+            figure = Figure()
+            ax = figure.add_subplot()
             for data_info in data_list:
                 descriptor = data_info['descriptor']
                 data = data_info['data']
-                plt.hist(data, bins='auto', label=descriptor.name, alpha=0.7) # Transparency for multiple histograms
-            plt.xlabel("Value") # Generic
-            plt.ylabel("Frequency")
-            plt.title(f"Histogram ({group_name})")
-            plt.legend()
-            plt.grid(True)
-            plt.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
-            plt.close()
+                ax.hist(data, bins='auto', label=descriptor.name, alpha=0.7) # Transparency for multiple histograms
+            ax.set_xlabel("Value") # Generic
+            ax.set_ylabel("Frequency")
+            ax.set_title(f"Histogram ({group_name})")
+            ax.legend()
+            ax.grid(True)
+            figure.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
 
             # Plotly
             # Combine into DataFrame for plotting
@@ -121,26 +78,85 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
     if "prey_population" in results and "predator_population" in results:
         _generate_combined_plot(results, output_dir, static_format) # Pass static_format
 
+def _time_series_plot(results, group_name, data_list, output_dir, static_format):
+    """Plot each line/scatter series of the group against its own x axis
+    (``descriptor.x_axis``, default ``time``). Observed series that were
+    sampled at a subset of points carry their own coordinate, so latent and
+    observed series can share one figure."""
+    import plotly.graph_objects as go
+
+    series = []
+    for data_info in data_list:
+        descriptor = data_info['descriptor']
+        if descriptor.plot_type not in ("line", "scatter"):
+            continue
+        x_name = descriptor.x_axis or 'time'
+        if x_name not in results:
+            print(f"Warning: X-axis data '{x_name}' not found for '{descriptor.name}'. Skipping it.")
+            continue
+        series.append((descriptor, results[x_name], data_info['data']))
+    if not series:
+        return
+
+    x_descriptor = series[0][1]['descriptor']
+    x_label = x_descriptor.units if x_descriptor.units else (series[0][0].x_axis or 'time')
+
+    # Observed series share the colour of the latent series they observe.
+    palette = matplotlib.rcParams['axes.prop_cycle'].by_key().get('color', ['C0'])
+    colours, next_colour = {}, 0
+    for descriptor, _, _ in series:
+        base = descriptor.name[:-len("_observed")] if descriptor.name.endswith("_observed") else descriptor.name
+        if base not in colours:
+            colours[base] = palette[next_colour % len(palette)]
+            next_colour += 1
+
+    figure = Figure()
+    ax = figure.add_subplot()
+    for descriptor, x_info, data in series:
+        base = descriptor.name[:-len("_observed")] if descriptor.name.endswith("_observed") else descriptor.name
+        if descriptor.plot_type == "scatter":
+            ax.plot(x_info['data'], data, linestyle="none", marker="o", markersize=3,
+                    color=colours[base], alpha=0.8, label=descriptor.name)
+        else:
+            ax.plot(x_info['data'], data, color=colours[base], label=descriptor.name)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Value")
+    ax.set_title(f"Time Series Plot ({group_name})")
+    ax.legend()
+    ax.grid(True)
+    figure.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
+
+    fig = go.Figure()
+    for descriptor, x_info, data in series:
+        mode = "markers" if descriptor.plot_type == "scatter" else "lines"
+        fig.add_trace(go.Scatter(x=np.asarray(x_info['data']), y=np.asarray(data), mode=mode, name=descriptor.name))
+    fig.update_layout(title=f"Time Series Plot ({group_name})", xaxis_title=x_label,
+                      yaxis_title="Value", legend_title_text="Series")
+    fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
+    if static_format:
+        fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
+
+
 def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str, static_format: str = "svg"):
     """Generates a combined plot of prey and predator populations."""
 
     # Matplotlib
-    plt.figure()
-    plt.plot(results['time']['data'], results['prey_population']['data'], label="Prey Population")
-    plt.plot(results['time']['data'], results['predator_population']['data'], label="Predator Population")
+    figure = Figure()
+    ax = figure.add_subplot()
+    ax.plot(results['time']['data'], results['prey_population']['data'], label="Prey Population")
+    ax.plot(results['time']['data'], results['predator_population']['data'], label="Predator Population")
     if 'observed_data' in results:
         if 'prey_population' in results['observed_data']['data'].columns:
-            plt.plot(results['observed_data']['data']['time'], results['observed_data']['data']['prey_population'], label="Observed Prey", linestyle='--')
+            ax.plot(results['observed_data']['data']['time'], results['observed_data']['data']['prey_population'], label="Observed Prey", linestyle='--')
         if 'predator_population' in results['observed_data']['data'].columns:
-            plt.plot(results['observed_data']['data']['time'], results['observed_data']['data']['predator_population'], label="Observed Predator", linestyle='--')
+            ax.plot(results['observed_data']['data']['time'], results['observed_data']['data']['predator_population'], label="Observed Predator", linestyle='--')
 
-    plt.xlabel(results['time']['descriptor'].units if results['time']['descriptor'].units else 'Time')
-    plt.ylabel("Population")
-    plt.title("Predator-Prey Population Dynamics")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, "combined_populations_matplotlib.png"))
-    plt.close()
+    ax.set_xlabel(results['time']['descriptor'].units if results['time']['descriptor'].units else 'Time')
+    ax.set_ylabel("Population")
+    ax.set_title("Predator-Prey Population Dynamics")
+    ax.legend()
+    ax.grid(True)
+    figure.savefig(os.path.join(output_dir, "combined_populations_matplotlib.png"))
 
     # Plotly
     df = pd.DataFrame({

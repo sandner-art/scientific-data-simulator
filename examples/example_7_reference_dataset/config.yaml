@@ -1,0 +1,36 @@
+# examples/example_7_reference_dataset/config.yaml
+# A reference dataset: exact Lotka-Volterra trajectories (ground truth) and
+# sampled, noisy, count-valued observations of them.
+experiment_type: experiments.predator_prey.logic.PredatorPreyExperiment
+experiment_description: "Predator-prey reference data: RK4 ground truth with sampled noisy observations."
+seed: 20261108            # every random draw (here: observation noise) derives from this
+
+# Mechanism (verified in tests/test_verification.py)
+n_steps: 3000
+dt: 0.01
+integrator: rk4
+clamp_negative: false
+initial_prey: 10.0
+initial_predators: 5.0
+prey_growth_rate: 1.1
+prey_death_rate: 0.4
+predator_growth_rate: 0.1
+predator_death_rate: 0.4
+
+# Measurement model, applied after the mechanism
+observation:
+  sampling: {every: 25}                 # one observation per 0.25 time units
+  operators:
+    - {type: gaussian, snr_db: 20}      # swept by run_experiment.py
+    - {type: clip, low: 0.0}
+    - {type: missing, rate: 0.05}
+
+storage:
+  format: npy
+
+bundle:                    # figure + plotting code + table + caption + Q&A + mechanism graph
+  figure: {format: png, show_latent: true}
+  qa: {value_queries: 2}
+
+generate_plots: true
+static_plot_format: null   # HTML + PNG only (no kaleido/Chrome needed)

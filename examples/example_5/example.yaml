@@ -1,0 +1,10 @@
+title: Data analysis of a CSV file
+summary: Loads a CSV file, computes basic statistics and plots it.
+entry: examples.example_5.run_experiment
+fields: [methods]
+level: student
+runtime: {full: 5 s, quick: 5 s}
+outputs:
+  - {path: "*/*.png", kind: image}
+  - {path: "*/time_series_plotly.html", kind: html}
+  - {path: "*/ground_truth.json", kind: json}

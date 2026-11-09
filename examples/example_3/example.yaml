@@ -1,0 +1,10 @@
+title: Predator-prey (Lotka-Volterra)
+summary: Population cycles of predators and prey; the default forward-Euler setting is a deliberately simple audit model.
+entry: examples.example_3.run_experiment
+fields: [physics, mathematics]
+level: student
+runtime: {full: 5 s, quick: 5 s}
+outputs:
+  - {path: "*/*.png", kind: image}
+  - {path: "*/time_series_plotly.html", kind: html}
+  - {path: "*/ground_truth.json", kind: json}

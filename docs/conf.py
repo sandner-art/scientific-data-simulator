@@ -6,11 +6,11 @@ sys.path.insert(0, os.path.abspath('../'))  # Add project root to path
 # -- Project information -----------------------------------------------------
 
 project = 'Scientific Data Simulator'
-copyright = '2025, Daniel Sandner'  # Replace with your name
-author = 'Daniel Sandner'          # Replace with your name
+copyright = '2025-2026, Daniel Sandner'
+author = 'Daniel Sandner'
 
 # The full version, including alpha/beta/rc tags
-release = '0.1.0'  # Update with each release
+release = '0.7.0.dev0'
 
 
 # -- General configuration ---------------------------------------------------

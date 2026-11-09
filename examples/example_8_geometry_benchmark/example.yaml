@@ -1,0 +1,15 @@
+title: Geometry benchmark
+summary: Random triangles with exact constructions, as diagram bundles with verifiable questions and a Hugging Face dataset.
+entry: examples.example_8_geometry_benchmark.run_experiment
+fields: [geometry, ai]
+level: research
+runtime: {full: 30 s, quick: 8 s}
+extras: [parquet]
+quick_args: [--n, "3", --no-export]
+params:
+  - {name: n, arg: --n, type: int, default: 12, min: 1, max: 500, help: number of triangles}
+  - {name: bare, arg: --bare, type: flag, default: false, help: draw diagrams without coordinate axes}
+  - {name: no_export, arg: --no-export, type: flag, default: false, help: skip the Hugging Face export}
+outputs:
+  - {path: "*/bundle/figure.png", kind: image}
+  - {path: "hf_dataset/README.md", kind: markdown}

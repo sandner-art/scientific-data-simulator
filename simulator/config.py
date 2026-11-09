@@ -1,8 +1,35 @@
 # simulator/config.py
-import yaml
+import copy
 import os
-from typing import Dict, Any
+import re
+from typing import Any, Dict, Mapping
+
+import numpy as np
+import yaml
 from dotenv import load_dotenv
+
+class ScientificLoader(yaml.SafeLoader):
+    """SafeLoader that also reads ``1e-3`` and ``5E6`` as floats.
+
+    YAML 1.1 (PyYAML) only treats exponent notation with a decimal point as a
+    float (``1.0e-3``); ``1e-3`` would silently become the *string* "1e-3".
+    """
+
+
+ScientificLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:float",
+    re.compile(r"""^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+]?[0-9]+)?
+                 |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
+                 |[-+]?\.[0-9_]+(?:[eE][-+]?[0-9]+)?
+                 |[-+]?\.(?:inf|Inf|INF)
+                 |\.(?:nan|NaN|NAN))$""", re.X),
+    list("-+0123456789."))
+
+
+def yaml_load(stream: Any) -> Any:
+    """``yaml.safe_load`` with scientific notation read as floats (see :class:`ScientificLoader`)."""
+    return yaml.load(stream, Loader=ScientificLoader)
+
 
 def load_config(config_path: str, secrets_path: str = ".env") -> Dict[str, Any]:
     """
@@ -20,7 +47,7 @@ def load_config(config_path: str, secrets_path: str = ".env") -> Dict[str, Any]:
     load_dotenv(secrets_path)
 
     with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+        config = yaml_load(f)
 
     # Overlay environment variables (allows overriding config file values)
     for key, value in config.items():
@@ -56,3 +83,46 @@ def get_api_key(key_name: str, dotenv_path=".env") -> str:
             f"Please set it using: export {key_name}=YOUR_API_KEY  or in .env file"
         )
     return api_key
+
+# ---------------------------------------------------------------- nested config paths
+def set_by_path(config: Dict[str, Any], path: str, value: Any) -> None:
+    """Set ``config['a']['b'][0]['c'] = value`` for ``path='a.b.0.c'``.
+
+    Missing dictionaries are created; list indices must already exist.
+    """
+    keys = path.split(".")
+    node: Any = config
+    for i, key in enumerate(keys[:-1]):
+        nxt = keys[i + 1]
+        if isinstance(node, list):
+            node = node[int(key)]
+            continue
+        if key not in node or node[key] is None:
+            node[key] = [] if nxt.isdigit() else {}
+        node = node[key]
+    last = keys[-1]
+    if isinstance(node, list):
+        node[int(last)] = value
+    else:
+        node[last] = value
+
+
+def get_by_path(config: Mapping[str, Any], path: str) -> Any:
+    node: Any = config
+    for key in path.split("."):
+        node = node[int(key)] if isinstance(node, list) else node[key]
+    return node
+
+
+def apply_overrides(base_config: Mapping[str, Any], overrides: Mapping[str, Any]) -> Dict[str, Any]:
+    """Deep copy of ``base_config`` with (possibly dotted) ``overrides`` applied."""
+    config = copy.deepcopy(dict(base_config))
+    for key, value in overrides.items():
+        set_by_path(config, key, to_python(value))
+    return config
+
+
+def to_python(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    return value

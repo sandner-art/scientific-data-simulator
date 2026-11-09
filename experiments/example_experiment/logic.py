@@ -4,6 +4,9 @@ from simulator.utils import DataDescriptor, DataType
 import numpy as np
 
 class ExampleExperiment(ExperimentLogic):
+    fidelity_level = "reference"
+    fidelity_note = "Closed form value = amplitude * sin(time); checked exactly in tests."
+
     def __init__(self, config):
         self.n_steps = config['n_steps']
         self.amplitude = config['amplitude']
@@ -25,10 +28,10 @@ class ExampleExperiment(ExperimentLogic):
         return {
             "time": {
                 "data": time_data,
-                "descriptor": DataDescriptor("time", DataType.NDARRAY, shape=time_data.shape, units="seconds", group="time_series")
+                "descriptor": DataDescriptor("time", DataType.NDARRAY, shape=time_data.shape, units="seconds", group="time_series", role="coordinate")
             },
             "value": {
                 "data": value_data,
-                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=value_data.shape, units="arbitrary", group="time_series", plot_type="line")
+                "descriptor": DataDescriptor("value", DataType.NDARRAY, shape=value_data.shape, units="arbitrary_unit", group="time_series", plot_type="line", role="latent")
             }
         }

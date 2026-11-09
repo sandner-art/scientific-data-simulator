@@ -7,6 +7,8 @@ def main():
     parser = argparse.ArgumentParser(description="Run the linear function example.")
     parser.add_argument("--config", type=str, default="examples/example_4/config.yaml",
                          help="Path to the configuration file.")
+    parser.add_argument("--output_dir", type=str, default="experiments_output",
+                        help="Folder for the experiment records.")
     args = parser.parse_args()
 
     if os.path.isabs(args.config):
@@ -18,7 +20,7 @@ def main():
     if not os.path.exists(config_path):
          raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
-    engine = SimulatorEngine()
+    engine = SimulatorEngine(args.output_dir)
     experiment_id = engine.run_experiment(config_path)
     print(f"Experiment completed. ID: {experiment_id}")
 
