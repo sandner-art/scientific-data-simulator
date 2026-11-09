@@ -28,7 +28,12 @@ jobs:
           python -m pip install -e ".[dev]"
       - name: Test
         # Static plotly export needs kaleido + Chrome; the suite skips it when absent.
-        run: python -m pytest -q
+        run: python -m pytest -q --junitxml=pytest-report.xml
+      - name: Failures
+        # The failed tests, short, on the run's Summary page: all failing jobs on one page.
+        if: failure()
+        shell: bash
+        run: python tools/ci_failures.py pytest-report.xml "pytest (${{ matrix.os }}, ${{ matrix.python-version }})" >> "$GITHUB_STEP_SUMMARY"
 
   install-scripts:
     # The install scripts as a new user runs them, then the doctor and two quick examples.
@@ -96,4 +101,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[standard]" -e ./ui pytest
       - name: Test
-        run: python -m pytest -q ui/tests
+        run: python -m pytest -q ui/tests --junitxml=pytest-report.xml
+      - name: Failures
+        if: failure()
+        shell: bash
+        run: python tools/ci_failures.py pytest-report.xml "ui (${{ matrix.os }}, ${{ matrix.python-version }})" >> "$GITHUB_STEP_SUMMARY"

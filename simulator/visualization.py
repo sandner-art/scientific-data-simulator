@@ -1,5 +1,8 @@
 # simulator/visualization.py
-import matplotlib.pyplot as plt
+# Figures are drawn with matplotlib.figure.Figure, never pyplot: the simulator only writes files,
+# so it must not pick or start a GUI backend (Tk on Windows can fail to start, or open windows).
+import matplotlib
+from matplotlib.figure import Figure
 import plotly.express as px
 import plotly.io as pio  # Import plotly.io for static image export
 import os
@@ -37,18 +40,18 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
 
         elif group_name == 'histogram':
             # Matplotlib
-            plt.figure()
+            figure = Figure()
+            ax = figure.add_subplot()
             for data_info in data_list:
                 descriptor = data_info['descriptor']
                 data = data_info['data']
-                plt.hist(data, bins='auto', label=descriptor.name, alpha=0.7) # Transparency for multiple histograms
-            plt.xlabel("Value") # Generic
-            plt.ylabel("Frequency")
-            plt.title(f"Histogram ({group_name})")
-            plt.legend()
-            plt.grid(True)
-            plt.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
-            plt.close()
+                ax.hist(data, bins='auto', label=descriptor.name, alpha=0.7) # Transparency for multiple histograms
+            ax.set_xlabel("Value") # Generic
+            ax.set_ylabel("Frequency")
+            ax.set_title(f"Histogram ({group_name})")
+            ax.legend()
+            ax.grid(True)
+            figure.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
 
             # Plotly
             # Combine into DataFrame for plotting
@@ -99,7 +102,7 @@ def _time_series_plot(results, group_name, data_list, output_dir, static_format)
     x_label = x_descriptor.units if x_descriptor.units else (series[0][0].x_axis or 'time')
 
     # Observed series share the colour of the latent series they observe.
-    palette = plt.rcParams['axes.prop_cycle'].by_key().get('color', ['C0'])
+    palette = matplotlib.rcParams['axes.prop_cycle'].by_key().get('color', ['C0'])
     colours, next_colour = {}, 0
     for descriptor, _, _ in series:
         base = descriptor.name[:-len("_observed")] if descriptor.name.endswith("_observed") else descriptor.name
@@ -107,21 +110,21 @@ def _time_series_plot(results, group_name, data_list, output_dir, static_format)
             colours[base] = palette[next_colour % len(palette)]
             next_colour += 1
 
-    plt.figure()
+    figure = Figure()
+    ax = figure.add_subplot()
     for descriptor, x_info, data in series:
         base = descriptor.name[:-len("_observed")] if descriptor.name.endswith("_observed") else descriptor.name
         if descriptor.plot_type == "scatter":
-            plt.plot(x_info['data'], data, linestyle="none", marker="o", markersize=3,
-                     color=colours[base], alpha=0.8, label=descriptor.name)
+            ax.plot(x_info['data'], data, linestyle="none", marker="o", markersize=3,
+                    color=colours[base], alpha=0.8, label=descriptor.name)
         else:
-            plt.plot(x_info['data'], data, color=colours[base], label=descriptor.name)
-    plt.xlabel(x_label)
-    plt.ylabel("Value")
-    plt.title(f"Time Series Plot ({group_name})")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
-    plt.close()
+            ax.plot(x_info['data'], data, color=colours[base], label=descriptor.name)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Value")
+    ax.set_title(f"Time Series Plot ({group_name})")
+    ax.legend()
+    ax.grid(True)
+    figure.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
 
     fig = go.Figure()
     for descriptor, x_info, data in series:
@@ -138,22 +141,22 @@ def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str,
     """Generates a combined plot of prey and predator populations."""
 
     # Matplotlib
-    plt.figure()
-    plt.plot(results['time']['data'], results['prey_population']['data'], label="Prey Population")
-    plt.plot(results['time']['data'], results['predator_population']['data'], label="Predator Population")
+    figure = Figure()
+    ax = figure.add_subplot()
+    ax.plot(results['time']['data'], results['prey_population']['data'], label="Prey Population")
+    ax.plot(results['time']['data'], results['predator_population']['data'], label="Predator Population")
     if 'observed_data' in results:
         if 'prey_population' in results['observed_data']['data'].columns:
-            plt.plot(results['observed_data']['data']['time'], results['observed_data']['data']['prey_population'], label="Observed Prey", linestyle='--')
+            ax.plot(results['observed_data']['data']['time'], results['observed_data']['data']['prey_population'], label="Observed Prey", linestyle='--')
         if 'predator_population' in results['observed_data']['data'].columns:
-            plt.plot(results['observed_data']['data']['time'], results['observed_data']['data']['predator_population'], label="Observed Predator", linestyle='--')
+            ax.plot(results['observed_data']['data']['time'], results['observed_data']['data']['predator_population'], label="Observed Predator", linestyle='--')
 
-    plt.xlabel(results['time']['descriptor'].units if results['time']['descriptor'].units else 'Time')
-    plt.ylabel("Population")
-    plt.title("Predator-Prey Population Dynamics")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, "combined_populations_matplotlib.png"))
-    plt.close()
+    ax.set_xlabel(results['time']['descriptor'].units if results['time']['descriptor'].units else 'Time')
+    ax.set_ylabel("Population")
+    ax.set_title("Predator-Prey Population Dynamics")
+    ax.legend()
+    ax.grid(True)
+    figure.savefig(os.path.join(output_dir, "combined_populations_matplotlib.png"))
 
     # Plotly
     df = pd.DataFrame({

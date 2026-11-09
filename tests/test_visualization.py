@@ -160,3 +160,27 @@ def test_generate_plots_invalid_format(example_results, tmp_path):
     output_dir = str(tmp_path)
     with pytest.raises(ValueError):
         generate_plots(example_results, output_dir, static_format='invalid')
+
+def test_plots_never_load_pyplot(tmp_path):
+    """The simulator only writes image files: it must not pick a GUI backend (pyplot chose Tk on
+    a Windows runner whose Tcl was broken, and on a desktop it can open windows)."""
+    import subprocess
+    import sys
+    code = (
+        "import sys, numpy as np\n"
+        "from simulator.utils import DataDescriptor, DataType\n"
+        "from simulator.visualization import generate_plots\n"
+        "t = np.arange(5.0)\n"
+        "results = {'time': {'data': t, 'descriptor': DataDescriptor('time', DataType.NDARRAY, group='time_series')},\n"
+        "           'v': {'data': t ** 2, 'descriptor': DataDescriptor('v', DataType.NDARRAY, group='time_series',\n"
+        "                 plot_type='line', x_axis='time')},\n"
+        "           'h': {'data': t, 'descriptor': DataDescriptor('h', DataType.NDARRAY, group='histogram',\n"
+        "                 plot_type='histogram')}}\n"
+        f"generate_plots(results, {str(tmp_path)!r}, static_format=None)\n"
+        "assert 'matplotlib.pyplot' not in sys.modules, 'pyplot was imported'\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "MPLBACKEND"}
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    result = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True, env=env)
+    assert result.returncode == 0, result.stderr
+    assert {"time_series_matplotlib.png", "histogram_matplotlib.png"} <= set(os.listdir(tmp_path))

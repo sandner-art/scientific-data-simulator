@@ -18,7 +18,13 @@ pytest ui/tests                    # the UI, if you touched it (needs: pip insta
 sds examples check --run-quick     # every example in its quick mode (about 3 min)
 ```
 
-CI runs all three on Linux, Windows and macOS.
+CI runs all three on Linux, Windows and macOS. When a test fails there, the run's **Summary** page lists
+just the failed tests (name, message, end of the traceback) from every job, ready to copy into an
+issue; `tools/ci_failures.py` writes it from pytest's JUnit report and works locally too:
+
+```bash
+pytest --junitxml=pytest-report.xml; python tools/ci_failures.py pytest-report.xml local
+```
 
 ## Adding things
 
