@@ -265,3 +265,39 @@ def test_optional_extras_are_info_not_warnings(tmp_path):
     assert extras and all(c.status in (doctor.OK, doctor.INFO) for c in extras)
     text = doctor.report([doctor.Check("extra: x", doctor.INFO, "not installed (optional)", "pip install x")])
     assert "[info]" in text and "Ready." in text and "optional part(s) not installed" in text
+
+
+def test_prepare_output_dir_keeps_the_runner_files(tmp_path):
+    from simulator.examples import prepare_output_dir
+    out = tmp_path / "run"
+    (out / "old" / "deep").mkdir(parents=True)
+    (out / "old_report.md").write_text("stale")
+    (out / "run.log").write_text("log so far")
+    (out / "run.json").write_text("{}")
+    assert prepare_output_dir(str(out)) == str(out)
+    assert sorted(os.listdir(out)) == ["run.json", "run.log"]
+    assert (out / "run.log").read_text() == "log so far"
+    fresh = prepare_output_dir(str(tmp_path / "new" / "dir"))
+    assert os.path.isdir(fresh) and os.listdir(fresh) == []
+
+
+def test_examples_never_delete_their_output_folder():
+    """The runner keeps run.log open inside the output folder: deleting the folder fails on
+    Windows ('file in use') and silently loses the log elsewhere. Use prepare_output_dir."""
+    offenders = []
+    for root, _, files in os.walk(EXAMPLES):
+        for name in files:
+            if name.endswith(".py"):
+                with open(os.path.join(root, name), encoding="utf-8") as f:
+                    if "rmtree(" in f.read():
+                        offenders.append(os.path.join(root, name))
+    assert offenders == []
+
+
+def test_runner_log_survives_an_example_that_cleans_its_folder(tmp_path):
+    ex = discover(EXAMPLES)["example_12_model_roles"]
+    run = run_example(ex, quick=True, output_dir=str(tmp_path / "out"), timeout=300)
+    assert run.ok, (tmp_path / "out" / "run.log").read_text(encoding="utf-8")[-2000:]
+    log = (tmp_path / "out" / "run.log").read_text(encoding="utf-8")
+    assert log.strip(), "run.log was deleted while the example ran"
+    assert (tmp_path / "out" / "run.json").exists()

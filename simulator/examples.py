@@ -38,6 +38,7 @@ import json
 import os
 import platform
 import shlex
+import shutil
 import subprocess
 import sys
 import threading
@@ -374,6 +375,31 @@ def _kill_tree(proc: "subprocess.Popen") -> None:
         pass
 
 
+RUN_LOG = "run.log"
+RUN_RECORD = "run.json"
+RUNNER_FILES = frozenset({RUN_LOG, RUN_RECORD})
+
+
+def prepare_output_dir(path: str) -> str:
+    """Create ``path`` or clear an example's earlier results from it, and return the absolute path.
+
+    Examples call this instead of deleting the whole folder. When ``sds examples run`` or the UI
+    starts an example, the folder is the run folder and already holds the runner's ``run.log``
+    (open for writing) and ``run.json``: those are kept. Deleting them fails on Windows (the file
+    is in use) and silently loses the log elsewhere."""
+    path = os.path.abspath(path)
+    os.makedirs(path, exist_ok=True)
+    for name in os.listdir(path):
+        if name in RUNNER_FILES:
+            continue
+        full = os.path.join(path, name)
+        if os.path.isdir(full) and not os.path.islink(full):
+            shutil.rmtree(full)
+        else:
+            os.remove(full)
+    return path
+
+
 def run_example(example: Example, values: Optional[Mapping[str, Any]] = None, quick: bool = False,
                 output_dir: Optional[str] = None, timeout: Optional[float] = None,
                 on_line: Optional[Callable[[str], None]] = None, python: str = sys.executable) -> ExampleRun:
@@ -400,7 +426,7 @@ def run_example(example: Example, values: Optional[Mapping[str, Any]] = None, qu
     env["PYTHONUTF8"] = "1"  # Windows: a piped child would otherwise write cp1252 and fail on non-ASCII text
     env["PYTHONIOENCODING"] = "utf-8"
     cwd = root if example.output_arg else output_dir
-    log_path = os.path.join(output_dir, "run.log")
+    log_path = os.path.join(output_dir, RUN_LOG)
     start = time.perf_counter()
     returncode: Optional[int] = None
     state = {"open": True}
@@ -443,6 +469,6 @@ def run_example(example: Example, values: Optional[Mapping[str, Any]] = None, qu
               "seconds": run.seconds, "finished": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "simulator_version": sds_version, "python": platform.python_version(),
               "platform": platform.platform(), "outputs": [os.path.relpath(o["path"], output_dir) for o in run.outputs]}
-    with open(os.path.join(output_dir, "run.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(output_dir, RUN_RECORD), "w", encoding="utf-8") as f:
         json.dump(record, f, indent=2, default=str)
     return run

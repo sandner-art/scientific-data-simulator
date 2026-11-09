@@ -18,7 +18,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import sys
 
 import numpy as np
@@ -35,6 +34,7 @@ from simulator.diagnostics import (add_canary, blind_baseline, canary_probe, car
                                    make_canary, make_twin, pair_tasks, public_features, quality_card,
                                    run_episodes, summarize)
 from simulator.doe import run_design  # noqa: E402
+from simulator.examples import prepare_output_dir  # noqa: E402
 from simulator.envs import ExperimentEnv  # noqa: E402
 from simulator.export.tasks import collect_bundle_tasks  # noqa: E402
 from simulator.expressions import evaluate  # noqa: E402
@@ -162,10 +162,7 @@ def main():
     parser.add_argument("--quick", action="store_true", help="smaller suite and fewer episodes")
     parser.add_argument("--suite-seed", type=int, default=11)
     args = parser.parse_args()
-    out = os.path.abspath(args.output_dir)
-    if os.path.exists(out):
-        shutil.rmtree(out)
-    os.makedirs(out)
+    out = prepare_output_dir(args.output_dir)  # keeps the runner's run.log / run.json
     report = {}
     md = ["# Testbed report: leaks, shortcuts, contamination, agent fallacies", ""]
 

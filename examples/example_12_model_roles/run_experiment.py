@@ -22,7 +22,6 @@ import importlib
 import json
 import os
 import re
-import shutil
 import sys
 
 import numpy as np
@@ -40,6 +39,7 @@ from simulator.diagnostics import (card_markdown, diagnose_episode, feature_shor
                                    law_alternatives, quality_card, run_episodes, summarize)
 from simulator.doe import run_design  # noqa: E402
 from simulator.envs import ExperimentEnv  # noqa: E402
+from simulator.examples import prepare_output_dir  # noqa: E402
 from simulator.export.tasks import collect_bundle_tasks, public_view, write_tasks_jsonl  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -86,9 +86,7 @@ def main():
     model_name = args.model_name or default_name
     if not model_name:
         parser.error("--model-name is required with --model (record what you ran)")
-    out = os.path.abspath(args.output_dir)
-    if os.path.exists(out):
-        shutil.rmtree(out)
+    out = prepare_output_dir(args.output_dir)  # keeps the runner's run.log / run.json
     os.makedirs(os.path.join(out, "logs"))
     logs = {role: os.path.join(out, "logs", f"{role}.jsonl") for role in ("attacker", "writer", "agent")}
     clients = {role: LoggedClient(ask, path, role=role, model=model_name) for role, path in logs.items()}
