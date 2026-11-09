@@ -15,11 +15,14 @@
   It exits with status 1 when the core is broken.
 - **Example manifests** (`examples/*/example.yaml`) and `simulator.examples`. Each manifest gives the example's title, summary, fields, level, runtime, needed extras, entry module, output argument, quick-mode arguments, typed parameters (with ranges and choices) and the outputs to show. `run_example` runs any example in a subprocess, with UTF-8 output, a log and a timeout that also stops the example's own child processes. It writes `run.json`: the exact command, the effective parameters (your values first, then quick-mode values, then defaults), versions and the return code.
 - **The `sds` command** (also `python -m simulator`): `doctor`; `examples list | show | run | check [--run-quick]`; `run CONFIG.yaml`. After a run it prints the command and folder to repeat it, quoted for the current system's shell.
+- `sds doctor` lists optional extras that are not installed as `info` (add them only if you need them), not as warnings; warnings are kept for things that affect what you installed (security floors, Chrome for static plots).
+- The install scripts rebuild a `.venv` made with a Python older than 3.11.
 - `standard` install profile (extra); `all` now also includes `validate`. `simulator.__version__` reads `pyproject.toml` in a checkout, and run records use it.
 - The bundled models (`experiments`) are now part of the installed package, so `sds` and the engine find them from any folder.
 - `.gitattributes` fixes line endings: LF for `.sh`, CRLF for `.cmd`, `.bat` and `.ps1`.
 - **Browser UI** (`ui/`, the separate package `scientific-data-simulator-ui`, started with `sds ui`):
-  - pages: an examples gallery, a run form generated from each manifest with a live log and outputs, a results browser and the installation check;
+  - pages: an examples gallery, a run form generated from each manifest with a live log and outputs, a results browser (click a row to open a run with its figures, parameters, log and the command that repeats it) and the installation check;
+  - the sidebar shows the author, licence, source link and how to cite (from `CITATION.cff`);
   - it listens on 127.0.0.1 by default (`--address` changes that, with a warning) and needs Streamlit 1.67 or newer;
   - runs started at the same time get separate folders, and runs in progress refresh their log without blocking the page;
   - it uses only the simulator's public functions, and a test checks the simulator never imports it;

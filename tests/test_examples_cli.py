@@ -257,3 +257,11 @@ def test_python_and_security_floors_agree():
             assert "(3, 11)" in f.read()
     by_name = {c.name: c for c in doctor.run_checks(os.path.join(ROOT, ".doctor_probe_test"))}
     assert by_name["security: pillow"].status in (doctor.OK, doctor.WARN)
+
+
+def test_optional_extras_are_info_not_warnings(tmp_path):
+    checks = doctor.run_checks(str(tmp_path / "o"))
+    extras = [c for c in checks if c.name.startswith("extra: ")]
+    assert extras and all(c.status in (doctor.OK, doctor.INFO) for c in extras)
+    text = doctor.report([doctor.Check("extra: x", doctor.INFO, "not installed (optional)", "pip install x")])
+    assert "[info]" in text and "Ready." in text and "optional part(s) not installed" in text

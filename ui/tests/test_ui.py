@@ -164,3 +164,17 @@ def test_installation_page(app):
     text = " ".join(m.value for m in app.markdown)
     assert "test simulation" in text and "python" in text
     assert app.success or app.error
+
+
+def test_figures_fallback_and_citation(tmp_path):
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    (tmp_path / "a" / "b" / "fig.png").write_bytes(b"\x89PNG")
+    (tmp_path / "notes.txt").write_text("x")
+    assert [os.path.basename(f["path"]) for f in core.figures_in(str(tmp_path))] == ["fig.png"]
+    cite = core.citation()
+    assert "Sandner" in cite["authors"] and cite["title"] and cite["version"]
+
+
+def test_sidebar_credits(app):
+    text = " ".join(c.value for c in app.sidebar.caption)
+    assert "Daniel Sandner" in text and "Apache-2.0" in text

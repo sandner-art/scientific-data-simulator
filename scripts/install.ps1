@@ -41,13 +41,15 @@ if ($python.Length -gt 1) { $pyArgs = $python[1..($python.Length - 1)] }
 & $pyExe @pyArgs -c "import sys; print('Using', sys.executable, sys.version.split()[0])"
 
 $venvPython = if ($IsLinux -or $IsMacOS) { ".venv/bin/python" } else { ".venv\Scripts\python.exe" }
-function Test-Venv {
+function Test-Venv {  # a working environment on Python 3.11 or newer
     if (-not (Test-Path $venvPython)) { return $false }
     & $venvPython -m pip --version 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    & $venvPython -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" 2>$null | Out-Null
     return $LASTEXITCODE -eq 0
 }
 if ((Test-Path ".venv") -and -not (Test-Venv)) {
-    Write-Host "Removing an incomplete .venv from an earlier attempt ..."
+    Write-Host "Replacing .venv (incomplete, or made with a Python older than 3.11) ..."
     Remove-Item -Recurse -Force ".venv"
 }
 if (-not (Test-Path ".venv")) {

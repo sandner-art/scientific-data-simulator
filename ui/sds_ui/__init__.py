@@ -11,6 +11,10 @@ from typing import List, Optional
 
 __version__ = "0.7.0.dev0"
 
+AUTHOR = "Daniel Sandner"
+LICENSE = "Apache-2.0"
+REPOSITORY = "https://github.com/sandner-art/scientific-data-simulator"
+
 APP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
 
 

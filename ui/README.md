@@ -30,7 +30,9 @@ trust. The Results page shows only the runs folder given at start.
   manifest), a quick mode, a time limit, a live log, then the outputs (figures, tables, reports,
   JSON) and the command that repeats the run.
 - **Results**: past runs in the runs folder (default `sds_runs` in the folder where the UI was
-  started), with their parameters, the command that repeats them, the log and the outputs.
+  started). Click a row to open a run: its figures, parameters, the command that repeats it, the
+  log and the other outputs. If an example's manifest lists no figures, the figures found in the
+  run folder are shown.
   Interactive plots load only when you ask, since each is several megabytes.
 - **Installation**: the `sds doctor` check, with the fix for anything missing.
 

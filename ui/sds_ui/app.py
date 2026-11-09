@@ -11,11 +11,12 @@ import time
 import pandas as pd
 import streamlit as st
 
+from sds_ui import AUTHOR, LICENSE, REPOSITORY
 from sds_ui import __version__ as UI_VERSION
 from sds_ui import core
 
 PAGES = ("Examples", "Run", "Results", "Installation")
-STATUS_ICON = {"ok": "✅", "warn": "⚠️", "fail": "❌"}
+STATUS_ICON = {"ok": "✅", "info": "ℹ️", "warn": "⚠️", "fail": "❌"}
 MAX_IMAGES = 6
 MAX_HTML_BYTES = 20 * 1024 * 1024
 
@@ -44,11 +45,13 @@ def go(page, **state):
 
 
 # ---------------------------------------------------------------------------- output rendering
-def show_outputs(outputs, key):
-    if not outputs:
+def show_outputs(outputs, key, folder=None):
+    images = [o for o in outputs if o["kind"] == "image"]
+    if not images and folder:  # the manifest lists no figures: show the ones the run made
+        images = core.figures_in(folder)
+    if not outputs and not images:
         st.caption("No outputs listed by the example's manifest.")
         return
-    images = [o for o in outputs if o["kind"] == "image"]
     others = [o for o in outputs if o["kind"] != "image"]
     if images:
         cols = st.columns(min(3, len(images)))
@@ -194,7 +197,7 @@ def page_run():
     st.markdown("**Repeat from a terminal**")
     st.code(core.repeat_command(result.cwd, os.path.dirname(os.path.dirname(live.example.path)),
                                 result.command_line), language=None)
-    show_outputs(result.outputs, key="live")
+    show_outputs(result.outputs, key="live", folder=result.output_dir)
 
 
 def page_results():
@@ -213,10 +216,19 @@ def page_results():
     table = pd.DataFrame([{"example": r.example, "finished": r.finished, "status": r.status,
                            "seconds": r.seconds, "quick": r.quick, "folder": short(r.folder)}
                           for r in records])
-    st.dataframe(table)
+    st.caption("Click a row to open the run (or choose it below).")
+    event = st.dataframe(table, on_select="rerun", selection_mode="single-row", hide_index=True,
+                         key="results_table")
+    rows = list(getattr(getattr(event, "selection", None), "rows", None) or [])
+    if rows and rows[0] < len(records) and st.session_state.get("_results_row") != rows[0]:
+        st.session_state["_results_row"] = rows[0]  # a new click: open that run
+        st.session_state["result_pick"] = rows[0]
+    if st.session_state.get("result_pick", 0) >= len(records):
+        st.session_state["result_pick"] = 0
     labels = [f"{r.finished} · {r.example} · {r.status}" for r in records]
     choice = st.selectbox("Open a run", range(len(records)), format_func=lambda i: labels[i], key="result_pick")
     record = records[choice]
+    st.subheader(f"{record.title or record.example} · {record.status}")
     c1, c2 = st.columns(2)
     c1.markdown("**Parameters**")
     c1.json(record.parameters, expanded=True)
@@ -224,7 +236,7 @@ def page_results():
     c2.code(core.repeat_command(record.cwd, record.pythonpath, record.command_line), language=None)
     with st.expander("Log (last lines)"):
         st.code(core.tail(os.path.join(record.folder, "run.log")), language=None)
-    show_outputs(core.outputs_of(record, examples()), key="result")
+    show_outputs(core.outputs_of(record, examples()), key="result", folder=record.folder)
 
 
 def page_installation():
@@ -238,9 +250,10 @@ def page_installation():
     for c in checks:
         st.markdown(f"{STATUS_ICON.get(c.status, '')} **{c.name}** — {c.detail}")
         if c.fix:
-            st.caption(f"Fix: `{c.fix}`")
+            st.caption(f"{'Add it if you need it' if c.status == 'info' else 'Fix'}: `{c.fix}`")
     failed = sum(c.status == "fail" for c in checks)
-    (st.error if failed else st.success)(f"{failed} problem(s)." if failed else "The core works.")
+    (st.error if failed else st.success)(f"{failed} problem(s)." if failed else
+                                         "The core works. Optional parts (ℹ️) are needed only for what they name.")
 
 
 # ---------------------------------------------------------------------------- layout
@@ -251,6 +264,15 @@ with st.sidebar:
         st.session_state["page"] = PAGES[0]
     st.radio("Page", PAGES, key="page")
     st.caption("Everything here is also available from the command line: `sds examples ...`, `sds doctor`.")
+    st.divider()
+    cite = core.citation()
+    st.caption(f"© {AUTHOR} · {LICENSE} · [source code]({REPOSITORY})")
+    if cite.get("title"):
+        with st.expander("How to cite"):
+            text = (f"{cite['authors']}. *{cite['title']}*. Version {cite['version']}. "
+                    + (f"https://doi.org/{cite['doi']}" if cite.get("doi") else cite.get("url", "")))
+            st.markdown(text)
+            st.caption("Details and BibTeX: CITATION.cff in the repository.")
 
 {"Examples": page_examples, "Run": page_run, "Results": page_results,
  "Installation": page_installation}[st.session_state["page"]]()

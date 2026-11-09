@@ -5,7 +5,8 @@
     python -m simulator.doctor --json
     python -m simulator.doctor --plots    # also try a real static plot export (slower)
 
-Checks: Python version; core packages; optional extras (each with the pip command that adds it);
+Checks: Python version; core packages; security floors; optional extras (listed as ``info`` with
+the pip command that adds each, since most users need only some of them);
 a Chrome install for static plotly export (kaleido 1.x needs one); a writable output folder; the
 examples folder and its manifests; and a short test simulation. Exit status 1 if anything the
 core needs is missing or the test simulation fails; optional parts only warn.
@@ -23,7 +24,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from typing import List, Optional
 
-OK, WARN, FAIL = "ok", "warn", "fail"
+OK, INFO, WARN, FAIL = "ok", "info", "warn", "fail"  # info: an optional part you may not need
 MIN_PYTHON = (3, 11)
 CORE = ("numpy", "scipy", "pandas", "yaml", "dotenv", "pydantic", "psutil", "matplotlib", "plotly")
 #: extra -> (modules it provides, what it is for)
@@ -115,8 +116,8 @@ def run_checks(output_dir: str = "experiments_output", plots: bool = False) -> L
                             "" if ok else f'pip install -U "{package}>={".".join(map(str, floor))}"'))
     for extra, (modules, purpose) in EXTRAS.items():
         absent = [m for m in modules if _version(m) is None]
-        checks.append(Check(f"extra: {extra}", WARN if absent else OK,
-                            f"{purpose}: " + ("not installed" if absent else "installed"),
+        checks.append(Check(f"extra: {extra}", INFO if absent else OK,
+                            f"{purpose}: " + ("not installed (optional)" if absent else "installed"),
                             f'pip install -e ".[{extra}]"' if absent else ""))
     if _version("kaleido") is not None:
         chrome = _find_chrome()
@@ -179,7 +180,7 @@ def run_checks(output_dir: str = "experiments_output", plots: bool = False) -> L
 
 
 def report(checks: List[Check]) -> str:
-    marks = {OK: "[ ok ]", WARN: "[warn]", FAIL: "[FAIL]"}
+    marks = {OK: "[ ok ]", INFO: "[info]", WARN: "[warn]", FAIL: "[FAIL]"}
     width = max(len(c.name) for c in checks)
     lines = []
     for c in checks:
@@ -188,10 +189,14 @@ def report(checks: List[Check]) -> str:
             lines.append(f"{'':>7}{'':<{width}}  -> {c.fix}")
     failed = sum(c.status == FAIL for c in checks)
     warned = sum(c.status == WARN for c in checks)
+    optional = sum(c.status == INFO for c in checks)
     lines.append("")
-    lines.append("Ready." if not failed else f"{failed} problem(s) to fix.")
-    if warned and not failed:
-        lines[-1] += f" {warned} optional part(s) missing; the core works without them."
+    if failed:
+        lines.append(f"{failed} problem(s) to fix.")
+    else:
+        lines.append("Ready." + (f" {warned} warning(s) above." if warned else "")
+                     + (f" {optional} optional part(s) not installed; add them only if you need them."
+                        if optional else ""))
     return "\n".join(lines)
 
 

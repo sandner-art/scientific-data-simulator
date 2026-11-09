@@ -50,9 +50,13 @@ if ! PY="$(find_python)"; then
 fi
 echo "Using $("$PY" -c 'import sys; print(sys.executable, sys.version.split()[0])')"
 
-if [ -d .venv ] && ! { [ -x .venv/bin/python ] && .venv/bin/python -m pip --version >/dev/null 2>&1; }; then
+venv_ok() {  # a working environment on Python 3.11 or newer
+  [ -x .venv/bin/python ] && .venv/bin/python -m pip --version >/dev/null 2>&1 &&
+    .venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1
+}
+if [ -d .venv ] && ! venv_ok; then
   if [ -f .venv/pyvenv.cfg ] && [ ! -d .venv/Scripts ]; then
-    echo "Removing an incomplete .venv from an earlier attempt ..."
+    echo "Replacing .venv (incomplete, or made with a Python older than 3.11) ..."
     rm -rf .venv
   else
     echo ".venv exists but is not a working Linux/macOS environment (made on Windows?)." >&2

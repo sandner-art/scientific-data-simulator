@@ -225,6 +225,31 @@ def outputs_of(record: RunRecord, examples: Mapping[str, Example]) -> List[Dict[
     return [{"path": p, "kind": guess_kind(p)} for p in record.outputs]
 
 
+def figures_in(folder: str, limit: int = 12) -> List[Dict[str, str]]:
+    """Figures anywhere in a run folder (PNG, SVG, JPEG), for runs whose manifest lists none."""
+    from glob import glob
+    found: List[str] = []
+    for pattern in ("*.png", "*.svg", "*.jpg", "*.jpeg"):
+        found += glob(os.path.join(folder, "**", pattern), recursive=True)
+    return [{"path": p, "kind": "image"} for p in sorted(found)[:limit]]
+
+
+def citation() -> Dict[str, str]:
+    """Title, authors, version and DOI from ``CITATION.cff`` in a source checkout (empty if absent)."""
+    import simulator
+    import yaml
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(simulator.__file__))), "CITATION.cff")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    authors = ", ".join(" ".join(filter(None, [a.get("given-names"), a.get("family-names")]))
+                        for a in data.get("authors") or [] if isinstance(a, dict))
+    return {"title": str(data.get("title", "")), "authors": authors, "version": str(data.get("version", "")),
+            "doi": str(data.get("doi", "") or ""), "url": str(data.get("repository-code", "") or "")}
+
+
 def guess_kind(path: str) -> str:
     ext = os.path.splitext(path)[1].lower()
     return {".md": "markdown", ".png": "image", ".jpg": "image", ".jpeg": "image", ".svg": "image",
