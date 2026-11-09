@@ -26,6 +26,23 @@ def launch_command(port: int = 8501, address: str = "127.0.0.1") -> List[str]:
             "--client.toolbarMode", "minimal"]
 
 
+def _enable_windows_colours() -> None:
+    """Let the Windows console show Streamlit's coloured start-up text instead of raw escape codes
+    such as ←[0m (switch on 'virtual terminal processing' for the console this process shares)."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        for handle_id in (-11, -12):  # stdout, stderr
+            handle = kernel32.GetStdHandle(handle_id)
+            mode = ctypes.c_uint32()
+            if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                kernel32.SetConsoleMode(handle, mode.value | 0x0004)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    except Exception:  # not a console (e.g. redirected output): nothing to do
+        pass
+
+
 def launch(port: int = 8501, address: str = "127.0.0.1", runs_dir: Optional[str] = None,
            examples_dir: Optional[str] = None) -> int:
     env = dict(os.environ)
@@ -37,6 +54,7 @@ def launch(port: int = 8501, address: str = "127.0.0.1", runs_dir: Optional[str]
         print(f"WARNING: listening on {address}. Anyone who can reach this port can run the examples, "
               "fill the disk with results, and (example 12) import Python modules by name. Use only on "
               "a network you trust.")
+    _enable_windows_colours()
     print(f"Starting the UI on http://{address}:{port} (Ctrl+C stops it) ...")
     try:
         return subprocess.call(launch_command(port, address), env=env)

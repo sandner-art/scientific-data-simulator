@@ -178,3 +178,20 @@ def test_figures_fallback_and_citation(tmp_path):
 def test_sidebar_credits(app):
     text = " ".join(c.value for c in app.sidebar.caption)
     assert "Daniel Sandner" in text and "Apache-2.0" in text
+
+
+def test_interactive_plot_uses_st_iframe(app, tmp_path):
+    _page(app, "Run")
+    app.selectbox(key="run_example_select").set_value("example_4").run()
+    app.button[0].click().run(timeout=120)
+    toggles = [t for t in app.toggle if t.key.startswith("html_live_")]
+    assert toggles
+    toggles[0].set_value(True).run()
+    assert not app.exception, app.exception
+    with open(APP, encoding="utf-8") as f:
+        assert "components.v1" not in f.read()  # deprecated in Streamlit 1.67
+
+
+def test_windows_colour_switch_is_harmless():
+    from sds_ui import _enable_windows_colours
+    _enable_windows_colours()  # a no-op off Windows; must never raise

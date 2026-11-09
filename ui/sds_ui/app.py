@@ -81,9 +81,9 @@ def show_outputs(outputs, key, folder=None):
                     if size > MAX_HTML_BYTES:
                         st.caption(f"{size / 1e6:.0f} MB: open it from the folder in a browser.")
                     elif st.toggle("Show interactive plot", key=f"html_{key}_{i}"):
-                        import streamlit.components.v1 as components
-                        with open(o["path"], encoding="utf-8") as f:
-                            components.html(f.read(), height=480, scrolling=True)
+                        # a local file the simulator wrote (st.iframe reads HTML files directly)
+                        from pathlib import Path
+                        st.iframe(Path(o["path"]), height=480)
                 elif o["kind"] == "folder":
                     st.write(sorted(os.listdir(o["path"]))[:50])
                 else:
