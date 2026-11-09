@@ -8,6 +8,8 @@ def main():
     parser = argparse.ArgumentParser(description="Run an example experiment.")
     parser.add_argument("--config", type=str, default="examples/example_1/config.yaml",  # UPDATED PATH
                         help="Path to the configuration file.")
+    parser.add_argument("--output_dir", type=str, default="experiments_output",
+                        help="Folder for the experiment records.")
     args = parser.parse_args()
 
     # If the provided config path is absolute, use it directly.
@@ -22,7 +24,7 @@ def main():
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
-    engine = SimulatorEngine()
+    engine = SimulatorEngine(args.output_dir)
     experiment_id = engine.run_experiment(config_path)
     print(f"Experiment completed. ID: {experiment_id}")
 

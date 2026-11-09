@@ -1,0 +1,15 @@
+title: Law discovery from noisy data
+summary: Hidden laws from nine families, textbook or counterfactual, with formula questions, a curve-fitting baseline and an interactive environment.
+entry: examples.example_10_law_discovery.run_experiment
+fields: [physics, mathematics, ai]
+level: research
+runtime: {full: 45 s, quick: 45 s}
+params:
+  - {name: suite_seed, arg: --suite-seed, type: int, default: null, help: fix the otherwise secret order of the suite}
+  - {name: replicates, arg: --replicates, type: int, default: 1, min: 1, max: 20, help: runs per design point}
+  - {name: env, arg: --env, type: int, default: 0, min: 0, max: 1000, help: play this many environment episodes instead}
+  - {name: export, arg: --export, type: flag, default: false, help: also export and leak-audit a Hugging Face dataset}
+outputs:
+  - {path: design_results.csv, kind: table}
+  - {path: "*/bundle/figure.png", kind: image}
+  - {path: "hf_dataset/README.md", kind: markdown}

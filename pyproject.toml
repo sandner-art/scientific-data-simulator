@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scientific-data-simulator"
-version = "0.6.0.dev0"
+version = "0.7.0.dev0"
 description = "Reproducible, provenance-first generation of simulated scientific reference data."
 readme = "README.md"
 license = "Apache-2.0"
@@ -30,7 +30,12 @@ dependencies = [
     "plotly>=5.0",
 ]
 
+[project.scripts]
+sds = "simulator.cli:main"
+
 [project.optional-dependencies]
+# Install profiles used by scripts/install.*: core (no extra), standard, all, dev.
+standard = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24"]
 # Static export of plotly figures (svg/pdf/png). Kaleido >= 1.0 needs a Chrome install
 # and plotly >= 6.1.1 (older plotly prints deprecation warnings about 'engine').
 static-plots = ["kaleido>=1.0", "plotly>=6.1.1"]
@@ -50,13 +55,13 @@ openenv = ["openenv>=0.12; python_version >= '3.10'"]
 verifiers = ["verifiers>=0.4.1; python_version >= '3.11'"]
 docs = ["sphinx>=7", "sphinx-rtd-theme", "myst-parser"]
 dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido>=1.0", "plotly>=6.1.1", "pint>=0.24"]
-all = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24"]
+all = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24", "mlcroissant>=1.0", "datasets>=2.18"]
 
 [project.urls]
 Homepage = "https://github.com/sandner-art/scientific-data-simulator"
 
 [tool.setuptools.packages.find]
-include = ["simulator*"]
+include = ["simulator*", "experiments*"]  # the bundled models are importable after any install
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

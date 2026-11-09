@@ -1,0 +1,11 @@
+title: Discovery environment
+summary: Run noisy experiments on a predator-prey system with a hidden growth rate, then estimate it; a scripted agent plays it.
+entry: examples.example_9_discovery_env.run_experiment
+fields: [physics, ai]
+level: research
+runtime: {full: 15 s, quick: 5 s}
+output_arg: null
+quick_args: [--episodes, "2"]
+params:
+  - {name: episodes, arg: --episodes, type: int, default: 10, min: 1, max: 1000, help: episodes to play}
+  - {name: show, arg: --show, type: flag, default: false, help: print the first episode's transcript}

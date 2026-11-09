@@ -2,6 +2,41 @@
 
 This directory contains example scripts that demonstrate how to use the Scientific Data Simulator.
 
+## Running them
+
+```bash
+sds examples list                     # all examples: level, fields, runtime, title
+sds examples show NAME                # what it does, its parameters, what it writes
+sds examples run NAME [--quick] [--set name=value ...] [--output DIR]
+```
+
+The `python -m examples.NAME.run_experiment` commands in the table below also still work.
+
+## Adding an example
+
+1. Make a folder `examples/<name>/` with a `run_experiment.py` that has a `main()`. It should take
+   `--output_dir` and write everything there.
+2. Add an `example.yaml` next to it:
+
+   ```yaml
+   title: Short title
+   summary: One sentence on what it shows.
+   entry: examples.<name>.run_experiment
+   fields: [physics]                 # physics, mathematics, geometry, social, economics, methods, ai
+   level: student                    # student | research
+   runtime: {full: 20 s, quick: 5 s}
+   extras: []                        # pip extras it needs beyond the core
+   output_arg: --output_dir          # null if the script cannot take one (it then runs in the output folder)
+   quick_args: [--n, "3"]            # fast settings, used by CI and by --quick
+   params:                           # what a user may change (types: int, float, str, flag, choice)
+     - {name: n, arg: --n, type: int, default: 12, min: 1, max: 500, help: number of cases}
+   outputs:                          # what to show after a run (glob patterns)
+     - {path: report.md, kind: markdown}
+   ```
+
+3. Check it with `sds examples check --run-quick --only <name>`. The test suite and CI check every
+   manifest, and CI runs every example in quick mode.
+
 ## Available Examples
 
 | Example        | Description                                                                                      | Experiment Logic                                                                   | Command to Run                                         |

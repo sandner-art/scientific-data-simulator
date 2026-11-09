@@ -173,6 +173,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 /experiments_output
+/sds_runs
 tests/testlog
 /parameter_sweep_results
 /doe_example_results

@@ -1,0 +1,10 @@
+title: Sine wave
+summary: The smallest complete run - a sine wave written with its configuration, provenance and plots.
+entry: examples.example_1.run_experiment
+fields: [mathematics]
+level: student
+runtime: {full: 5 s, quick: 5 s}
+outputs:
+  - {path: "*/*.png", kind: image}
+  - {path: "*/time_series_plotly.html", kind: html}
+  - {path: "*/ground_truth.json", kind: json}

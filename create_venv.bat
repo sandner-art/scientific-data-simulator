@@ -1,9 +1,4 @@
 @echo off
-echo Creating virtual environment...
-python -m venv .venv
-echo Activating virtual environment...
-call .venv\Scripts\activate.bat
-echo Installing dependencies...
-pip install -e ".[dev]"
-echo Done.
-pause
+REM Kept for compatibility: use scripts\install.cmd [core^|standard^|all^|dev].
+call "%~dp0scripts\install.cmd" dev
+exit /b %ERRORLEVEL%

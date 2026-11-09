@@ -1,0 +1,16 @@
+title: Language models as attacker, writer and agent
+summary: One logged, replayable model client in three roles; runs offline with a scripted stand-in, or with your own model function.
+entry: examples.example_12_model_roles.run_experiment
+fields: [ai, methods]
+level: research
+runtime: {full: 10 s, quick: 5 s}
+extras: [parquet]
+quick_args: [--episodes, "2"]
+params:
+  - {name: model, arg: --model, type: str, default: scripted, help: "module:function calling your model, or 'scripted'"}
+  - {name: model_name, arg: --model-name, type: str, default: null, help: model name and version to record (required with a real model)}
+  - {name: episodes, arg: --episodes, type: int, default: 6, min: 1, max: 500, help: agent episodes}
+  - {name: suite_seed, arg: --suite-seed, type: int, default: 12, help: order of the suite}
+outputs:
+  - {path: report.md, kind: markdown}
+  - {path: llm_provenance.json, kind: json}

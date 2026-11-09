@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+### Added
+- **Install and update scripts.** `scripts/install.cmd` / `install.ps1` (Windows) and `scripts/install.sh` (Linux, macOS; bash 3.2 compatible) create `.venv`, install a profile (`core`, `standard`, `all`, `dev`) and run the doctor. `update.*` pulls a git checkout (fast-forward only, never over local changes) and reinstalls the remembered profile. `create_venv.bat` and `run_example.bat` now delegate to them.
+- **`sds doctor`** (`python -m simulator.doctor`) checks:
+  - Python version and virtual environment;
+  - core packages and each optional extra, with the command that adds it;
+  - Chrome for static plot export;
+  - a writable output folder;
+  - the example manifests;
+  - a short reproducibility test.
+
+  It exits with status 1 when the core is broken.
+- **Example manifests** (`examples/*/example.yaml`) and `simulator.examples`. Each manifest gives the example's title, summary, fields, level, runtime, needed extras, entry module, output argument, quick-mode arguments, typed parameters (with ranges and choices) and the outputs to show. `run_example` runs any example in a subprocess, with UTF-8 output, a log and a timeout that also stops the example's own child processes. It writes `run.json`: the exact command, the effective parameters (your values first, then quick-mode values, then defaults), versions and the return code.
+- **The `sds` command** (also `python -m simulator`): `doctor`; `examples list | show | run | check [--run-quick]`; `run CONFIG.yaml`. After a run it prints the command and folder to repeat it, quoted for the current system's shell.
+- `standard` install profile (extra); `all` now also includes `validate`. `simulator.__version__` reads `pyproject.toml` in a checkout, and run records use it.
+- The bundled models (`experiments`) are now part of the installed package, so `sds` and the engine find them from any folder.
+- `.gitattributes` fixes line endings: LF for `.sh`, CRLF for `.cmd`, `.bat` and `.ps1`.
+- CI runs the tests on macOS too, runs the install scripts on Linux, macOS and Windows as a new user would, and runs every example in quick mode.
+
+### Changed
+- Examples 1-6 accept `--output_dir`.
+
 ## 0.6.0 (unreleased)
 
 ### Added

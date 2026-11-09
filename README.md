@@ -83,13 +83,38 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
 
 ## Installation
 
+Python 3.9 or newer is required. The install scripts create a virtual environment in `.venv`,
+install a profile and run `sds doctor`, which checks the installation and says how to fix
+what is missing.
+
+| System | Install | Update |
+|---|---|---|
+| Windows (cmd or double-click) | `scripts\install.cmd [profile]` | `scripts\update.cmd` |
+| Windows (PowerShell) | `scripts\install.cmd standard`, or `.\scripts\install.ps1 -Setup standard` if scripts are allowed | `scripts\update.cmd` |
+| Linux, macOS | `bash scripts/install.sh [profile]` | `bash scripts/update.sh` |
+
+Profiles: `core` (simulate, CSV/NPY storage, interactive plots), `standard` (the default: adds static
+plot export, Parquet, HDF5 and physical units), `all` (adds dataset validation: mlcroissant and
+datasets), and `dev` (standard plus the test tools).
+The update scripts pull the latest code if the folder is a git checkout on a branch with an
+upstream, then reinstall the profile chosen at install time.
+
+By hand, on any system:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"            # core + pytest, pyarrow, h5py, pint, kaleido
+pip install -e ".[standard]"       # or: pip install -e .   /   ".[dev]"
+sds doctor
 ```
 
-Python 3.9 or newer is required. Optional extras:
+macOS: use a Python from python.org, Homebrew or uv, not the system one. On every system,
+static PNG/SVG/PDF export of plotly figures needs Chrome; `plotly_get_chrome` downloads one
+(interactive HTML plots work without it). The CI workflow tests on Linux (Python 3.9-3.13),
+Windows and macOS, and runs the install scripts on all three as a new user would. Keep one
+`.venv` per system: a Windows `.venv` cannot be used from WSL, and the reverse.
+
+Optional extras (the profiles combine them):
 
 | Extra | Adds |
 |---|---|
@@ -101,11 +126,28 @@ Python 3.9 or newer is required. Optional extras:
 | `validate` | mlcroissant and datasets, to check exported datasets |
 | `openenv` | the OpenEnv library (Python ≥ 3.10), to use exported RL packages |
 | `verifiers` | the verifiers library (Python ≥ 3.11), to use exported RL packages |
-| `all` | static-plots, parquet, hdf5 and units |
+| `standard` | static-plots, parquet, hdf5 and units |
+| `all` | `standard` plus validate |
 
 Install `openenv` and `verifiers` in separate environments: their current releases pin incompatible versions of `mcp`.
 
 ## Quick start
+
+Examples are listed, explained and run by the `sds` command (also `python -m simulator`):
+
+```bash
+sds examples list                      # title, level, fields, runtime
+sds examples show example_10_law_discovery
+sds examples run example_8_geometry_benchmark --quick
+sds examples run example_10_law_discovery --set export=true --output my_run
+```
+
+Each run goes to its own folder (default `sds_runs/<example>/<time>`), with `run.log` and
+`run.json`; `run.json` holds the exact command, so any run can be repeated in a script. An
+example is described by the `example.yaml` in its folder (see `examples/README.md`); tools
+read these manifests, so a new example appears in `sds examples list` once it has one.
+
+Or directly:
 
 ```bash
 python -m examples.example_1.run_experiment                       # sine wave
@@ -306,11 +348,13 @@ simulator/        engine.py, base.py, config.py, schema.py, rng.py, observation.
                   bundle.py, storage.py, persistence.py, provenance.py, experiment_record.py,
                   doe.py, data_handler.py, visualization.py, utils.py,
                   envs.py, units.py, checker.py, llm.py, expressions.py, audit.py,
+                  cli.py (the sds command), doctor.py, examples.py (example manifests),
                   export/ (tasks, huggingface, sbi, rl, the_well),
                   diagnostics/ (shortcuts, contamination, episodes, quality, stats),
                   ai/ (clients, agent, attacker, writer, solver)
 experiments/      bundled reference models (one package per model)
-examples/         runnable examples (python -m examples.<name>.run_experiment)
+examples/         runnable examples, each with an example.yaml manifest (sds examples list)
+scripts/          install and update scripts for Windows (cmd, PowerShell), Linux and macOS
 tests/            pytest suite, incl. test_verification.py (numerical verification)
 docs/             Sphinx sources
 ```

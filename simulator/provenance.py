@@ -14,6 +14,11 @@ _FALLBACK_PACKAGES = ("numpy", "scipy", "pandas", "pyyaml", "python-dotenv", "py
 
 
 def simulator_version() -> Optional[str]:
+    """The simulator's version: ``pyproject.toml`` in a source checkout (installed metadata of an
+    editable install can lag behind), else the installed metadata."""
+    from . import __version__
+    if __version__ and __version__ != "unknown":
+        return __version__
     try:
         return metadata.version(DISTRIBUTION_NAME)
     except metadata.PackageNotFoundError:

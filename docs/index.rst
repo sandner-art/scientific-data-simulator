@@ -362,6 +362,18 @@ and agents (see ``examples/example_11_testbed``):
   (:func:`experiments.law_discovery.logic.textbook_counterpart`), evaluated only where
   the alternative differs from the truth by more than the tolerance.
 
+Installing, Checking and Running Examples
+-----------------------------------------
+
+``scripts/install.cmd`` (Windows), ``scripts/install.ps1`` and ``scripts/install.sh`` (Linux,
+macOS) create ``.venv``, install a profile (``core``, ``standard``, ``all``, ``dev``) and run
+``sds doctor``, which checks the installation and prints the fix for anything missing.
+
+Examples describe themselves in an ``example.yaml`` manifest (see :mod:`simulator.examples`).
+``sds examples list``, ``show``, ``run`` and ``check`` read the manifests, so a new example is
+listed, documented and run like the others once it has one. Every run writes ``run.log`` and
+``run.json`` with the exact command.
+
 Language Models in Roles
 ------------------------
 
