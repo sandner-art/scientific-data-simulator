@@ -387,7 +387,8 @@ def run_example(example: Example, values: Optional[Mapping[str, Any]] = None, qu
     values = dict(values or {})
     for name in values:
         example.param(name)  # unknown names fail early
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    import uuid
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]  # unique even within a second
     output_dir = os.path.abspath(output_dir or os.path.join("sds_runs", example.name, stamp))
     os.makedirs(output_dir, exist_ok=True)
     root = project_root(os.path.dirname(example.path))

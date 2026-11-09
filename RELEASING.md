@@ -31,9 +31,10 @@ lists every version; versions 0.2–0.6 were development steps, not separate rel
 
 1. On the development branch:
    - set the version (no `.dev0`) in `pyproject.toml`, `CITATION.cff` (`version`,
-     `date-released`) and `docs/conf.py`;
+     `date-released`) and `docs/conf.py`, and the same version in `ui/pyproject.toml` (also its
+     `scientific-data-simulator>=` floor) and `ui/sds_ui/__init__.py`; the tests check they agree;
    - date the changelog section;
-   - run `pytest` and `sds examples check --run-quick`.
+   - run `pytest`, `pytest ui/tests` and `sds examples check --run-quick`.
 2. Open a pull request into `main`. CI must pass on all three systems, including the
    install-script job.
 3. For a first release, or a large one, tag a release candidate on `main` first, for example

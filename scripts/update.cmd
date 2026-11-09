@@ -1,5 +1,5 @@
 @echo off
-REM Update Scientific Data Simulator (Windows). Usage: scripts\update.cmd [core^|standard^|all^|dev]
+REM Update Scientific Data Simulator (Windows). Usage: scripts\update.cmd [core^|standard^|all^|dev^|ui]
 REM Runs update.ps1 with the execution policy bypassed for this run only.
 setlocal EnableDelayedExpansion
 (

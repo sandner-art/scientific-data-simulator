@@ -1,11 +1,11 @@
 # Install Scientific Data Simulator into .\.venv (Windows PowerShell 5.1+ or PowerShell 7).
 #
-#   .\scripts\install.ps1 [-Setup core|standard|all|dev]
+#   .\scripts\install.ps1 [-Setup core|standard|all|dev|ui]
 #
 # If scripts are blocked, run scripts\install.cmd instead (it starts this script with
 # -ExecutionPolicy Bypass for this run only). Set $env:PYTHON to choose the interpreter.
 param(
-    [ValidateSet("core", "standard", "all", "dev")]
+    [ValidateSet("core", "standard", "all", "dev", "ui")]
     [string]$Setup = "standard"
 )
 $ErrorActionPreference = "Continue"
@@ -60,11 +60,15 @@ if (-not (Test-Path ".venv")) {
     }
 }
 
-$extras = if ($Setup -eq "core") { "" } else { "[$Setup]" }
+$extras = if ($Setup -eq "core") { "" } elseif ($Setup -eq "ui") { "[standard]" } else { "[$Setup]" }
 Write-Host "Installing profile '$Setup' ..."
 & $venvPython -m pip install --upgrade pip | Out-Null
 & $venvPython -m pip install -e ".$extras"
 if ($LASTEXITCODE -ne 0) { Write-Host "pip install failed." -ForegroundColor Red; exit 1 }
+if ($Setup -eq "ui") {
+    & $venvPython -m pip install -e ./ui
+    if ($LASTEXITCODE -ne 0) { Write-Host "pip install of the UI failed." -ForegroundColor Red; exit 1 }
+}
 Set-Content -Path ".venv\sds-profile" -Value $Setup
 
 Write-Host ""
@@ -76,4 +80,5 @@ if ($IsLinux -or $IsMacOS) {
     Write-Host "Done. Activate with:  .venv\Scripts\Activate.ps1   (cmd: .venv\Scripts\activate.bat)"
 }
 Write-Host "Then try:             sds examples list"
+if ($Setup -eq "ui") { Write-Host "Start the UI:         sds ui      (or double-click scripts\start-ui.cmd)" }
 exit 0

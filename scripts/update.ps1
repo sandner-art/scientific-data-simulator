@@ -2,7 +2,7 @@
 # (a git checkout on a branch with an upstream), reinstall the profile chosen at install time,
 # and run the doctor.
 #
-#   .\scripts\update.ps1 [-Setup core|standard|all|dev]   # overrides the remembered profile
+#   .\scripts\update.ps1 [-Setup core|standard|all|dev|ui]   # overrides the remembered profile
 param(
     [string]$Setup = ""
 )
@@ -17,8 +17,8 @@ if (-not (Test-Path $venvPython)) {
 if (-not $Setup) {
     $Setup = if (Test-Path ".venv\sds-profile") { (Get-Content ".venv\sds-profile" -TotalCount 1).Trim() } else { "standard" }
 }
-if (@("core", "standard", "all", "dev") -notcontains $Setup) {
-    Write-Host "Unknown profile '$Setup' (core, standard, all, dev)" -ForegroundColor Red
+if (@("core", "standard", "all", "dev", "ui") -notcontains $Setup) {
+    Write-Host "Unknown profile '$Setup' (core, standard, all, dev, ui)" -ForegroundColor Red
     exit 2
 }
 
@@ -40,11 +40,15 @@ if ((Test-Path ".git") -and (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "Not a git checkout; updating the installed packages only."
 }
 
-$extras = if ($Setup -eq "core") { "" } else { "[$Setup]" }
+$extras = if ($Setup -eq "core") { "" } elseif ($Setup -eq "ui") { "[standard]" } else { "[$Setup]" }
 Write-Host "Reinstalling profile '$Setup' ..."
 & $venvPython -m pip install --upgrade pip | Out-Null
 & $venvPython -m pip install -e ".$extras"
 if ($LASTEXITCODE -ne 0) { Write-Host "pip install failed." -ForegroundColor Red; exit 1 }
+if ($Setup -eq "ui") {
+    & $venvPython -m pip install -e ./ui
+    if ($LASTEXITCODE -ne 0) { Write-Host "pip install of the UI failed." -ForegroundColor Red; exit 1 }
+}
 Set-Content -Path ".venv\sds-profile" -Value $Setup
 Write-Host ""
 & $venvPython -m simulator doctor

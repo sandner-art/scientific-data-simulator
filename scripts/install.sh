@@ -3,11 +3,12 @@
 #
 #   scripts/install.sh [PROFILE]
 #
-# PROFILE: core | standard (default) | all | dev
+# PROFILE: core | standard (default) | all | dev | ui
 #   core      simulate, store CSV/NPY, interactive plots
 #   standard  + static plot export, Parquet, HDF5, physical units
-#   all       + everything optional that installs everywhere
+#   all       + dataset validation
 #   dev       + tests and their dependencies (for contributors)
+#   ui        standard + the browser UI (start it with: sds ui)
 # Set PYTHON=/path/to/python3 to choose the interpreter (3.9 or newer).
 # Works with the bash 3.2 that macOS ships.
 set -euo pipefail
@@ -16,8 +17,9 @@ PROFILE="${1:-standard}"
 case "$PROFILE" in
   core) EXTRAS="" ;;
   standard|all|dev) EXTRAS="[$PROFILE]" ;;
-  -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
-  *) echo "Unknown profile '$PROFILE' (core, standard, all, dev)" >&2; exit 2 ;;
+  ui) EXTRAS="[standard]" ;;
+  -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+  *) echo "Unknown profile '$PROFILE' (core, standard, all, dev, ui)" >&2; exit 2 ;;
 esac
 
 cd "$(dirname "$0")/.."
@@ -70,6 +72,9 @@ fi
 echo "Installing profile '$PROFILE' ..."
 .venv/bin/python -m pip install --upgrade pip >/dev/null
 .venv/bin/python -m pip install -e ".$EXTRAS"
+if [ "$PROFILE" = "ui" ]; then
+  .venv/bin/python -m pip install -e ./ui
+fi
 echo "$PROFILE" > .venv/sds-profile
 
 echo
@@ -77,3 +82,6 @@ echo
 echo
 echo "Done. Activate with:  source .venv/bin/activate"
 echo "Then try:             sds examples list"
+if [ "$PROFILE" = "ui" ]; then
+  echo "Start the UI:         sds ui      (or: bash scripts/start-ui.sh)"
+fi

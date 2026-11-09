@@ -14,7 +14,8 @@ PROFILE="${1:-$(cat .venv/sds-profile 2>/dev/null || echo standard)}"
 case "$PROFILE" in
   core) EXTRAS="" ;;
   standard|all|dev) EXTRAS="[$PROFILE]" ;;
-  *) echo "Unknown profile '$PROFILE' (core, standard, all, dev)" >&2; exit 2 ;;
+  ui) EXTRAS="[standard]" ;;
+  *) echo "Unknown profile '$PROFILE' (core, standard, all, dev, ui)" >&2; exit 2 ;;
 esac
 
 if [ -d .git ] && command -v git >/dev/null 2>&1; then
@@ -33,6 +34,9 @@ fi
 echo "Reinstalling profile '$PROFILE' ..."
 .venv/bin/python -m pip install --upgrade pip >/dev/null
 .venv/bin/python -m pip install -e ".$EXTRAS"
+if [ "$PROFILE" = "ui" ]; then
+  .venv/bin/python -m pip install -e ./ui
+fi
 echo "$PROFILE" > .venv/sds-profile
 echo
 .venv/bin/python -m simulator doctor || true

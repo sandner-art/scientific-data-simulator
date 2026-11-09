@@ -95,7 +95,7 @@ what is missing.
 
 Profiles: `core` (simulate, CSV/NPY storage, interactive plots), `standard` (the default: adds static
 plot export, Parquet, HDF5 and physical units), `all` (adds dataset validation: mlcroissant and
-datasets), and `dev` (standard plus the test tools).
+datasets), `dev` (standard plus the test tools) and `ui` (standard plus the browser UI).
 The update scripts pull the latest code if the folder is a git checkout on a branch with an
 upstream, then reinstall the profile chosen at install time.
 
@@ -141,6 +141,11 @@ sds examples show example_10_law_discovery
 sds examples run example_8_geometry_benchmark --quick
 sds examples run example_10_law_discovery --set export=true --output my_run
 ```
+
+Prefer a browser? Install the `ui` profile (`bash scripts/install.sh ui`, Windows:
+`scripts\install.cmd ui`) and start it with `sds ui`. It shows the examples, a run form with
+a live log, past results and the installation check. It is a separate package in `ui/` (see
+`ui/README.md`) that uses the same functions as the command line.
 
 Each run goes to its own folder (default `sds_runs/<example>/<time>`), with `run.log` and
 `run.json`; `run.json` holds the exact command, so any run can be repeated in a script. An
@@ -354,7 +359,8 @@ simulator/        engine.py, base.py, config.py, schema.py, rng.py, observation.
                   ai/ (clients, agent, attacker, writer, solver)
 experiments/      bundled reference models (one package per model)
 examples/         runnable examples, each with an example.yaml manifest (sds examples list)
-scripts/          install and update scripts for Windows (cmd, PowerShell), Linux and macOS
+scripts/          install, update and start-ui scripts for Windows (cmd, PowerShell), Linux and macOS
+ui/               the browser UI: a separate package (scientific-data-simulator-ui), sds ui
 tests/            pytest suite, incl. test_verification.py (numerical verification)
 docs/             Sphinx sources
 ```

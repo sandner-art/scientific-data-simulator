@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scientific-data-simulator-ui"
+version = "0.7.0.dev0"  # released together with the simulator, same version
+description = "Streamlit UI for Scientific Data Simulator: examples, runs, results, installation check"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [{name = "Daniel Sandner"}]
+requires-python = ">=3.9"
+dependencies = [
+    "scientific-data-simulator>=0.7.0.dev0",
+    "streamlit>=1.37",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+sds-ui = "sds_ui.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sds_ui*"]

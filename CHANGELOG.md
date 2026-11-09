@@ -18,7 +18,15 @@
 - `standard` install profile (extra); `all` now also includes `validate`. `simulator.__version__` reads `pyproject.toml` in a checkout, and run records use it.
 - The bundled models (`experiments`) are now part of the installed package, so `sds` and the engine find them from any folder.
 - `.gitattributes` fixes line endings: LF for `.sh`, CRLF for `.cmd`, `.bat` and `.ps1`.
-- CI runs the tests on macOS too, runs the install scripts on Linux, macOS and Windows as a new user would, and runs every example in quick mode.
+- **Browser UI** (`ui/`, the separate package `scientific-data-simulator-ui`, started with `sds ui`):
+  - pages: an examples gallery, a run form generated from each manifest with a live log and outputs, a results browser and the installation check;
+  - it listens on 127.0.0.1 by default (`--address` changes that, with a warning) and needs Streamlit 1.37 or newer;
+  - runs started at the same time get separate folders, and runs in progress refresh their log without blocking the page;
+  - it uses only the simulator's public functions, and a test checks the simulator never imports it;
+  - its version moves with the simulator's;
+  - it is installed with the `ui` profile and started with `scripts/start-ui.*`;
+  - headless tests (Streamlit AppTest) open every page and run an example through the form.
+- CI runs the tests on macOS too, runs the install scripts on Linux, macOS and Windows as a new user would, runs every example in quick mode, and tests the UI on all three systems.
 
 ### Changed
 - Examples 1-6 accept `--output_dir`.

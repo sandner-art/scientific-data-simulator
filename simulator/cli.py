@@ -7,6 +7,7 @@
     sds examples run NAME [--quick] [--set name=value ...] [--output DIR] [--timeout S]
     sds examples check [--run-quick] [--only NAME ...]   validate manifests (and run quick modes)
     sds run CONFIG.yaml [--output DIR]   run one experiment configuration
+    sds ui [--port N] [--runs-dir DIR]    start the UI (the separate scientific-data-simulator-ui package)
 """
 from __future__ import annotations
 
@@ -151,8 +152,22 @@ def _cmd_run_config(args) -> int:
     return 0
 
 
+def _cmd_ui(ui_args: List[str]) -> int:
+    """Start the UI if it is installed. The simulator does not depend on it: the UI is a separate
+    package, found here by name only."""
+    import importlib
+    try:
+        ui_cli = importlib.import_module("sds_ui.cli")
+    except ImportError:
+        print("The UI is not installed. From the repository folder:\n"
+              "    pip install -e ./ui          (or: scripts/install.sh ui, scripts\\install.cmd ui)",
+              file=sys.stderr)
+        return 2
+    return ui_cli.main(ui_args)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(prog="sds", description="Scientific Data Simulator")
+    parser = argparse.ArgumentParser(prog="sds", description="Scientific Data Simulator", allow_abbrev=False)
     parser.add_argument("--examples-dir", default=None, help="examples folder (default: the checkout's)")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -185,12 +200,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--timeout", type=float, default=600)
     p.set_defaults(func=_cmd_check)
 
+    ui = sub.add_parser("ui", help="start the UI in your browser (needs the UI package)")
+    ui.add_argument("ui_args", nargs="*", help="passed on to the UI: --port N, --address A, --runs-dir DIR")
+    ui.set_defaults(func=lambda a: _cmd_ui(list(a.ui_args)))
+
     run = sub.add_parser("run", help="run one experiment configuration (YAML)")
     run.add_argument("config")
     run.add_argument("--output", default="experiments_output")
     run.set_defaults(func=_cmd_run_config)
 
-    args = parser.parse_args(argv)
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    positional = [i for i, t in enumerate(tokens) if not t.startswith("-")
+                  and (i == 0 or tokens[i - 1] != "--examples-dir")]
+    if positional and tokens[positional[0]] == "ui" and not {"-h", "--help"} & set(tokens[:positional[0]]):
+        _ensure_models_importable()
+        forwarded = []
+        if "--examples-dir" in tokens[:positional[0]]:  # the global option applies to the UI too
+            i = tokens.index("--examples-dir")
+            if i + 1 < positional[0]:
+                forwarded = ["--examples-dir", tokens[i + 1]]
+        return _cmd_ui(forwarded + tokens[positional[0] + 1:])  # everything after "ui" belongs to the UI
+    args = parser.parse_args(tokens)
     _ensure_models_importable()
     if args.command == "doctor":
         from .doctor import main as doctor_main

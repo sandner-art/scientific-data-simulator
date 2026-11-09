@@ -374,6 +374,10 @@ Examples describe themselves in an ``example.yaml`` manifest (see :mod:`simulato
 listed, documented and run like the others once it has one. Every run writes ``run.log`` and
 ``run.json`` with the exact command.
 
+The browser UI (``sds ui``) is a separate package in ``ui/``. It shows the examples, a run form
+generated from each manifest, past results and the installation check, using the same
+functions.
+
 Language Models in Roles
 ------------------------
 

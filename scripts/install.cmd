@@ -1,5 +1,5 @@
 @echo off
-REM Install Scientific Data Simulator (Windows). Usage: scripts\install.cmd [core^|standard^|all^|dev]
+REM Install Scientific Data Simulator (Windows). Usage: scripts\install.cmd [core^|standard^|all^|dev^|ui]
 REM Runs install.ps1 with the execution policy bypassed for this run only. Double-clicking it works too.
 setlocal
 set "SDS_PROFILE=%~1"
