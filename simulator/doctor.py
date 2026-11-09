@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass
 from typing import List, Optional
 
 OK, WARN, FAIL = "ok", "warn", "fail"
-MIN_PYTHON = (3, 9)
+MIN_PYTHON = (3, 11)
 CORE = ("numpy", "scipy", "pandas", "yaml", "dotenv", "pydantic", "psutil", "matplotlib", "plotly")
 #: extra -> (modules it provides, what it is for)
 EXTRAS = {
@@ -34,6 +34,8 @@ EXTRAS = {
     "units": (("pint",), "physical units in configs"),
     "validate": (("mlcroissant", "datasets"), "validating exported datasets"),
 }
+#: package -> (minimum version, why): versions below these have known security problems
+SECURITY_FLOORS = {"pillow": ((13, 0), "CVE-2026-112900 and TIFF/JPEG memory bugs are fixed in Pillow 13.0")}
 CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome", "msedge")
 CHROME_PATHS = (
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -88,7 +90,7 @@ def run_checks(output_dir: str = "experiments_output", plots: bool = False) -> L
     py = sys.version_info
     checks.append(Check("python", OK if py[:2] >= MIN_PYTHON else FAIL,
                         f"{platform.python_version()} ({sys.executable})",
-                        "" if py[:2] >= MIN_PYTHON else "install Python 3.9 or newer (python.org, uv or your package manager)"))
+                        "" if py[:2] >= MIN_PYTHON else "install Python 3.11 or newer (python.org, uv or your package manager)"))
     in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
     checks.append(Check("environment", OK if in_venv else WARN,
                         "virtual environment" if in_venv else "not in a virtual environment",
@@ -100,6 +102,17 @@ def run_checks(output_dir: str = "experiments_output", plots: bool = False) -> L
     checks.append(Check("core packages", FAIL if missing else OK,
                         "missing: " + ", ".join(missing) if missing else ", ".join(f"{m} {_version(m)}" for m in CORE[:4]) + ", ...",
                         'pip install -e .' if missing else ""))
+    from importlib import metadata
+    for package, (floor, why) in SECURITY_FLOORS.items():
+        try:
+            installed = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            continue
+        parts = tuple(int(p) for p in installed.split(".")[:2] if p.isdigit())
+        ok = parts >= floor
+        checks.append(Check(f"security: {package}", OK if ok else WARN,
+                            f"{installed}" + ("" if ok else f" (older than {'.'.join(map(str, floor))}: {why})"),
+                            "" if ok else f'pip install -U "{package}>={".".join(map(str, floor))}"'))
     for extra, (modules, purpose) in EXTRAS.items():
         absent = [m for m in modules if _version(m) is None]
         checks.append(Check(f"extra: {extra}", WARN if absent else OK,

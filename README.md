@@ -1,7 +1,7 @@
 # Scientific Data Simulator
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python Version](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![tests](https://github.com/sandner-art/scientific-data-simulator/actions/workflows/tests.yml/badge.svg)](https://github.com/sandner-art/scientific-data-simulator/actions/workflows/tests.yml)
 
 | Author: Daniel Sandner | Scientific Data Simulator: A Modular Concept for Reproducible Experiment Design and Synthetic Data Generation
@@ -83,9 +83,11 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
 
 ## Installation
 
-Python 3.9 or newer is required. The install scripts create a virtual environment in `.venv`,
-install a profile and run `sds doctor`, which checks the installation and says how to fix
-what is missing.
+Python 3.11 or newer is required. Install the simulator into its own environment, which the
+install scripts do for you. In an environment shared with other projects, pip may change
+packages those projects need (for example, downgrade Pillow). The install scripts create a
+virtual environment in `.venv`, install a profile and run `sds doctor`, which checks the
+installation and says how to fix what is missing.
 
 | System | Install | Update |
 |---|---|---|
@@ -110,7 +112,7 @@ sds doctor
 
 macOS: use a Python from python.org, Homebrew or uv, not the system one. On every system,
 static PNG/SVG/PDF export of plotly figures needs Chrome; `plotly_get_chrome` downloads one
-(interactive HTML plots work without it). The CI workflow tests on Linux (Python 3.9-3.13),
+(interactive HTML plots work without it). The CI workflow tests on Linux (Python 3.11-3.14),
 Windows and macOS, and runs the install scripts on all three as a new user would. Keep one
 `.venv` per system: a Windows `.venv` cannot be used from WSL, and the reverse.
 
@@ -124,8 +126,8 @@ Optional extras (the profiles combine them):
 | `the-well` | h5py and PyYAML, to write The Well HDF5 (loading it needs `the_well` and PyTorch) |
 | `units` | pint |
 | `validate` | mlcroissant and datasets, to check exported datasets |
-| `openenv` | the OpenEnv library (Python ≥ 3.10), to use exported RL packages |
-| `verifiers` | the verifiers library (Python ≥ 3.11), to use exported RL packages |
+| `openenv` | the OpenEnv library, to use exported RL packages |
+| `verifiers` | the verifiers library, to use exported RL packages |
 | `standard` | static-plots, parquet, hdf5 and units |
 | `all` | `standard` plus validate |
 

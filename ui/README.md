@@ -41,4 +41,4 @@ New examples appear automatically once they have a manifest; the UI needs no cha
 The UI is tested headless with Streamlit's AppTest (`pytest ui/tests`). The tests open every page
 and run a real example through the form. CI runs them on Linux, Windows and macOS. Its version
 always equals the simulator's, and the simulator never imports it (both checked by
-`tests/test_ui_boundary.py`). It works with Streamlit 1.37 or newer and Python 3.9 or newer.
+`tests/test_ui_boundary.py`). It needs Python 3.11 or newer and Streamlit 1.67 or newer (the first that accepts Pillow 13).

@@ -20,7 +20,7 @@
 - `.gitattributes` fixes line endings: LF for `.sh`, CRLF for `.cmd`, `.bat` and `.ps1`.
 - **Browser UI** (`ui/`, the separate package `scientific-data-simulator-ui`, started with `sds ui`):
   - pages: an examples gallery, a run form generated from each manifest with a live log and outputs, a results browser and the installation check;
-  - it listens on 127.0.0.1 by default (`--address` changes that, with a warning) and needs Streamlit 1.37 or newer;
+  - it listens on 127.0.0.1 by default (`--address` changes that, with a warning) and needs Streamlit 1.67 or newer;
   - runs started at the same time get separate folders, and runs in progress refresh their log without blocking the page;
   - it uses only the simulator's public functions, and a test checks the simulator never imports it;
   - its version moves with the simulator's;
@@ -29,6 +29,8 @@
 - CI runs the tests on macOS too, runs the install scripts on Linux, macOS and Windows as a new user would, runs every example in quick mode, and tests the UI on all three systems.
 
 ### Changed
+- **Python 3.11 or newer** is required. Python 3.9 and 3.10 are end-of-life, and Pillow's current security release does not support them. CI tests 3.11–3.14.
+- **Security floor for Pillow:** `pillow>=13.0` (core and UI). Pillow 13.0.0 (16 October 2026) fixes CVE-2026-112900 (EPS filenames reaching Ghostscript) and memory-corruption bugs in its TIFF and JPEG decoders. The UI needs Streamlit 1.67 or newer, the first release that accepts Pillow 13; the floor also makes pip upgrade an older Streamlit that is already installed.
 - Examples 1-6 accept `--output_dir`.
 
 ## 0.6.0 (unreleased)

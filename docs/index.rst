@@ -37,7 +37,7 @@ Installation
    source .venv/bin/activate        # Windows: .venv\Scripts\activate
    pip install -e ".[dev]"
 
-Python 3.9+ is required. Optional extras: ``static-plots`` (kaleido; static
+Python 3.11+ is required. Optional extras: ``static-plots`` (kaleido; static
 plotly export needs Chrome), ``parquet`` (pyarrow), ``hdf5`` (h5py), ``all``.
 
 .. _getting_started:

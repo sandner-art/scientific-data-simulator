@@ -16,7 +16,7 @@ function Test-Python([string[]]$Command) {
         $exe = $Command[0]
         $rest = @()
         if ($Command.Length -gt 1) { $rest = $Command[1..($Command.Length - 1)] }
-        & $exe @rest -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)" 2>$null | Out-Null
+        & $exe @rest -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" 2>$null | Out-Null
         return $LASTEXITCODE -eq 0
     } catch { return $false }
 }
@@ -31,7 +31,7 @@ foreach ($c in $candidates) {
     if (Test-Python $c) { $python = $c; break }
 }
 if (-not $python) {
-    Write-Host "Python 3.9 or newer was not found." -ForegroundColor Red
+    Write-Host "Python 3.11 or newer was not found." -ForegroundColor Red
     Write-Host "Install it from https://www.python.org/downloads/ (tick 'Add python.exe to PATH'), then run this again."
     exit 1
 }

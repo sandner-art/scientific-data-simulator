@@ -10,12 +10,16 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Daniel Sandner" }]
-requires-python = ">=3.9"
+requires-python = ">=3.11"  # 3.9 and 3.10 are end-of-life; Pillow's security fixes need 3.11+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Education",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
@@ -27,6 +31,10 @@ dependencies = [
     "pydantic>=2.0",
     "psutil>=5.9",
     "matplotlib>=3.6",
+    # Security floor: Pillow 13.0.0 (16 Oct 2026) fixes CVE-2026-112900 (EPS filenames reaching
+    # Ghostscript) and memory-corruption bugs in its TIFF and JPEG decoders. Pillow comes in through
+    # matplotlib (and Streamlit); this keeps a resolver from settling on an older one.
+    "pillow>=13.0",
     "plotly>=5.0",
 ]
 
@@ -51,8 +59,8 @@ units = ["pint>=0.24"]
 validate = ["mlcroissant>=1.0", "datasets>=2.18"]
 # Using exported RL packages (writing them needs nothing extra). openenv and
 # verifiers pin incompatible 'mcp' versions: install them in separate environments.
-openenv = ["openenv>=0.12; python_version >= '3.10'"]
-verifiers = ["verifiers>=0.4.1; python_version >= '3.11'"]
+openenv = ["openenv>=0.12"]
+verifiers = ["verifiers>=0.4.1"]
 docs = ["sphinx>=7", "sphinx-rtd-theme", "myst-parser"]
 dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido>=1.0", "plotly>=6.1.1", "pint>=0.24"]
 all = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24", "mlcroissant>=1.0", "datasets>=2.18"]

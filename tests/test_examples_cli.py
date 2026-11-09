@@ -242,3 +242,18 @@ def test_installed_sds_works_from_any_folder(tmp_path):
     checks = {c["name"]: c for c in json.loads(out.stdout)}
     assert checks["test simulation"]["status"] == "ok", checks["test simulation"]
     assert list(tmp_path.iterdir()) == []  # the doctor left nothing behind
+
+
+def test_python_and_security_floors_agree():
+    with open(os.path.join(ROOT, "pyproject.toml")) as f:
+        core = f.read()
+    with open(os.path.join(ROOT, "ui", "pyproject.toml")) as f:
+        ui = f.read()
+    assert 'requires-python = ">=3.11"' in core and 'requires-python = ">=3.11"' in ui
+    assert doctor.MIN_PYTHON == (3, 11)
+    assert '"pillow>=13.0"' in core and '"pillow>=13.0"' in ui and '"streamlit>=1.67"' in ui
+    for script in ("install.sh", "install.ps1"):
+        with open(os.path.join(ROOT, "scripts", script), encoding="utf-8") as f:
+            assert "(3, 11)" in f.read()
+    by_name = {c.name: c for c in doctor.run_checks(os.path.join(ROOT, ".doctor_probe_test"))}
+    assert by_name["security: pillow"].status in (doctor.OK, doctor.WARN)

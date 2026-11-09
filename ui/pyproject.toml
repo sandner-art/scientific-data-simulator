@@ -9,10 +9,13 @@ description = "Streamlit UI for Scientific Data Simulator: examples, runs, resul
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [{name = "Daniel Sandner"}]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     "scientific-data-simulator>=0.7.0.dev0",
-    "streamlit>=1.37",
+    # 1.67 is the first Streamlit that accepts Pillow 13 (earlier releases cap it below 13);
+    # the floor also makes pip upgrade an older Streamlit that is already installed.
+    "streamlit>=1.67",
+    "pillow>=13.0",
 ]
 
 [project.optional-dependencies]

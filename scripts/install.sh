@@ -9,7 +9,7 @@
 #   all       + dataset validation
 #   dev       + tests and their dependencies (for contributors)
 #   ui        standard + the browser UI (start it with: sds ui)
-# Set PYTHON=/path/to/python3 to choose the interpreter (3.9 or newer).
+# Set PYTHON=/path/to/python3 to choose the interpreter (3.11 or newer).
 # Works with the bash 3.2 that macOS ships.
 set -euo pipefail
 
@@ -27,14 +27,14 @@ cd "$(dirname "$0")/.."
 find_python() {
   # versioned names first: on macOS, /usr/bin/python3 is the old system Python (and on a fresh
   # Mac running it opens the developer-tools installer), so it is used only as a last resort
-  for candidate in "${PYTHON:-}" python3.13 python3.12 python3.11 python3.10 python3 python python3.9; do
+  for candidate in "${PYTHON:-}" python3.14 python3.13 python3.12 python3.11 python3 python; do
     [ -z "$candidate" ] && continue
     path="$(command -v "$candidate" 2>/dev/null)" || continue
     if [ "$(uname -s)" = "Darwin" ] && [ "$path" = "/usr/bin/python3" ] && [ -z "${PYTHON:-}" ] &&
        ! xcode-select -p >/dev/null 2>&1; then
       continue
     fi
-    if "$path" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+    if "$path" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
       echo "$path"
       return 0
     fi
@@ -43,7 +43,7 @@ find_python() {
 }
 
 if ! PY="$(find_python)"; then
-  echo "Python 3.9 or newer was not found." >&2
+  echo "Python 3.11 or newer was not found." >&2
   echo "  macOS: install it from python.org, with Homebrew (brew install python) or uv." >&2
   echo "  Linux: install python3 and python3-venv with your package manager." >&2
   exit 1
