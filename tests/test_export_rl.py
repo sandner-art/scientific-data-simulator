@@ -11,6 +11,7 @@ import asyncio
 import importlib
 import json
 import os
+import shutil
 import sys
 
 import pytest
@@ -188,7 +189,11 @@ def test_openenv_spec_json_drives_experiment_env(tmp_path):
 
 def test_openenv_spec_from_yaml_file_and_errors(tmp_path):
     spec = _spec()
-    spec["base_config"] = os.path.relpath(BASE_CONFIG_PATH, str(tmp_path))  # relative to the spec file
+    # relative to the spec file (copied next to it: on Windows the repo and the temp folder can sit
+    # on different drives, where no relative path exists)
+    (tmp_path / "configs").mkdir()
+    shutil.copy(BASE_CONFIG_PATH, tmp_path / "configs" / "base.yaml")
+    spec["base_config"] = "configs/base.yaml"
     spec_file = tmp_path / "env.yaml"
     spec_file.write_text(yaml.safe_dump(spec), encoding="utf-8")
     path = export_openenv(str(spec_file), str(tmp_path / "out"))

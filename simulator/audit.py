@@ -479,8 +479,8 @@ def _short(path: Optional[str], root: Optional[str]) -> Optional[str]:
     if path is None or root is None:
         return path
     try:
-        return os.path.relpath(path, root)
-    except ValueError:
+        return os.path.relpath(path, root).replace(os.sep, "/")  # reports read the same on every OS
+    except ValueError:  # Windows: another drive
         return path
 
 

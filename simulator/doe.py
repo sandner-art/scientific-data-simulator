@@ -290,7 +290,8 @@ def _write_question_index(output_dir: str, table: pd.DataFrame, outcomes: List[D
         if os.path.exists(manifest_path):
             with open(manifest_path, encoding="utf-8") as f:
                 fig = json.load(f).get("figure")
-            figure = os.path.relpath(os.path.join(run_dir, "bundle", fig["output"]), output_dir) if fig else None
+            figure = (os.path.relpath(os.path.join(run_dir, "bundle", fig["output"]), output_dir)
+                      .replace(os.sep, "/") if fig else None)  # portable: written into the manifest
         for item in items:
             base = {"experiment_id": outcome["experiment_id"], "design_point": row.get("design_point"),
                     "replicate": row.get("replicate"), "figure": figure}

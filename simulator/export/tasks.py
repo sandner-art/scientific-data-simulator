@@ -81,7 +81,12 @@ def collect_bundle_tasks(paths: Union[str, Sequence[str]], relative_to: Optional
             if not name:
                 return None
             full = os.path.abspath(os.path.join(bundle_dir, name))
-            return os.path.relpath(full, relative_to) if relative_to else full
+            if not relative_to:
+                return full
+            try:  # forward slashes, so a task file written on Windows works elsewhere
+                return os.path.relpath(full, relative_to).replace(os.sep, "/")
+            except ValueError:  # Windows: another drive, no relative path exists
+                return full
 
         figure = (manifest.get("figure") or {}).get("output")
         table_entry = manifest.get("files", {}).get("table.csv") or {}

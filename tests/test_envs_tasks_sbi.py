@@ -103,6 +103,7 @@ def test_collect_and_score_tasks(design_dir, tmp_path):
     for task in tasks:
         assert task["prompt"].endswith(("number.", "integer.")) or "exactly one of" in task["prompt"]
         assert os.path.exists(os.path.join(design_dir, task["image"]))
+        assert "/" in task["image"] and "\\" not in task["image"]  # portable task files
         assert score(task, task["answer"]) == 1.0
     numeric = next(t for t in tasks if t["template"] == "max")
     assert score(numeric, f"I read about {numeric['answer']:.6f} from the plot.") == 1.0

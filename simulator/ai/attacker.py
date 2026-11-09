@@ -80,7 +80,7 @@ def build_view(public_dir: str, max_chars: int = 150000, max_file_chars: int = 6
         in_evidence_dir = any(part in EVIDENCE_DIRS for part in os.path.relpath(root, public_dir).split(os.sep))
         for name in sorted(files):
             path = os.path.join(root, name)
-            rel = os.path.relpath(path, public_dir)
+            rel = os.path.relpath(path, public_dir).replace(os.sep, "/")  # the same text on every OS
             private = name in PRIVATE_NAMES or (visibility is not None and visibility.get(name) != "public")
             if private or in_evidence_dir or _is_evidence(name, evidence_patterns):
                 view.excluded.append(rel)

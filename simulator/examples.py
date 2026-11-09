@@ -468,7 +468,8 @@ def run_example(example: Example, values: Optional[Mapping[str, Any]] = None, qu
               "returncode": returncode,
               "seconds": run.seconds, "finished": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "simulator_version": sds_version, "python": platform.python_version(),
-              "platform": platform.platform(), "outputs": [os.path.relpath(o["path"], output_dir) for o in run.outputs]}
+              "platform": platform.platform(), "outputs": [os.path.relpath(o["path"], output_dir).replace(os.sep, "/")
+                          for o in run.outputs]}
     with open(os.path.join(output_dir, RUN_RECORD), "w", encoding="utf-8") as f:
         json.dump(record, f, indent=2, default=str)
     return run
