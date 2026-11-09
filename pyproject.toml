@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scientific-data-simulator"
-version = "0.7.0.dev0"
+version = "0.7.0rc1"
 description = "Reproducible, provenance-first generation of simulated scientific reference data."
 readme = "README.md"
 license = "Apache-2.0"
