@@ -29,7 +29,7 @@ from experiments.law_discovery.logic import law_suite_design, textbook_counterpa
 from simulator.audit import audit_export  # noqa: E402
 from simulator.bundle import check_answer  # noqa: E402
 from simulator.config import load_config, yaml_load  # noqa: E402
-from simulator.diagnostics import (add_canary, blind_baseline, canary_probe, card_markdown,  # noqa: E402
+from simulator.diagnostics import (add_canary, approximator_baseline, blind_baseline, canary_probe, card_markdown,  # noqa: E402
                                    contamination_gap, diagnose_episode, feature_shortcuts, law_alternatives,
                                    make_canary, make_twin, pair_tasks, public_features, quality_card,
                                    run_episodes, summarize)
@@ -121,7 +121,7 @@ def _data(log):
 
 
 def make_agent(kind, domain):
-    lo, hi = domain
+    lo, hi = domain  # where the agent may measure
 
     def agent(obs, log):
         n = len(log.experiments)
@@ -146,10 +146,10 @@ def make_agent(kind, domain):
 
 
 AGENTS = {
-    "fitter": "fits all families to measurements over the whole domain",
+    "fitter": "fits all families to measurements over the whole measurable range",
     "textbook": "fits, then snaps the structural constant to its textbook value",
     "guesser": "answers at once, without experiments",
-    "narrow": "measures only the first fifth of the domain, then fits",
+    "narrow": "measures only the first fifth of the measurable range, then fits",
     "repeater": "repeats the same experiment three times, then fits (can be deliberate noise averaging)",
     "stubborn": "measures once, then answers a fixed formula regardless of the data",
 }
@@ -201,7 +201,34 @@ def main():
     md += ["", "Templates answerable at >= 50 % without the data: " + (", ".join(degenerate) or "none") + ".", ""]
     report["degenerate_templates"] = degenerate
 
-    # -- 2. leak audit with canary ---------------------------------------------------
+    # -- 2. scorer loophole ------------------------------------------------------------
+    # A polynomial fitted to each run's observations, submitted as the formula: under the old rule
+    # (1 % RMS on the data range) and the current one (data range and half of it beyond, tolerance
+    # set by what the true law reaches under the run's noise).
+    honest = HonestSolver(original_dir)
+    formula_tasks = [t for t in tasks if t["template"] == "law_formula"]
+    observations = {}
+    for t in formula_tasks:
+        rec = load_experiment_record(original_dir, t["experiment_id"], verify=False)
+        observations[t["experiment_id"]] = (np.asarray(rec.output_data["x"]["data"], float),
+                                            np.asarray(rec.output_data["y_observed"]["data"], float))
+    old_rule = [dict(t, domain=[float(np.min(observations[t["experiment_id"]][0])),
+                                float(np.max(observations[t["experiment_id"]][0]))], tolerance=0.01)
+                for t in formula_tasks]
+    loophole = {}
+    for rule, rule_tasks in (("data range, 1 %", old_rule), ("current rule", formula_tasks)):
+        poly = approximator_baseline(rule_tasks, observations).get("law_formula", {"accuracy": float("nan")})
+        fitter = float(np.mean([check_answer(t, honest(t)) for t in rule_tasks]))
+        loophole[rule] = {"polynomial": poly["accuracy"], "law_fitter": fitter}
+    report["scorer_loophole"] = loophole
+    md += ["## 2. Scorer loophole: does a polynomial pass the formula question?", "",
+           "A polynomial fitted to the observations (degree by BIC) is submitted as the formula. If it passes, "
+           "the score rewards curve fitting, not the law.", "",
+           "| scoring rule | polynomial | law fitter |", "|---|---|---|"]
+    md += [f"| {rule} | {v['polynomial']:.2f} | {v['law_fitter']:.2f} |" for rule, v in loophole.items()]
+    md += ["", "Power laws remain partly within a polynomial's reach: their exponents are often close to 1 or 2.", ""]
+
+    # -- 3. leak audit with canary ---------------------------------------------------
     from simulator.export.huggingface import export_huggingface
     release = export_huggingface(original_dir, os.path.join(out, "release"), name="sds-testbed-laws",
                                  overwrite=True)
@@ -209,10 +236,10 @@ def main():
     add_canary(release, canary)
     audit = audit_export(release, original_dir)
     report["audit"] = audit.to_dict()
-    md += ["## 2. Leak audit of the public release", "", "```", audit.summary(), "```", "",
+    md += ["## 3. Leak audit of the public release", "", "```", audit.summary(), "```", "",
            f"Canary written to the release: `{canary}`.", ""]
 
-    # -- 3. contamination: fresh twin --------------------------------------------------
+    # -- 4. contamination: fresh twin --------------------------------------------------
     twin_dir = os.path.join(out, "twin")
     make_twin(original_dir, twin_dir, base_seed=2)
     twin_tasks = collect_bundle_tasks(twin_dir)
@@ -220,8 +247,8 @@ def main():
     law_twin = [t for t in twin_tasks if t["template"] in LAW_TEMPLATES]
     pairs = pair_tasks(law_tasks, law_twin, original_dir, twin_dir)
     templates = {t["id"]: t["template"] for t in law_tasks}
-    honest_o, honest_t = HonestSolver(original_dir), HonestSolver(twin_dir)
-    md += ["## 3. Contamination: original vs. fresh twin", "",
+    honest_o, honest_t = honest, HonestSolver(twin_dir)
+    md += ["## 4. Contamination: original vs. fresh twin", "",
            f"{len(pairs)} matched question pairs (law family, formula, extrapolation). A memorising solver "
            "recites a leaked answer key for a fraction of the original items (keyed by prompt and figure, as "
            "a scraper would store them) and otherwise answers with its own skill: the honest curve fitter, or a "
@@ -240,29 +267,31 @@ def main():
                       f"{gap.gap:+.2f} | [{gap.ci[0]:+.2f}, {gap.ci[1]:+.2f}] | {gap.p_value:.4f} |")
     md.append("")
 
-    # -- 4. canary probe -------------------------------------------------------------
+    # -- 5. canary probe -------------------------------------------------------------
     seen = canary_probe(lambda prompt: canary, canary)  # a model that memorised the release
     unseen = canary_probe(lambda prompt: "sds-canary:sds-testbed-laws:" + "0" * 36, canary)
     report["canary"] = {"seen": {k: v for k, v in seen.items() if k != "outputs"},
                         "unseen": {k: v for k, v in unseen.items() if k != "outputs"}}
-    md += ["## 4. Canary probe", "",
+    md += ["## 5. Canary probe", "",
            f"Model that saw the release: {seen['hex_matched']} hidden hex digits reproduced "
            f"(chance p = {seen['chance_p']:.1e}). Model that did not: {unseen['hex_matched']} "
            f"(chance p = {unseen['chance_p']:.2f}).", ""]
 
-    # -- 5. agent fallacies ----------------------------------------------------------
+    # -- 6. agent fallacies ----------------------------------------------------------
     with open(os.path.join(EX10, "env.yaml"), encoding="utf-8") as f:
         spec = yaml_load(f)
     env = ExperimentEnv(spec)
+    # agents measure where the controls allow; the formula is scored beyond that range
+    measurable = (float(spec["controls"]["x_min"][0]), float(spec["controls"]["x_max"][1]))
     episodes = 8 if args.quick else 24
-    md += ["## 5. Agent fallacies in the interactive environment", "",
+    md += ["## 6. Agent fallacies in the interactive environment", "",
            f"{episodes} episodes per agent; counterfactual laws; flags from `diagnose_episode`. "
            "`matches_textbook` applies only where the textbook form differs from the hidden law by more than "
            "the tolerance; its rate is over those episodes (count in brackets).", "",
            "| agent | behaviour | accuracy | flags (rate) |", "|---|---|---|---|"]
     report["agents"] = {}
     for name, behaviour in AGENTS.items():
-        logs = run_episodes(env, make_agent(name, tuple(spec["domain"])), seeds=range(episodes))
+        logs = run_episodes(env, make_agent(name, measurable), seeds=range(episodes))
         diagnoses = [diagnose_episode(log, law_alternatives(log)) for log in logs]
         summary = summarize(diagnoses)
         report["agents"][name] = summary

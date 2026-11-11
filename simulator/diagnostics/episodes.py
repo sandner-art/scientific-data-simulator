@@ -189,14 +189,21 @@ def diagnose_episode(log: EpisodeLog, alternatives: Optional[Mapping[str, Option
 
 def law_alternatives(log: EpisodeLog) -> Dict[str, Optional[str]]:
     """``{"textbook": ...}``: the textbook counterpart of the episode's hidden law (law-discovery
-    environments with a ``law`` hidden value; ``None`` when the family has no structural constant)."""
+    environments with a ``law`` hidden value; ``None`` when the family has no structural constant).
+
+    The counterpart is fitted where the agent measured (the scoring domain if it measured
+    nothing): a solver that recalls the textbook form fits its constants to its evidence, and the
+    scoring domain can extend beyond the measurable range."""
     from experiments.law_discovery.logic import textbook_counterpart
     family = log.truth.get("law")
     truth = log.truth.get(log.target)
     if family is None or truth is None or not log.domain:
         return {"textbook": None}
+    xs, _ = _measured_xy(log)
+    xs = xs[np.isfinite(xs)]
+    fit_range = (float(xs.min()), float(xs.max())) if xs.size > 1 and xs.max() > xs.min() else tuple(log.domain)
     try:
-        return {"textbook": textbook_counterpart(family, str(truth), tuple(log.domain))}
+        return {"textbook": textbook_counterpart(family, str(truth), fit_range)}
     except (RuntimeError, ValueError):  # the constrained fit failed: no alternative to compare
         return {"textbook": None}
 

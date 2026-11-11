@@ -204,3 +204,82 @@ def test_shared_domain_and_shuffled_suite():
     a, b = law_suite_design(seed=1), law_suite_design(seed=1)
     assert a.equals(b) and not a.equals(law_suite_design(shuffle=False))
     assert sorted(map(tuple, a.values.tolist())) == sorted(map(tuple, law_suite_design(shuffle=False).values.tolist()))
+
+
+# ------------------------------------------------------------------ formula scoring (scorer loophole)
+FIVE = ("power_law", "exponential_decay", "michaelis_menten", "hill", "arrhenius")
+
+
+def _formula_item(law, snr_db=40, seed=0, **extra):
+    from experiments.law_discovery.logic import HiddenLawExperiment  # noqa: F401
+    cfg = dict(LAW, law=law, seed=seed, n_points=40, x_range=[0.5, 8.0], counterfactual=True, **extra)
+    if snr_db is not None:
+        cfg["observation"] = {"operators": [{"type": "gaussian", "snr_db": snr_db}]}
+    sim = simulate(cfg)
+    items = sim.logic.questions(sim.results, np.random.default_rng(seed))
+    item = next(i for i in items if i["template"] == "law_formula")
+    observed = sim.results.get("y_observed", sim.results["y"])["data"]
+    return item, sim.results["x"]["data"], observed, sim
+
+
+def test_formula_is_scored_beyond_the_data_with_a_noise_set_tolerance():
+    from experiments.law_discovery.logic import FORMULA_EXTENSION, FORMULA_FLOOR
+    from simulator.bundle import public_question
+    item, _, _, _ = _formula_item("hill", snr_db=40)
+    assert item["domain"] == [0.5, 8.0 + FORMULA_EXTENSION * 7.5]
+    assert "[0.5, 11.75]" in item["question"] and "[0.5, 8]" in item["question"]
+    assert item["tolerance"] >= FORMULA_FLOOR and "tolerance" not in public_question(item)
+    noisy, _, _, _ = _formula_item("hill", snr_db=20)
+    assert noisy["tolerance"] > 2 * item["tolerance"]  # 20 dB: a fixed 1 % would fail the true law
+    clean, _, _, _ = _formula_item("hill", snr_db=None)
+    assert clean["tolerance"] == FORMULA_FLOOR
+    fixed, _, _, _ = _formula_item("hill", snr_db=20, formula_tolerance=0.01)
+    assert fixed["tolerance"] == 0.01 and "fixed" in fixed["tolerance_rule"]
+    with pytest.raises(ValueError):
+        simulate(dict(LAW, law="hill", formula_tolerance="loose"))
+
+
+@pytest.mark.parametrize("law", FIVE)
+def test_a_fitted_polynomial_no_longer_passes_the_formula_question(law):
+    """On the data range alone (the old rule) a polynomial fitted to the data passed for these
+    five families; scored on the data range and half of it beyond, it should rarely pass."""
+    from simulator.diagnostics import polynomial_formula
+    old, new = 0, 0
+    for seed in range(6):
+        item, x, y, _ = _formula_item(law, snr_db=40, seed=seed)
+        poly = polynomial_formula(x, y)
+        old += check_answer(dict(item, domain=[0.5, 8.0], tolerance=0.01), poly)
+        new += check_answer(item, poly)
+    assert old >= 5  # the loophole the fix closes
+    assert new <= (4 if law == "power_law" else 1)  # power laws stay partly within reach
+
+
+@pytest.mark.parametrize("snr_db", [40, 20])
+def test_the_true_family_fitted_to_the_data_passes(snr_db):
+    from experiments.law_discovery.logic import fit_law
+    passed, n = 0, 0
+    for law in sorted(LAWS):
+        for seed in range(3):
+            item, x, y, sim = _formula_item(law, snr_db=snr_db, seed=seed)
+            fitted = fit_law(law, x, y)
+            passed += bool(fitted) and check_answer(item, law_expression(law, fitted))
+            n += 1
+    assert passed / n >= (0.95 if snr_db == 40 else 0.7)
+
+
+def test_environment_scores_beyond_the_measurable_range():
+    with open(os.path.join(ROOT, "examples", "example_10_law_discovery", "env.yaml")) as f:
+        spec = yaml_load(f)
+    highest = max(high for _, high in spec["controls"].values())
+    assert spec["domain"][1] > highest + 0.25 * (highest - spec["domain"][0])
+
+
+def test_compile_expression_matches_evaluate():
+    from simulator.expressions import compile_expression
+    f = compile_expression("a*x**b + 1", ["x", "a", "b"])
+    x = np.linspace(0.5, 3, 7)
+    assert np.allclose(f(x=x, a=2.0, b=1.5), evaluate("2*x**1.5 + 1", x=x))
+    with pytest.raises(ExpressionError):
+        f(x=x, a=2.0)
+    with pytest.raises(ExpressionError):
+        compile_expression("__import__('os')", ["x"])

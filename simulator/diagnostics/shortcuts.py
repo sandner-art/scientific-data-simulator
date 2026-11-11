@@ -15,6 +15,10 @@ sorting by variance "discovers" the graph.
   information about the answers beyond the blind baseline.
 * :func:`public_features` collects features that are public in a bundle release: figure file
   size, caption length, number of public table rows.
+* :func:`approximator_baseline` tests the *scorer*: it answers formula questions with a
+  polynomial fitted to the run's observations. A scorer that accepts it rewards curve fitting,
+  not discovery of the law (a "scorer loophole"; the same holds for any score a flexible model
+  can meet without the mechanism).
 
 A solver that beats chance only by such cues is not reasoning about the data; a generator whose
 answers are predictable from them needs fixing (or the cue withheld).
@@ -205,4 +209,55 @@ def public_features(run_dirs: Iterable[str]) -> Dict[str, Dict[str, float]]:
                 with open(os.path.join(bundle, "table.csv"), encoding="utf-8") as f:
                     row["table_rows"] = float(sum(1 for _ in f) - 1)
         out[eid] = row
+    return out
+
+
+def polynomial_formula(x, y, max_degree: int = 8) -> Optional[str]:
+    """A polynomial in x fitted to (x, y) by least squares, its degree (1..``max_degree``) chosen
+    by BIC, written as a formula. ``None`` if there are too few finite points."""
+    import warnings
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    ok = np.isfinite(x) & np.isfinite(y)
+    x, y = x[ok], y[ok]
+    best = None
+    for degree in range(1, min(int(max_degree), x.size - 2) + 1):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # badly conditioned high degrees: BIC rejects them anyway
+            coefficients = np.polyfit(x, y, degree)
+        rss = float(np.sum((np.polyval(coefficients, x) - y) ** 2)) + 1e-300
+        bic = x.size * np.log(rss / x.size) + (degree + 1) * np.log(x.size)
+        if best is None or bic < best[0]:
+            best = (bic, coefficients)
+    if best is None:
+        return None
+    degree = len(best[1]) - 1
+    return " + ".join(f"({c:.17g})*x**{degree - i}" for i, c in enumerate(best[1]))
+
+
+def approximator_baseline(tasks: Sequence[Mapping[str, Any]], observations: Mapping[str, Any],
+                          max_degree: int = 8) -> Dict[str, Dict[str, Any]]:
+    """Accuracy of a flexible approximator on the expression (formula) questions.
+
+    For each task with ``answer_type: expression`` the run's observations
+    (``observations[task["experiment_id"]] = (x, y)``) are fitted with
+    :func:`polynomial_formula` and the polynomial is scored like any answer
+    (:func:`simulator.bundle.check_answer`). ``tasks`` must carry answers.
+
+    Returns, per template, ``n``, ``accuracy`` and the ids of the tasks a polynomial ``passed``.
+    Anything well above zero means the formula score can be met without the law. Polynomials
+    are the approximator because the formula grammar has no splines or piecewise terms.
+    """
+    from ..bundle import check_answer
+    out: Dict[str, Dict[str, Any]] = {}
+    for task in tasks:
+        if task.get("answer_type") != "expression" or task.get("experiment_id") not in observations:
+            continue
+        x, y = observations[task["experiment_id"]]
+        formula = polynomial_formula(x, y, max_degree)
+        entry = out.setdefault(task.get("template", "?"), {"n": 0, "passed": []})
+        entry["n"] += 1
+        if formula is not None and check_answer(task, formula):
+            entry["passed"].append(task["id"])
+    for entry in out.values():
+        entry["accuracy"] = len(entry["passed"]) / entry["n"]
     return out

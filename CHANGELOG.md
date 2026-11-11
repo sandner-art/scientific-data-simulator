@@ -2,6 +2,17 @@
 
 Versions 0.2–0.6 were development steps; they were first released together in 0.7.0.
 
+## 0.7.0rc2 (unreleased)
+
+### Changed
+- **Law discovery: the formula question no longer rewards curve fitting.** It was scored on the data range only, at 1 % relative RMS error. A polynomial fitted to the data (degree chosen by BIC) then passed 61 % of formula questions at 40 dB, and 100 % for power law, exponential decay, Michaelis–Menten, Hill and Arrhenius laws, without finding the law. At 20 dB even a least-squares fit of the true family passed only 9 %. Formulas are now scored on the data range and half of it beyond, and the tolerance (`formula_tolerance: auto`) is the larger of 1 % and the error a fit of the true family reaches in 90 % of replicates of the run's own noise. Over 2,160 simulated runs, polynomials now pass 3 % at 40 dB and 9 % at 20 dB, nearly all of them power laws (29 % and 69 % of those), and the true-family fit passes 99 % at 40 dB and 81 % at 20 dB. `formula_tolerance: 0.01` restores a fixed tolerance. Example 10's curve-fitting baseline now scores 0.89–0.97 on formulas (was 0.53–0.56).
+- The interactive law-discovery environment (`examples/example_10_law_discovery/env.yaml`) lets agents measure on [0.5, 5] and scores formulas on [0.5, 7.25]. Before, the scored range lay inside the measurable one, and a polynomial fitted to three full-range experiments passed 95 % of episodes; now about 25 %, all power laws.
+- `law_alternatives` fits the textbook form over the range the agent measured, so `matches_textbook` still applies when the scoring range extends beyond it.
+
+### Added
+- `simulator.diagnostics.approximator_baseline` and `polynomial_formula`: a polynomial fitted to each run's observations, submitted as the formula answer. If it passes, the score rewards curve fitting, not the law (a scorer loophole). Example 11 reports it under the old and the current rule.
+- `experiments.law_discovery.logic`: `fit_law`, `law_function`, `achievable_tolerance`; `simulator.expressions.compile_expression` (parse once, evaluate many times).
+
 ## 0.7.0rc1 (2026-11-09)
 
 Release candidate for 0.7.0, the first release since the 0.1.0 prototype.

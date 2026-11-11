@@ -342,6 +342,9 @@ and agents (see ``examples/example_11_testbed``):
   question from the other questions' answers only (majority, correct position, median);
   :func:`~simulator.diagnostics.shortcuts.feature_shortcuts` answers from public per-run
   cues with a leave-one-out nearest-neighbour rule and a permutation test;
+* scorer loopholes - :func:`~simulator.diagnostics.shortcuts.approximator_baseline`
+  submits a polynomial fitted to each run's observations as the formula answer; if it
+  passes, the score rewards curve fitting rather than the law;
 * quality - :func:`~simulator.diagnostics.quality.quality_card`: answer balance and
   entropy, correct-position chi-square, numeric spread, duplicates, fidelity, and the
   accuracy of an optional reference solver;
@@ -406,7 +409,11 @@ Law Discovery
 constants (exponents, Hill coefficient) off their textbook values. Formula
 answers (``answer_type: expression``) are parsed safely by
 :mod:`simulator.expressions` (AST whitelist, no ``eval``) and scored by relative
-RMS error on the data domain, so any equivalent form is accepted.
+RMS error on the data range and half of it beyond, so any equivalent form is
+accepted but a curve that only reproduces the data is not. The tolerance is the
+larger of 1 % and what a fit of the true law reaches under the run's noise.
+:func:`simulator.diagnostics.approximator_baseline` checks that a fitted
+polynomial does not pass.
 ``law_suite_design()`` builds a benchmark design; see
 ``examples/example_10_law_discovery``.
 

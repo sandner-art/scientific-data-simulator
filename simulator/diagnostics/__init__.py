@@ -6,7 +6,8 @@ The simulator knows every hidden value and can regenerate any run, so it can ser
 behaviour checked against the truth step by step.
 
 * :mod:`simulator.audit`                     - leak audit of public files (exact leaks)
-* :mod:`simulator.diagnostics.shortcuts`     - answers predictable without the data (statistical leaks)
+* :mod:`simulator.diagnostics.shortcuts`     - answers predictable without the data (statistical leaks),
+                                               and scorers a polynomial can satisfy
 * :mod:`simulator.diagnostics.contamination` - fresh twins, canaries, score-gap tests
 * :mod:`simulator.diagnostics.episodes`      - agent-fallacy flags for interactive episodes
 * :mod:`simulator.diagnostics.quality`       - balance, diversity, duplicates, solvability
@@ -16,5 +17,6 @@ from .contamination import (add_canary, canary_probe, contamination_gap, make_ca
                             pair_tasks)
 from .episodes import EpisodeLog, diagnose_episode, law_alternatives, run_episodes, summarize  # noqa: F401
 from .quality import card_markdown, quality_card  # noqa: F401
-from .shortcuts import blind_baseline, feature_shortcuts, public_features  # noqa: F401
+from .shortcuts import (approximator_baseline, blind_baseline, feature_shortcuts, polynomial_formula,  # noqa: F401
+                        public_features)
 from .stats import gap_test  # noqa: F401

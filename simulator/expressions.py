@@ -174,6 +174,25 @@ def evaluate(text: str, **values) -> np.ndarray:
         return np.asarray(_evaluate(tree, env), dtype=float)
 
 
+def compile_expression(text: str, variables: Sequence[str] = ("x",)):
+    """Parse ``text`` once and return ``f(**values)`` that evaluates it (arrays broadcast).
+
+    For inner loops such as least-squares fits, where :func:`evaluate` would parse the same
+    text on every call. The same safety rules apply (see :func:`parse`)."""
+    tree = parse(text, tuple(variables))
+    names = tuple(variables)
+
+    def f(**values):
+        missing = set(names) - set(values)
+        if missing:
+            raise ExpressionError(f"missing values for {sorted(missing)}")
+        env = {k: np.asarray(values[k], dtype=float) for k in names}
+        with np.errstate(all="ignore"):
+            return np.asarray(_evaluate(tree, env), dtype=float)
+
+    return f
+
+
 def compare(candidate: str, reference: str, domain: Tuple[float, float], variable: str = "x",
             n: int = 200) -> Dict[str, float]:
     """Relative RMS and max errors of ``candidate`` against ``reference`` on ``domain``."""

@@ -26,8 +26,13 @@ questions about the law. The generic `argmax` and `peak_count` questions are exc
 them 56–78 % of the time (example 11 measures this).
 
 * **law family**: a multiple-choice question among four families;
-* **law formula**: answered with a formula. It is scored by evaluating the formula on the data
-  domain (relative RMS error ≤ 1 %), so `2.3*x**1.5`, `y = 2.3 x^{1.5}` and `2.3*sqrt(x)**3` all count;
+* **law formula**: answered with a formula. It is scored by evaluating the formula against the
+  noise-free law on the data range *and half of that range beyond it* (relative RMS error), so
+  `2.3*x**1.5`, `y = 2.3 x^{1.5}` and `2.3*sqrt(x)**3` all count. On the data range alone a
+  polynomial fitted to the data would pass for five of the nine families without finding the law.
+  The tolerance is the larger of 1 % and the error a least-squares fit of the true family reaches
+  in 90 % of replicates of the run's own noise (1 % at 40 dB; at 20 dB a median of 4 %, at most 10 %): a fixed 1 %
+  could not be met at 20 dB even with the right law. `formula_tolerance: 0.01` fixes it instead;
 * **extrapolation**: the value of y a quarter of the range beyond the data.
 
 ## Run
@@ -44,13 +49,17 @@ are shuffled in a fresh, unrecorded order on every run (`--suite-seed N` fixes i
 would map each run's position back to its family. So each invocation draws different laws.
 
 The baseline fits every family with `scipy.optimize.curve_fit` from three starts and keeps the
-best by AIC (all constants positive). Over three invocations it scored 0.86–0.89 (family),
-0.53–0.56 (formula) and 0.89–0.94 (extrapolation), and a mean reward of 1.00 in 12 environment
-episodes. Formulas are the hard part: at 20 dB several families can fit the same samples almost
-equally well, and a formula must match the noise-free law to 1 % RMS.
+best by AIC (all constants positive). Over three invocations it scored 0.86–0.94 (family),
+0.89–0.97 (formula) and 0.89–0.92 (extrapolation), and a mean reward of 1.00 in 12 environment
+episodes. The formula score can exceed the family score: at 20 dB two families can fit the same
+samples almost equally well, and a formula of the wrong family may still match the law within the
+noise-set tolerance on the scored range.
 
 `--env N` plays the interactive version (`env.yaml`): an agent chooses the measurement range
-(up to three experiments), then answers with a formula. The baseline's mean reward is printed.
+within [0.5, 5] (up to three experiments), then answers with a formula, which is scored on
+[0.5, 7.25] within 2 %. When the scored range lay inside the measurable one, a polynomial fitted
+to three full-range experiments passed 95 % of episodes; now it passes about 25 %, all of them
+power laws. The baseline's mean reward is printed.
 
 `--export` writes a Hugging Face dataset and then runs `simulator.audit.audit_export` on it,
 using the private runs as the answer key. It should print `PASS`: answers, seeds, config hashes,

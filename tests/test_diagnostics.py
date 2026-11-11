@@ -325,3 +325,38 @@ def test_feature_shortcuts_groups_exclude_replicates():
     leaky = feature_shortcuts(tasks, features, k=2, n_permutations=100)["pick"]
     grouped = feature_shortcuts(tasks, features, k=2, n_permutations=100, groups=groups)["pick"]
     assert leaky["accuracy"] == 1.0 and grouped["accuracy"] < leaky["accuracy"]
+
+
+def test_approximator_baseline_catches_a_scorer_loophole():
+    from simulator.diagnostics import approximator_baseline, polynomial_formula
+    x = np.linspace(0.5, 5.0, 40)
+    y = 3 * np.exp(-0.8 * x)
+    loose = {"id": "q1", "experiment_id": "r1", "template": "law_formula", "answer_type": "expression",
+             "answer": "3*exp(-0.8*x)", "domain": [0.5, 5.0], "tolerance": 0.01}
+    strict = dict(loose, id="q2", experiment_id="r1", domain=[0.5, 7.25])
+    other = {"id": "q3", "experiment_id": "r1", "template": "max", "answer_type": "number", "answer": 1.0}
+    out = approximator_baseline([loose, strict, other], {"r1": (x, y)})
+    assert set(out) == {"law_formula"} and out["law_formula"]["n"] == 2
+    assert out["law_formula"]["passed"] == ["q1"]  # matches the data range, not beyond it
+    assert polynomial_formula([1.0, 2.0], [1.0, 2.0]) is None  # too few points
+
+
+def test_textbook_flag_when_scoring_extends_beyond_the_measurements():
+    """The textbook alternative is fitted where the agent measured, so the flag survives a
+    scoring domain that extends beyond the measurable range."""
+    spec = dict(SPEC, controls={"x_min": [0.5, 5.0], "x_max": [0.5, 5.0]}, domain=[0.5, 7.25])
+    env = ExperimentEnv(spec)
+    original_reset = env.reset
+
+    def reset(seed=None):
+        obs = original_reset(seed=seed)
+        _play.truth = env.truth["law_expression"]
+        return obs
+    env.reset = reset
+
+    def agent(obs, log):
+        log.truth_hint = _play.truth
+        return _agent("textbook")(obs, log)
+    diagnoses = [diagnose_episode(log, law_alternatives(log)) for log in run_episodes(env, agent, seeds=range(6))]
+    applicable = [d for d in diagnoses if "matches_textbook" in d["flags"]]
+    assert applicable and all(d["flags"]["matches_textbook"] for d in applicable if not d["correct"])
