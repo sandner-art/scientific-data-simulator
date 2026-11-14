@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from simulator import cli
+from scidatasim import cli
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -17,7 +17,7 @@ def _version(pyproject):
 
 def test_simulator_does_not_import_the_ui():
     offenders = []
-    for package in ("simulator", "experiments"):
+    for package in ("scidatasim",):
         for folder, _, files in os.walk(os.path.join(ROOT, package)):
             for name in files:
                 if not name.endswith(".py"):
@@ -27,10 +27,10 @@ def test_simulator_does_not_import_the_ui():
                     text = f.read()
                 if re.search(r"^\s*(import|from)\s+(sds_ui|streamlit)\b", text, flags=re.M):
                     offenders.append(os.path.relpath(path, ROOT))
-                if "sds_ui" in text and path != os.path.join(ROOT, "simulator", "cli.py"):
+                if "sds_ui" in text and path != os.path.join(ROOT, "scidatasim", "cli.py"):
                     offenders.append(os.path.relpath(path, ROOT))
     assert offenders == []
-    with open(os.path.join(ROOT, "simulator", "cli.py"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "scidatasim", "cli.py"), encoding="utf-8") as f:
         assert 'importlib.import_module("sds_ui.cli")' in f.read()  # optional, by name only
 
 

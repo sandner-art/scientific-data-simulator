@@ -7,9 +7,9 @@ import sys
 
 import pytest
 
-import simulator
-from simulator import cli, doctor
-from simulator.examples import (Example, ManifestError, Param, build_command, check_all, default_examples_dir,
+import scidatasim
+from scidatasim import cli, doctor
+from scidatasim.examples import (Example, ManifestError, Param, build_command, check_all, default_examples_dir,
                                 discover, load_manifest, run_example)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -72,7 +72,7 @@ def test_run_example_records_the_run(tmp_path):
     run = run_example(ex, quick=True, output_dir=str(tmp_path / "run"), on_line=lines.append)
     assert run.ok and run.seconds > 0 and any("Experiment completed" in l for l in lines)
     record = json.loads((tmp_path / "run" / "run.json").read_text())
-    assert record["returncode"] == 0 and record["simulator_version"] == simulator.__version__
+    assert record["returncode"] == 0 and record["simulator_version"] == scidatasim.__version__
     assert record["command"][2] == "examples.example_4.run_experiment"
     assert any(o.endswith(".png") for o in record["outputs"])
     assert (tmp_path / "run" / "run.log").read_text().count("Experiment completed. ID") == 1
@@ -118,7 +118,7 @@ def test_doctor(tmp_path, capsys):
 
 
 def test_python_dash_m_simulator(tmp_path):
-    out = subprocess.run([sys.executable, "-m", "simulator", "examples", "list"], cwd=ROOT, capture_output=True,
+    out = subprocess.run([sys.executable, "-m", "scidatasim", "examples", "list"], cwd=ROOT, capture_output=True,
                          text=True, env={**os.environ, "PYTHONPATH": ROOT})
     assert out.returncode == 0 and "example_1" in out.stdout
 
@@ -126,9 +126,11 @@ def test_python_dash_m_simulator(tmp_path):
 def test_version_follows_pyproject():
     with open(os.path.join(ROOT, "pyproject.toml")) as f:
         version = re.search(r'^version = "([^"]+)"', f.read(), flags=re.M).group(1)
-    assert simulator.__version__ == version
+    assert scidatasim.__version__ == version
     with open(os.path.join(ROOT, "CITATION.cff")) as f:
         assert f"version: {version}" in f.read()
+    with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:  # the citation line
+        assert f"Scientific Data Simulator (Version {version})" in f.read()
 
 
 def test_install_scripts_are_consistent():
@@ -152,7 +154,7 @@ def test_install_scripts_are_consistent():
         text = f.read()
     for profile in ("standard", "all", "dev"):
         assert re.search(rf"^{profile} = \[", text, flags=re.M)
-    assert 'sds = "simulator.cli:main"' in text
+    assert 'sds = "scidatasim.cli:main"' in text
 
 
 # ------------------------------------------------------------------ review regressions
@@ -192,7 +194,7 @@ def test_user_values_win_over_quick_mode(tmp_path):
     assert cmd.count("--episodes") == 1 and cmd[cmd.index("--episodes") + 1] == "50"
     quick = build_command(ex, {}, quick=True, output_dir="OUT", python="py")
     assert quick[quick.index("--episodes") + 1] == "2"
-    from simulator.examples import effective_values
+    from scidatasim.examples import effective_values
     assert effective_values(ex, {}, quick=True)["episodes"] == 2
     testbed = discover(EXAMPLES)["example_11_testbed"]
     assert "--quick" in build_command(testbed, {}, quick=True, output_dir="OUT")
@@ -225,7 +227,7 @@ def test_cli_errors_are_messages(tmp_path, capsys):
 
 def test_sds_run_config(tmp_path, capsys):
     config = tmp_path / "c.yaml"
-    config.write_text("experiment_type: experiments.example_random_walk.logic.RandomWalkExperiment\n"
+    config.write_text("experiment_type: scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment\n"
                       "n_steps: 20\nstep_size: 1\nseed: 3\ngenerate_plots: false\n")
     assert cli.main(["run", str(config), "--output", str(tmp_path / "out")]) == 0
     assert "experiment" in capsys.readouterr().out and any((tmp_path / "out").iterdir())
@@ -233,11 +235,11 @@ def test_sds_run_config(tmp_path, capsys):
 
 def test_installed_sds_works_from_any_folder(tmp_path):
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    probe = subprocess.run([sys.executable, "-c", "import simulator, experiments"], cwd=str(tmp_path), env=env,
+    probe = subprocess.run([sys.executable, "-c", "import scidatasim, experiments"], cwd=str(tmp_path), env=env,
                            capture_output=True)
     if probe.returncode != 0:
         pytest.skip("the package is not installed in this environment")
-    out = subprocess.run([sys.executable, "-m", "simulator", "doctor", "--json"], cwd=str(tmp_path), env=env,
+    out = subprocess.run([sys.executable, "-m", "scidatasim", "doctor", "--json"], cwd=str(tmp_path), env=env,
                          capture_output=True, text=True)
     checks = {c["name"]: c for c in json.loads(out.stdout)}
     assert checks["test simulation"]["status"] == "ok", checks["test simulation"]
@@ -268,7 +270,7 @@ def test_optional_extras_are_info_not_warnings(tmp_path):
 
 
 def test_prepare_output_dir_keeps_the_runner_files(tmp_path):
-    from simulator.examples import prepare_output_dir
+    from scidatasim.examples import prepare_output_dir
     out = tmp_path / "run"
     (out / "old" / "deep").mkdir(parents=True)
     (out / "old_report.md").write_text("stale")

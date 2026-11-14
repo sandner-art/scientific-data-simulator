@@ -39,7 +39,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sds = "simulator.cli:main"
+sds = "scidatasim.cli:main"
 
 [project.optional-dependencies]
 # Install profiles used by scripts/install.*: core (no extra), standard, all, dev.
@@ -69,9 +69,9 @@ all = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24"
 Homepage = "https://github.com/sandner-art/scientific-data-simulator"
 
 [tool.setuptools.packages.find]
-include = ["simulator*", "experiments*"]  # the bundled models are importable after any install
+include = ["scidatasim*"]  # the bundled models live in scidatasim.experiments
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Reference models in experiments/ and examples/ are imported from the repository root.
+# The examples/ package is imported from the repository root.
 pythonpath = ["."]

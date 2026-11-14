@@ -17,12 +17,12 @@ import runpy
 import numpy as np
 import pytest
 
-from experiments.geometry.logic import TriangleExperiment
-from experiments.geometry.polygons import PolygonExperiment
-from experiments.geometry.simplex import SimplexExperiment, edge_pairs
-from simulator.checker import check_model
-from simulator.engine import SimulatorEngine
-from simulator.provenance import file_sha256
+from scidatasim.experiments.geometry.logic import TriangleExperiment
+from scidatasim.experiments.geometry.polygons import PolygonExperiment
+from scidatasim.experiments.geometry.simplex import SimplexExperiment, edge_pairs
+from scidatasim.checker import check_model
+from scidatasim.engine import SimulatorEngine
+from scidatasim.provenance import file_sha256
 
 
 def build(cls, **cfg):
@@ -323,7 +323,7 @@ def _check_bundle(tmp_path, run):
 
 
 def test_polygon_bundle(tmp_path):
-    run = _bundle_run(tmp_path, "experiments.geometry.polygons.PolygonExperiment", kind="simple", n_sides=8)
+    run = _bundle_run(tmp_path, "scidatasim.experiments.geometry.polygons.PolygonExperiment", kind="simple", n_sides=8)
     qa, caption = _check_bundle(tmp_path, run)
     res = run.results
     assert qa["area"]["answer"] == pytest.approx(res["area"]["data"])
@@ -338,7 +338,7 @@ def test_polygon_bundle(tmp_path):
 
 
 def test_simplex_bundle(tmp_path):
-    run = _bundle_run(tmp_path, "experiments.geometry.simplex.SimplexExperiment", dims=4)
+    run = _bundle_run(tmp_path, "scidatasim.experiments.geometry.simplex.SimplexExperiment", dims=4)
     qa, caption = _check_bundle(tmp_path, run)
     res = run.results
     assert "projection" in caption and "4-dimensional simplex" in caption
@@ -361,16 +361,16 @@ def test_simplex_bundle(tmp_path):
 
 
 def test_simplex_d2_bundle_is_planar(tmp_path):
-    run = _bundle_run(tmp_path, "experiments.geometry.simplex.SimplexExperiment", dims=2, bundle={"qa": {"enabled": True}})
+    run = _bundle_run(tmp_path, "scidatasim.experiments.geometry.simplex.SimplexExperiment", dims=2, bundle={"qa": {"enabled": True}})
     with open(os.path.join(run.experiment_dir, "bundle", "qa.json")) as f:
         qa = json.load(f)
     assert {q["answerable_from"] for q in qa if q["template"] in ("volume", "circumradius")} == {"figure"}
 
 
 @pytest.mark.parametrize("model, config", [
-    ("experiments.geometry.polygons.PolygonExperiment", {"kind": "simple", "n_sides": 7}),
-    ("experiments.geometry.polygons.PolygonExperiment", {"kind": "regular", "n_sides": 5}),
-    ("experiments.geometry.simplex.SimplexExperiment", {"dims": 4}),
+    ("scidatasim.experiments.geometry.polygons.PolygonExperiment", {"kind": "simple", "n_sides": 7}),
+    ("scidatasim.experiments.geometry.polygons.PolygonExperiment", {"kind": "regular", "n_sides": 5}),
+    ("scidatasim.experiments.geometry.simplex.SimplexExperiment", {"dims": 4}),
 ])
 def test_models_pass_checker(model, config):
     report = check_model(model, config)

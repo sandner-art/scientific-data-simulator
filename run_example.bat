@@ -11,11 +11,11 @@ if not exist "%SDS_PY%" (
 if "%~1"=="" (
   echo Usage: run_example.bat ^<example_name^> [--quick] [--set name=value ...]
   echo.
-  "%SDS_PY%" -m simulator examples list
+  "%SDS_PY%" -m scidatasim examples list
   if not "%SDS_NOPAUSE%"=="1" pause
   exit /b 1
 )
-"%SDS_PY%" -m simulator examples run %*
+"%SDS_PY%" -m scidatasim examples run %*
 set "SDS_EXIT=%ERRORLEVEL%"
 if not "%SDS_NOPAUSE%"=="1" pause
 exit /b %SDS_EXIT%

@@ -1,7 +1,7 @@
 # tests/test_data_handler.py
 import pytest
-from simulator.data_handler import load_csv, load_json, load_numpy, save_csv, create_descriptor_from_data
-from simulator.utils import DataDescriptor, DataType
+from scidatasim.data_handler import load_csv, load_json, load_numpy, save_csv, create_descriptor_from_data
+from scidatasim.utils import DataDescriptor, DataType
 import numpy as np
 import pandas as pd
 import os

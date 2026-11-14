@@ -6,7 +6,7 @@ The agent removes the predators (initial_predators = 0), so the prey grows
 exponentially, x(t) = x0 exp(a t), and estimates the growth rate a from a
 straight-line fit to log(prey) in the early, low-noise part of the series.
 This shows the task is solvable; replace `baseline_agent` with an LLM or RL
-policy (see simulator.export.rl for OpenEnv and verifiers packaging).
+policy (see scidatasim.export.rl for OpenEnv and verifiers packaging).
 
     python -m examples.example_9_discovery_env.run_experiment --episodes 20
 """
@@ -15,9 +15,9 @@ import os
 
 import numpy as np
 
-from simulator.config import yaml_load
+from scidatasim.config import yaml_load
 
-from simulator.envs import ExperimentEnv, render_observation
+from scidatasim.envs import ExperimentEnv, render_observation
 
 
 def baseline_agent(env, seed):

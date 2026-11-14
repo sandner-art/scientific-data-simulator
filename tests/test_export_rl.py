@@ -1,5 +1,5 @@
 # tests/test_export_rl.py
-"""OpenEnv and verifiers exporters (simulator.export.rl).
+"""OpenEnv and verifiers exporters (scidatasim.export.rl).
 
 The file-generation tests need only the simulator. Tests marked by
 ``pytest.importorskip`` run the generated packages against the real libraries
@@ -17,15 +17,15 @@ import sys
 import pytest
 import yaml
 
-from simulator.engine import SimulatorEngine
-from simulator.envs import ExperimentEnv, ExperimentTaskSpec
-from simulator.export.rl import (
+from scidatasim.engine import SimulatorEngine
+from scidatasim.envs import ExperimentEnv, ExperimentTaskSpec
+from scidatasim.export.rl import (
     DEFAULT_QA_SYSTEM_PROMPT,
     export_openenv,
     export_verifiers_qa,
     verifiers_openenv_taskset_config,
 )
-from simulator.export.tasks import collect_bundle_tasks, public_view
+from scidatasim.export.tasks import collect_bundle_tasks, public_view
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_CONFIG_PATH = os.path.join(ROOT, "examples", "example_7_reference_dataset", "config.yaml")
@@ -108,9 +108,8 @@ def test_openenv_package_layout_and_spec(tmp_path):
     files = _files(path)
     for rel in OPENENV_FILES + ["server/sds_experiment_env_environment.py"]:
         assert rel in files, rel
-    # The model (outside simulator/) is vendored with its parent package's __init__
-    assert "vendor/experiments/__init__.py" in files
-    assert "vendor/experiments/predator_prey/logic.py" in files
+    # bundled models ship with the simulator: nothing to vendor
+    assert not any(f.startswith("vendor/") for f in files)
     assert not any("__pycache__" in f for f in files)
 
     with open(os.path.join(path, "spec.json"), encoding="utf-8") as f:
@@ -130,7 +129,7 @@ def test_openenv_package_layout_and_spec(tmp_path):
     with open(os.path.join(path, "server", "sds_experiment_env_environment.py"), encoding="utf-8") as f:
         env_src = f.read()
     assert "class SdsExperimentEnvironment(Environment)" in env_src
-    assert "from simulator.envs import ExperimentEnv" in env_src
+    assert "from scidatasim.envs import ExperimentEnv" in env_src
 
 
 def test_openenv_manifest_and_pyproject(tmp_path):
@@ -243,7 +242,7 @@ def test_verifiers_package_layout(bundle_runs, tmp_path):
     with open(os.path.join(path, "lv_qa", "taskset.py"), encoding="utf-8") as f:
         src = f.read()
     assert "class LvQaTaskset(vf.Taskset[LvQaTask, LvQaConfig])" in src
-    assert "from simulator.export.tasks import score" in src
+    assert "from scidatasim.export.tasks import score" in src
     assert json.dumps(DEFAULT_QA_SYSTEM_PROMPT) in src
 
     project = _toml(os.path.join(path, "pyproject.toml"))
@@ -382,3 +381,27 @@ def test_verifiers_taskset_rewards(bundle_runs, tmp_path, monkeypatch):
             assert reward(task, wrong) == 0.0, (kind, wrong)
     finally:
         _forget_modules(name)
+
+
+def test_openenv_vendors_a_model_from_outside_the_package(tmp_path, monkeypatch):
+    """A model in the user's own package is copied to vendor/ with its parent package's __init__."""
+    pkg = tmp_path / "src" / "mymodels" / "toy"
+    pkg.mkdir(parents=True)
+    (tmp_path / "src" / "mymodels" / "__init__.py").write_text("")
+    (pkg / "__init__.py").write_text("")
+    (pkg / "logic.py").write_text(
+        "from scidatasim.experiments.predator_prey.logic import PredatorPreyExperiment\n\n\n"
+        "class ToyExperiment(PredatorPreyExperiment):\n    pass\n")
+    monkeypatch.syspath_prepend(str(tmp_path / "src"))
+    spec = _spec()
+    spec["base_config"] = dict(spec["base_config"], experiment_type="mymodels.toy.logic.ToyExperiment")
+    files = _files(export_openenv(spec, str(tmp_path / "out")))
+    assert "vendor/mymodels/__init__.py" in files and "vendor/mymodels/toy/logic.py" in files
+
+
+def test_pre_rename_model_paths_still_resolve():
+    from scidatasim.engine import canonical_model_path, resolve_experiment_type
+    legacy = "experiments.predator_prey.logic.PredatorPreyExperiment"
+    assert canonical_model_path(legacy) == "scidatasim." + legacy
+    assert resolve_experiment_type({"experiment_type": legacy}).__module__ == "scidatasim.experiments.predator_prey.logic"
+    assert canonical_model_path("scidatasim.envs") == "scidatasim.envs"

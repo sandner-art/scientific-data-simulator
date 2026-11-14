@@ -1,6 +1,6 @@
 # tests/test_predator_prey.py
 import pytest
-from experiments.predator_prey.logic import PredatorPreyExperiment
+from scidatasim.experiments.predator_prey.logic import PredatorPreyExperiment
 import numpy as np
 
 @pytest.fixture

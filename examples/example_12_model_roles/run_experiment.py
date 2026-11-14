@@ -29,18 +29,18 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from examples.example_10_law_discovery.run_experiment import fit_best_law  # noqa: E402
-from experiments.law_discovery.logic import law_suite_design  # noqa: E402
-from simulator.ai import (LLMAgent, LoggedClient, ReplayClient, llm_attack, paraphrase_tasks,  # noqa: E402
+from scidatasim.experiments.law_discovery.logic import law_suite_design  # noqa: E402
+from scidatasim.ai import (LLMAgent, LoggedClient, ReplayClient, llm_attack, paraphrase_tasks,  # noqa: E402
                           roles_of, write_llm_provenance)
-from simulator.ai.writer import WRITER_INSTRUCTIONS  # noqa: E402
-from simulator.audit import audit_export  # noqa: E402
-from simulator.config import load_config, yaml_load  # noqa: E402
-from simulator.diagnostics import (card_markdown, diagnose_episode, feature_shortcuts,  # noqa: E402
+from scidatasim.ai.writer import WRITER_INSTRUCTIONS  # noqa: E402
+from scidatasim.audit import audit_export  # noqa: E402
+from scidatasim.config import load_config, yaml_load  # noqa: E402
+from scidatasim.diagnostics import (card_markdown, diagnose_episode, feature_shortcuts,  # noqa: E402
                                    law_alternatives, quality_card, run_episodes, summarize)
-from simulator.doe import run_design  # noqa: E402
-from simulator.envs import ExperimentEnv  # noqa: E402
-from simulator.examples import prepare_output_dir  # noqa: E402
-from simulator.export.tasks import collect_bundle_tasks, public_view, write_tasks_jsonl  # noqa: E402
+from scidatasim.doe import run_design  # noqa: E402
+from scidatasim.envs import ExperimentEnv  # noqa: E402
+from scidatasim.examples import prepare_output_dir  # noqa: E402
+from scidatasim.export.tasks import collect_bundle_tasks, public_view, write_tasks_jsonl  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EX10 = os.path.join(HERE, "..", "example_10_law_discovery")
@@ -99,7 +99,7 @@ def main():
     table = law_suite_design(snr_db=(30,), seed=args.suite_seed).drop(columns=["observation.operators.0.snr_db"])
     runs = os.path.join(out, "runs")
     run_design(base, table, output_dir=runs, base_seed=1)
-    from simulator.export.huggingface import export_huggingface
+    from scidatasim.export.huggingface import export_huggingface
     release = export_huggingface(runs, os.path.join(out, "release"), name="sds-model-roles", overwrite=True)
     audit = audit_export(release, runs)
     tasks = collect_bundle_tasks(runs)

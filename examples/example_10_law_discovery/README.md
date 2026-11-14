@@ -61,7 +61,7 @@ within [0.5, 5] (up to three experiments), then answers with a formula, which is
 to three full-range experiments passed 95 % of episodes; now it passes about 25 %, all of them
 power laws. The baseline's mean reward is printed.
 
-`--export` writes a Hugging Face dataset and then runs `simulator.audit.audit_export` on it,
+`--export` writes a Hugging Face dataset and then runs `scidatasim.audit.audit_export` on it,
 using the private runs as the answer key. It should print `PASS`: answers, seeds, config hashes,
 the hidden design columns and the design-point index are not in the public files, and runs are
 listed in the order of their random ids.

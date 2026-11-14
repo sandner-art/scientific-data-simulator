@@ -1,5 +1,5 @@
 # examples/example_3/config.yaml
-experiment_type: experiments.predator_prey.logic.PredatorPreyExperiment
+experiment_type: scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment
 experiment_description: "Simulation of predator-prey population dynamics using the Lotka-Volterra equations."
 n_steps: 40
 initial_prey: 100

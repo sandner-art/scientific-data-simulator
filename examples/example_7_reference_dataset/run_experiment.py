@@ -21,8 +21,8 @@ import argparse
 import logging
 import os
 
-from simulator.config import load_config
-from simulator.doe import create_doe_table, run_design
+from scidatasim.config import load_config
+from scidatasim.doe import create_doe_table, run_design
 
 
 def main():

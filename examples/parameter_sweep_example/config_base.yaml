@@ -1,5 +1,5 @@
 # examples/parameter_sweep_example/config_base.yaml
-experiment_type: experiments.predator_prey.logic.PredatorPreyExperiment
+experiment_type: scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment
 experiment_description: "Base configuration for Predator-Prey parameter sweep."
 n_steps: 70  # Note:  We're using a fixed n_steps here.
 initial_prey: 150

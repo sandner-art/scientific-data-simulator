@@ -5,16 +5,16 @@ import os
 import numpy as np
 import pytest
 
-from experiments.law_discovery.logic import LAWS, HiddenLawExperiment, law_expression, law_suite_design
-from simulator.bundle import check_answer
-from simulator.config import yaml_load
-from simulator.engine import SimulatorEngine, simulate
-from simulator.envs import ExperimentEnv
-from simulator.export.tasks import collect_bundle_tasks, score
-from simulator.expressions import ExpressionError, evaluate, matches, normalise, parse
+from scidatasim.experiments.law_discovery.logic import LAWS, HiddenLawExperiment, law_expression, law_suite_design
+from scidatasim.bundle import check_answer
+from scidatasim.config import yaml_load
+from scidatasim.engine import SimulatorEngine, simulate
+from scidatasim.envs import ExperimentEnv
+from scidatasim.export.tasks import collect_bundle_tasks, score
+from scidatasim.expressions import ExpressionError, evaluate, matches, normalise, parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LAW = {"experiment_type": "experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 30,
+LAW = {"experiment_type": "scidatasim.experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 30,
        "generate_plots": False, "seed": 3}
 
 
@@ -211,7 +211,7 @@ FIVE = ("power_law", "exponential_decay", "michaelis_menten", "hill", "arrhenius
 
 
 def _formula_item(law, snr_db=40, seed=0, **extra):
-    from experiments.law_discovery.logic import HiddenLawExperiment  # noqa: F401
+    from scidatasim.experiments.law_discovery.logic import HiddenLawExperiment  # noqa: F401
     cfg = dict(LAW, law=law, seed=seed, n_points=40, x_range=[0.5, 8.0], counterfactual=True, **extra)
     if snr_db is not None:
         cfg["observation"] = {"operators": [{"type": "gaussian", "snr_db": snr_db}]}
@@ -223,8 +223,8 @@ def _formula_item(law, snr_db=40, seed=0, **extra):
 
 
 def test_formula_is_scored_beyond_the_data_with_a_noise_set_tolerance():
-    from experiments.law_discovery.logic import FORMULA_EXTENSION, FORMULA_FLOOR
-    from simulator.bundle import public_question
+    from scidatasim.experiments.law_discovery.logic import FORMULA_EXTENSION, FORMULA_FLOOR
+    from scidatasim.bundle import public_question
     item, _, _, _ = _formula_item("hill", snr_db=40)
     assert item["domain"] == [0.5, 8.0 + FORMULA_EXTENSION * 7.5]
     assert "[0.5, 11.75]" in item["question"] and "[0.5, 8]" in item["question"]
@@ -243,7 +243,7 @@ def test_formula_is_scored_beyond_the_data_with_a_noise_set_tolerance():
 def test_a_fitted_polynomial_no_longer_passes_the_formula_question(law):
     """On the data range alone (the old rule) a polynomial fitted to the data passed for these
     five families; scored on the data range and half of it beyond, it should rarely pass."""
-    from simulator.diagnostics import polynomial_formula
+    from scidatasim.diagnostics import polynomial_formula
     old, new = 0, 0
     for seed in range(6):
         item, x, y, _ = _formula_item(law, snr_db=40, seed=seed)
@@ -256,7 +256,7 @@ def test_a_fitted_polynomial_no_longer_passes_the_formula_question(law):
 
 @pytest.mark.parametrize("snr_db", [40, 20])
 def test_the_true_family_fitted_to_the_data_passes(snr_db):
-    from experiments.law_discovery.logic import fit_law
+    from scidatasim.experiments.law_discovery.logic import fit_law
     passed, n = 0, 0
     for law in sorted(LAWS):
         for seed in range(3):
@@ -275,7 +275,7 @@ def test_environment_scores_beyond_the_measurable_range():
 
 
 def test_compile_expression_matches_evaluate():
-    from simulator.expressions import compile_expression
+    from scidatasim.expressions import compile_expression
     f = compile_expression("a*x**b + 1", ["x", "a", "b"])
     x = np.linspace(0.5, 3, 7)
     assert np.allclose(f(x=x, a=2.0, b=1.5), evaluate("2*x**1.5 + 1", x=x))

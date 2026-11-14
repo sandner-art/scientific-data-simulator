@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 import yaml
 
-from simulator.doe import create_doe_table, run_design
-from simulator.engine import SimulatorEngine, simulate
-from simulator.envs import ExperimentEnv, ExperimentTaskSpec
-from simulator.export.sbi import (BatchSimulator, generate_training_data, load_training_data, sample_box_prior,
+from scidatasim.doe import create_doe_table, run_design
+from scidatasim.engine import SimulatorEngine, simulate
+from scidatasim.envs import ExperimentEnv, ExperimentTaskSpec
+from scidatasim.export.sbi import (BatchSimulator, generate_training_data, load_training_data, sample_box_prior,
                                   training_data_from_runs)
-from simulator.export.tasks import collect_bundle_tasks, public_view, read_tasks_jsonl, score, write_tasks_jsonl
+from scidatasim.export.tasks import collect_bundle_tasks, public_view, read_tasks_jsonl, score, write_tasks_jsonl
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 with open(os.path.join(ROOT, "examples", "example_9_discovery_env", "env.yaml")) as f:

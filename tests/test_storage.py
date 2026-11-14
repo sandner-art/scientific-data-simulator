@@ -6,11 +6,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from simulator.engine import SimulatorEngine
-from simulator.persistence import load_experiment_record
-from simulator.storage import ChecksumError, resolve_storage_config
+from scidatasim.engine import SimulatorEngine
+from scidatasim.persistence import load_experiment_record
+from scidatasim.storage import ChecksumError, resolve_storage_config
 
-LINEAR = {"experiment_type": "experiments.linear_function.logic.LinearFunctionExperiment",
+LINEAR = {"experiment_type": "scidatasim.experiments.linear_function.logic.LinearFunctionExperiment",
           "n_points": 100, "m": 2.0, "c": 5.0, "x_min": 0.0, "x_max": 10.0,
           "generate_plots": False, "seed": 1,
           "observation": {"operators": [{"type": "gaussian", "sigma": 1.0}]}}
@@ -81,7 +81,7 @@ def test_dataframe_outputs(tmp_path, fmt):
     csv = tmp_path / "in.csv"
     pd.DataFrame({"time": [0, 1, 2], "value": [1.5, 2.5, 3.5]}).to_csv(csv, index=False)
     run = SimulatorEngine(output_dir=str(tmp_path / "o"), verbose=False).run_config(
-        {"experiment_type": "experiments.data_analysis.logic.DataAnalysisExperiment",
+        {"experiment_type": "scidatasim.experiments.data_analysis.logic.DataAnalysisExperiment",
          "input_data_path": str(csv), "generate_plots": False, "storage": {"dataframes": fmt}})
     rec = _record_json(run)
     assert rec["output_data"]["loaded_data"]["storage"]["format"] == fmt

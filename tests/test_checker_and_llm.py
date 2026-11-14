@@ -4,8 +4,8 @@ import textwrap
 
 import pytest
 
-from simulator.checker import check_model, check_source, lint_source
-from simulator.llm import CallableLLMClient, draft_model, extract_code
+from scidatasim.checker import check_model, check_source, lint_source
+from scidatasim.llm import CallableLLMClient, draft_model, extract_code
 
 LV = {"n_steps": 1000, "dt": 0.02, "integrator": "rk4", "clamp_negative": False, "initial_prey": 10.0,
       "initial_predators": 5.0, "prey_growth_rate": 1.1, "prey_death_rate": 0.4,
@@ -14,8 +14,8 @@ DECAY_CONFIG = {"n_steps": 200, "dt": 0.05, "k": 0.7, "x0": 2.0}
 
 GOOD = textwrap.dedent('''
     import numpy as np
-    from simulator.base import ExperimentLogic
-    from simulator.utils import DataDescriptor, DataType
+    from scidatasim.base import ExperimentLogic
+    from scidatasim.utils import DataDescriptor, DataType
 
     class Decay(ExperimentLogic):
         fidelity_level = "unverified"
@@ -57,10 +57,10 @@ def variant(old, new):
 
 # ------------------------------------------------------------------ bundled models
 @pytest.mark.parametrize("model, config", [
-    ("experiments.predator_prey.logic.PredatorPreyExperiment", LV),
-    ("experiments.oscillator.logic.OscillatorExperiment", {"n_steps": 500, "dt": 0.01, "stiffness": 40.0, "x0": 0.1}),
-    ("experiments.example_random_walk.logic.RandomWalkExperiment", {"n_steps": 50, "step_size": 1.0}),
-    ("experiments.linear_function.logic.LinearFunctionExperiment",
+    ("scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment", LV),
+    ("scidatasim.experiments.oscillator.logic.OscillatorExperiment", {"n_steps": 500, "dt": 0.01, "stiffness": 40.0, "x0": 0.1}),
+    ("scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment", {"n_steps": 50, "step_size": 1.0}),
+    ("scidatasim.experiments.linear_function.logic.LinearFunctionExperiment",
      {"n_points": 5, "m": 2.0, "c": 1.0, "x_min": 0.0, "x_max": 1.0}),
 ])
 def test_bundled_models_pass_the_gate(model, config):
@@ -69,9 +69,9 @@ def test_bundled_models_pass_the_gate(model, config):
 
 
 def test_convergence_order_is_measured():
-    report = check_model("experiments.predator_prey.logic.PredatorPreyExperiment", LV)
+    report = check_model("scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment", LV)
     assert report.get("convergence").data["orders"][-1] == pytest.approx(4.0, abs=0.2)
-    euler = check_model("experiments.predator_prey.logic.PredatorPreyExperiment", dict(LV, integrator="euler"))
+    euler = check_model("scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment", dict(LV, integrator="euler"))
     assert euler.get("convergence").data["orders"][-1] == pytest.approx(1.0, abs=0.2)
     assert euler.get("invariants").status == "warn"  # the audit model drifts, as documented
 

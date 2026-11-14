@@ -1,5 +1,5 @@
 # examples/example_doe_1/config_base.yaml
-experiment_type: experiments.linear_function.logic.LinearFunctionExperiment
+experiment_type: scidatasim.experiments.linear_function.logic.LinearFunctionExperiment
 experiment_description: "Base configuration for the linear function DOE example."
 n_points: 200   # Use a fixed number of points
 x_min: -5.0   # Fixed x range

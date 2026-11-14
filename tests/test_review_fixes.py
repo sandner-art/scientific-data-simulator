@@ -7,16 +7,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from simulator.base import ExperimentLogic
-from simulator.doe import create_doe_table, run_design
-from simulator.engine import SimulatorEngine
-from simulator.observation import apply_observation
-from simulator.persistence import load_experiment_record
-from simulator.utils import DataDescriptor, DataType
+from scidatasim.base import ExperimentLogic
+from scidatasim.doe import create_doe_table, run_design
+from scidatasim.engine import SimulatorEngine
+from scidatasim.observation import apply_observation
+from scidatasim.persistence import load_experiment_record
+from scidatasim.utils import DataDescriptor, DataType
 
-WALK = {"experiment_type": "experiments.example_random_walk.logic.RandomWalkExperiment",
+WALK = {"experiment_type": "scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment",
         "n_steps": 30, "step_size": 1.0, "generate_plots": False}
-LV = {"experiment_type": "experiments.predator_prey.logic.PredatorPreyExperiment",
+LV = {"experiment_type": "scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment",
       "n_steps": 100, "dt": 0.01, "integrator": "rk4", "clamp_negative": False,
       "initial_prey": 10.0, "initial_predators": 5.0, "prey_growth_rate": 1.1, "prey_death_rate": 0.4,
       "predator_growth_rate": 0.1, "predator_death_rate": 0.4, "generate_plots": False, "seed": 3}
@@ -92,7 +92,7 @@ def test_hdf5_keeps_string_arrays_inline(tmp_path):
 
 
 def test_failed_data_write_still_leaves_a_record(tmp_path, monkeypatch):
-    import simulator.persistence as persistence
+    import scidatasim.persistence as persistence
 
     def broken(*args, **kwargs):
         raise OSError("disk full")
@@ -106,13 +106,13 @@ def test_failed_data_write_still_leaves_a_record(tmp_path, monkeypatch):
 
 
 def test_save_failure_does_not_mask_model_error(tmp_path, monkeypatch):
-    import simulator.engine as engine_module
+    import scidatasim.engine as engine_module
 
     def broken(*args, **kwargs):
         raise OSError("disk full")
     monkeypatch.setattr(engine_module, "save_experiment_record", broken)
     with pytest.raises(KeyError):  # the model's own error, not the save error
-        _engine(tmp_path).run_config({"experiment_type": "experiments.linear_function.logic.LinearFunctionExperiment"})
+        _engine(tmp_path).run_config({"experiment_type": "scidatasim.experiments.linear_function.logic.LinearFunctionExperiment"})
 
 
 @pytest.mark.parametrize("offset", [-2, 10, 99])
@@ -140,10 +140,10 @@ def test_string_booleans_from_yaml_or_env_are_respected(tmp_path, value, expecte
 
 
 def test_explicit_class_is_named_in_the_stored_config(tmp_path):
-    from experiments.linear_function.logic import LinearFunctionExperiment
+    from scidatasim.experiments.linear_function.logic import LinearFunctionExperiment
     cfg = dict(WALK, n_points=3, m=1.0, c=0.0, x_min=0.0, x_max=1.0)  # names RandomWalkExperiment
     run = _engine(tmp_path).run_config(cfg, experiment_logic_class=LinearFunctionExperiment)
-    assert run.record.config["experiment_type"] == "experiments.linear_function.logic.LinearFunctionExperiment"
+    assert run.record.config["experiment_type"] == "scidatasim.experiments.linear_function.logic.LinearFunctionExperiment"
     assert any("replaced by the explicitly passed class" in m for m in run.record.log_messages)
     # re-running the stored config runs the same model
     rerun = _engine(tmp_path).run_config(run.record.config)

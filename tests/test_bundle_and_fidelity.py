@@ -7,13 +7,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from simulator.bundle import check_answer, resolve_bundle_config
-from simulator.doe import create_doe_table, run_design
-from simulator.engine import SimulatorEngine
-from simulator.persistence import load_experiment_record
-from simulator.provenance import file_sha256
+from scidatasim.bundle import check_answer, resolve_bundle_config
+from scidatasim.doe import create_doe_table, run_design
+from scidatasim.engine import SimulatorEngine
+from scidatasim.persistence import load_experiment_record
+from scidatasim.provenance import file_sha256
 
-LV = {"experiment_type": "experiments.predator_prey.logic.PredatorPreyExperiment",
+LV = {"experiment_type": "scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment",
       "n_steps": 3000, "dt": 0.01, "integrator": "rk4", "clamp_negative": False,
       "initial_prey": 10.0, "initial_predators": 5.0, "prey_growth_rate": 1.1, "prey_death_rate": 0.4,
       "predator_growth_rate": 0.1, "predator_death_rate": 0.4, "generate_plots": False, "seed": 11,
@@ -169,8 +169,8 @@ def test_bundle_config_errors(bad):
 
 
 def test_bundle_without_time_series_still_writes_caption_and_qa(tmp_path):
-    from simulator.base import ExperimentLogic
-    from simulator.utils import DataDescriptor, DataType
+    from scidatasim.base import ExperimentLogic
+    from scidatasim.utils import DataDescriptor, DataType
 
     class Scalar(ExperimentLogic):
         inferable_parameters = ("k",)
@@ -213,9 +213,9 @@ def test_fidelity_reference_vs_audit(tmp_path):
 
 
 @pytest.mark.parametrize("model, level", [
-    ("experiments.example_experiment.logic.ExampleExperiment", "reference"),
-    ("experiments.linear_function.logic.LinearFunctionExperiment", "reference"),
-    ("experiments.example_random_walk.logic.RandomWalkExperiment", "reference"),
+    ("scidatasim.experiments.example_experiment.logic.ExampleExperiment", "reference"),
+    ("scidatasim.experiments.linear_function.logic.LinearFunctionExperiment", "reference"),
+    ("scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment", "reference"),
 ])
 def test_bundled_models_declare_fidelity(tmp_path, model, level):
     cfg = {"experiment_type": model, "n_steps": 5, "amplitude": 1.0, "step_size": 1.0, "n_points": 5,
@@ -225,7 +225,7 @@ def test_bundled_models_declare_fidelity(tmp_path, model, level):
 
 
 def test_unknown_fidelity_level_is_rejected(tmp_path):
-    from experiments.linear_function.logic import LinearFunctionExperiment
+    from scidatasim.experiments.linear_function.logic import LinearFunctionExperiment
 
     class Bad(LinearFunctionExperiment):
         fidelity_level = "excellent"
@@ -237,7 +237,7 @@ def test_unknown_fidelity_level_is_rejected(tmp_path):
 
 def test_public_files_do_not_leak_answers_through_tolerances(tmp_path):
     """A parameter question's tolerance is 5 % of the answer; it must stay private."""
-    from simulator.export.tasks import collect_bundle_tasks, public_view
+    from scidatasim.export.tasks import collect_bundle_tasks, public_view
     run = _run(tmp_path)
     with open(os.path.join(_bundle(run), "questions.json")) as f:
         public = json.load(f)

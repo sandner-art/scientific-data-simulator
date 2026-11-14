@@ -23,10 +23,10 @@ import warnings
 
 import numpy as np
 
-from experiments.law_discovery.logic import LAWS, law_expression, law_suite_design
-from simulator.config import load_config, yaml_load
-from simulator.doe import run_design
-from simulator.expressions import evaluate
+from scidatasim.experiments.law_discovery.logic import LAWS, law_expression, law_suite_design
+from scidatasim.config import load_config, yaml_load
+from scidatasim.doe import run_design
+from scidatasim.expressions import evaluate
 
 
 def fit_best_law(x, y):
@@ -62,8 +62,8 @@ def fit_best_law(x, y):
 
 
 def run_suite(args):
-    from simulator.bundle import check_answer
-    from simulator.export.tasks import collect_bundle_tasks
+    from scidatasim.bundle import check_answer
+    from scidatasim.export.tasks import collect_bundle_tasks
     base = load_config(args.config)
     design = run_design(base, law_suite_design(snr_db=(40, 20), seed=args.suite_seed), output_dir=args.output_dir,
                         replicates=args.replicates)
@@ -84,12 +84,12 @@ def run_suite(args):
     for name, values in scores.items():
         print(f"baseline {name:14s}: {np.mean(values):.2f} correct ({len(values)} questions)")
     if args.export:
-        from simulator.export.huggingface import export_huggingface
+        from scidatasim.export.huggingface import export_huggingface
         path = export_huggingface(args.output_dir, os.path.join(args.output_dir, "hf_dataset"),
                                   name="sds-law-discovery", overwrite=True,
                                   description="Hidden-law discovery tasks (textbook and counterfactual).")
         print(f"Hugging Face dataset folder: {path}")
-        from simulator.audit import audit_export
+        from scidatasim.audit import audit_export
         print(audit_export(path, args.output_dir).summary())  # try to recover the answers from it
 
 
@@ -98,7 +98,7 @@ def _run_dir(output_dir, experiment_id):
 
 
 def run_env(args):
-    from simulator.envs import ExperimentEnv
+    from scidatasim.envs import ExperimentEnv
     with open(args.env_spec, encoding="utf-8") as f:
         env = ExperimentEnv(yaml_load(f))
     rewards = []

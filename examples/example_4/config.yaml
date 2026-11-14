@@ -1,5 +1,5 @@
 # examples/example_4/config.yaml
-experiment_type: experiments.linear_function.logic.LinearFunctionExperiment
+experiment_type: scidatasim.experiments.linear_function.logic.LinearFunctionExperiment
 experiment_description: "Generates data from a linear function y = mx + c."
 n_points: 100
 m: 2.0

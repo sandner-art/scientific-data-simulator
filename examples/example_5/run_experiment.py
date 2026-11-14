@@ -2,7 +2,7 @@
 # examples/example_5/run_experiment.py
 import argparse
 import os
-from simulator.engine import SimulatorEngine
+from scidatasim.engine import SimulatorEngine
 
 def main():
     parser = argparse.ArgumentParser(description="Run the data analysis example.")

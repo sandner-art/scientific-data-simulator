@@ -6,13 +6,13 @@ import shutil
 import pandas as pd
 import pytest
 
-from simulator.audit import AuditReport, _nontrivial, audit_environment, audit_export, main
-from simulator.doe import run_design
-from simulator.engine import SimulatorEngine
-from simulator.envs import ExperimentEnv
-from simulator.export.tasks import collect_bundle_tasks, public_view, write_tasks_jsonl
+from scidatasim.audit import AuditReport, _nontrivial, audit_environment, audit_export, main
+from scidatasim.doe import run_design
+from scidatasim.engine import SimulatorEngine
+from scidatasim.envs import ExperimentEnv
+from scidatasim.export.tasks import collect_bundle_tasks, public_view, write_tasks_jsonl
 
-BASE = {"experiment_type": "experiments.oscillator.logic.OscillatorExperiment", "n_steps": 150, "stiffness": 4.0,
+BASE = {"experiment_type": "scidatasim.experiments.oscillator.logic.OscillatorExperiment", "n_steps": 150, "stiffness": 4.0,
         "damping": 0.2, "generate_plots": False, "bundle": True,
         "observation": {"operators": [{"type": "gaussian", "snr_db": 30}]}}
 
@@ -83,7 +83,7 @@ def test_config_hash_and_ground_truth_files(design, tmp_path):
 
 def test_huggingface_export_default_vs_open(design, tmp_path):
     pytest.importorskip("pyarrow")
-    from simulator.export.huggingface import export_huggingface
+    from scidatasim.export.huggingface import export_huggingface
     closed = export_huggingface(design, str(tmp_path / "closed"), name="t/closed")
     assert audit_export(closed, design).ok
     opened = export_huggingface(design, str(tmp_path / "open"), name="t/open", include_answers=True,
@@ -93,7 +93,7 @@ def test_huggingface_export_default_vs_open(design, tmp_path):
 
 
 def test_environment_audit():
-    spec = {"base_config": {"experiment_type": "experiments.oscillator.logic.OscillatorExperiment", "n_steps": 100, "dt": 0.05, "x0": 1.0,
+    spec = {"base_config": {"experiment_type": "scidatasim.experiments.oscillator.logic.OscillatorExperiment", "n_steps": 100, "dt": 0.05, "x0": 1.0,
                             "observation": {"operators": [{"type": "gaussian", "sigma": 0.01}]}},
             "hidden": {"stiffness": [1.0, 9.0]}, "controls": {"x0": [0.5, 2.0]},
             "target": "stiffness", "budget": 2}
@@ -158,7 +158,7 @@ def test_formula_with_other_spacing_and_hdf5(tmp_path):
     h5py = pytest.importorskip("h5py")
     import numpy as np
     run = SimulatorEngine(str(tmp_path / "runs"), verbose=False).run_config(
-        {"experiment_type": "experiments.law_discovery.logic.HiddenLawExperiment", "law": "power_law",
+        {"experiment_type": "scidatasim.experiments.law_discovery.logic.HiddenLawExperiment", "law": "power_law",
          "n_points": 30, "seed": 2, "bundle": True, "generate_plots": False})
     formula = run.results["law_expression"]["data"]
     pub = tmp_path / "pub"
@@ -176,7 +176,7 @@ def test_formula_with_other_spacing_and_hdf5(tmp_path):
 
 def test_coordinates_quoted_in_questions_are_not_a_leak(tmp_path):
     run = SimulatorEngine(str(tmp_path / "runs"), verbose=False).run_config(
-        {"experiment_type": "experiments.geometry.simplex.SimplexExperiment", "dims": 3, "decimals": None,
+        {"experiment_type": "scidatasim.experiments.geometry.simplex.SimplexExperiment", "dims": 3, "decimals": None,
          "seed": 4, "bundle": True, "generate_plots": False})
     pub = tmp_path / "pub"
     os.makedirs(pub)
@@ -187,9 +187,9 @@ def test_coordinates_quoted_in_questions_are_not_a_leak(tmp_path):
 
 def test_design_point_and_huggingface_hiding(tmp_path):
     pytest.importorskip("pyarrow")
-    from experiments.law_discovery.logic import law_suite_design
-    from simulator.export.huggingface import export_huggingface
-    base = {"experiment_type": "experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 20,
+    from scidatasim.experiments.law_discovery.logic import law_suite_design
+    from scidatasim.export.huggingface import export_huggingface
+    base = {"experiment_type": "scidatasim.experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 20,
             "generate_plots": False, "bundle": {"qa": {"value_queries": 0}, "figure": {"show_latent": False}},
             "observation": {"operators": [{"type": "gaussian", "snr_db": 30}]}}
     design = run_design(base, law_suite_design(families=["power_law", "hill"], snr_db=(30,), seed=3),

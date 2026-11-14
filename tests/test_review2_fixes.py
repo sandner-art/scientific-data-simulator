@@ -8,14 +8,14 @@ import textwrap
 import numpy as np
 import pytest
 
-from simulator.checker import check_model, check_source, lint_source
-from simulator.config import load_config, yaml_load
-from simulator.engine import simulate
+from scidatasim.checker import check_model, check_source, lint_source
+from scidatasim.config import load_config, yaml_load
+from scidatasim.engine import simulate
 
 DECAY = textwrap.dedent('''
     import numpy as np
-    from simulator.base import ExperimentLogic
-    from simulator.utils import DataDescriptor, DataType
+    from scidatasim.base import ExperimentLogic
+    from scidatasim.utils import DataDescriptor, DataType
 
     class M(ExperimentLogic):
         inferable_parameters = ("k",)
@@ -68,7 +68,7 @@ def test_check_model_restores_global_rng():
     expected_np, expected_py = np.random.random(), random.random()
     np.random.seed(7)
     random.seed(7)
-    check_model("experiments.example_random_walk.logic.RandomWalkExperiment", {"n_steps": 5, "step_size": 1.0})
+    check_model("scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment", {"n_steps": 5, "step_size": 1.0})
     assert np.random.random() == expected_np and random.random() == expected_py
 
 
@@ -91,7 +91,7 @@ def test_seeded_stdlib_generator_is_allowed():
 
 
 def test_sensitivity_tests_parameters_with_defaults():
-    report = check_model("experiments.oscillator.logic.OscillatorExperiment",
+    report = check_model("scidatasim.experiments.oscillator.logic.OscillatorExperiment",
                          {"n_steps": 200, "dt": 0.01, "stiffness": 40.0, "x0": 0.1})
     assert set(report.get("sensitivity").data["changes"]) == {"stiffness", "damping"}
 
@@ -100,7 +100,7 @@ def test_sensitivity_tests_parameters_with_defaults():
 def test_yaml_scientific_notation(tmp_path):
     assert yaml_load("a: 1e-3\nb: 5E6\nc: '1e-3'\nd: holling2") == {"a": 0.001, "b": 5e6, "c": "1e-3", "d": "holling2"}
     cfg = tmp_path / "c.yaml"
-    cfg.write_text("experiment_type: experiments.oscillator.logic.OscillatorExperiment\n"
+    cfg.write_text("experiment_type: scidatasim.experiments.oscillator.logic.OscillatorExperiment\n"
                    "n_steps: 10\nstiffness: 4e1\ndamping: 1e-3\n")
     config = load_config(str(cfg))
     assert config["damping"] == 0.001 and config["stiffness"] == 40.0
@@ -108,14 +108,14 @@ def test_yaml_scientific_notation(tmp_path):
 
 def test_numeric_strings_are_in_declared_units():
     pytest.importorskip("pint")
-    sim = simulate({"experiment_type": "experiments.oscillator.logic.OscillatorExperiment", "n_steps": 10,
+    sim = simulate({"experiment_type": "scidatasim.experiments.oscillator.logic.OscillatorExperiment", "n_steps": 10,
                     "stiffness": 40.0, "damping": "1e-3", "seed": 0})
     assert sim.ground_truth["parameters"]["damping"] == pytest.approx(1e-3)
 
 
 def test_geometry_extent_follows_length_units():
     pytest.importorskip("pint")
-    sim = simulate({"experiment_type": "experiments.geometry.logic.TriangleExperiment", "length_units": "m",
+    sim = simulate({"experiment_type": "scidatasim.experiments.geometry.logic.TriangleExperiment", "length_units": "m",
                     "extent": "200 cm", "seed": 1})
     assert sim.ground_truth["parameters"]["extent"] == pytest.approx(2.0)
     assert np.max(sim.results["vertices"]["data"]) <= 2.0
@@ -124,7 +124,7 @@ def test_geometry_extent_follows_length_units():
 
 # ------------------------------------------------------------------ leaks
 def test_env_state_does_not_reveal_seeds():
-    from simulator.envs import ExperimentEnv
+    from scidatasim.envs import ExperimentEnv
     from tests.test_envs_tasks_sbi import SPEC
     env = ExperimentEnv(SPEC)
     env.reset(seed=3)
@@ -134,7 +134,7 @@ def test_env_state_does_not_reveal_seeds():
 
 
 def test_public_task_view_has_no_seed():
-    from simulator.export.tasks import public_view
+    from scidatasim.export.tasks import public_view
     task = {"id": "a/q1", "seed": 5, "answer": 1.0, "tolerance": 0.1, "answer_type": "number"}
     assert public_view(task) == {"id": "a/q1", "answer_type": "number"}
     assert public_view(task, include_seeds=True)["seed"] == 5
@@ -144,17 +144,17 @@ def test_public_task_view_has_no_seed():
 @pytest.mark.parametrize("text", ["4.57 cm^2", r"\boxed{4.57\,\text{cm}^2}", "The area is 4.57 m².",
                                   "answer: 4.57 (I first thought 5)", "about 4.57 cm**2"])
 def test_free_text_scoring_ignores_unit_exponents(text):
-    from simulator.export.tasks import score
+    from scidatasim.export.tasks import score
     assert score({"answer_type": "number", "answer": 4.57, "tolerance": 0.01}, text) == 1.0
 
 
 def test_thousands_separator():
-    from simulator.export.tasks import score
+    from scidatasim.export.tasks import score
     assert score({"answer_type": "number", "answer": 1234.5, "tolerance": 0.1}, "1,234.5") == 1.0
 
 
 def test_euler_distance_tolerance_scales_with_the_triangle():
-    from experiments.geometry.logic import TriangleExperiment
+    from scidatasim.experiments.geometry.logic import TriangleExperiment
     model = TriangleExperiment({"vertices": [[0, 0], [1, 0], [0.45, 0.8]],
                                 "constructions": ["circumcircle", "centroid", "euler_line"]})
     model.rng = np.random.default_rng(0)

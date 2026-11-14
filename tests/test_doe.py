@@ -3,13 +3,13 @@ import os
 
 import pytest
 
-from experiments.linear_function.logic import LinearFunctionExperiment
-from simulator.doe import (append_results_to_doe_table, create_doe_table,
+from scidatasim.experiments.linear_function.logic import LinearFunctionExperiment
+from scidatasim.doe import (append_results_to_doe_table, create_doe_table,
                            generate_parameter_combinations, run_parameter_sweep)
-from simulator.persistence import load_experiment_record
+from scidatasim.persistence import load_experiment_record
 
 BASE = {
-    "experiment_type": "experiments.linear_function.logic.LinearFunctionExperiment",
+    "experiment_type": "scidatasim.experiments.linear_function.logic.LinearFunctionExperiment",
     "n_points": 4, "x_min": 0.0, "x_max": 3.0,
 }
 RANGES = {"m": [1.0, 2.0], "c": [0.0, 1.0]}

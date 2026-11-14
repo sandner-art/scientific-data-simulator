@@ -1,7 +1,7 @@
 # examples/example_7_reference_dataset/config.yaml
 # A reference dataset: exact Lotka-Volterra trajectories (ground truth) and
 # sampled, noisy, count-valued observations of them.
-experiment_type: experiments.predator_prey.logic.PredatorPreyExperiment
+experiment_type: scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment
 experiment_description: "Predator-prey reference data: RK4 ground truth with sampled noisy observations."
 seed: 20261108            # every random draw (here: observation noise) derives from this
 

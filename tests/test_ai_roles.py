@@ -8,19 +8,19 @@ import shutil
 import pandas as pd
 import pytest
 
-from simulator.ai import (LLMAgent, LoggedClient, ReplayClient, ReplayMiss, check_rewrite, evidence_free_view,
+from scidatasim.ai import (LLMAgent, LoggedClient, ReplayClient, ReplayMiss, check_rewrite, evidence_free_view,
                           extract_json, llm_attack, llm_provenance, paraphrase_tasks, roles_of, solve_tasks,
                           write_llm_provenance)
-from simulator.ai.agent import UNPARSEABLE
-from simulator.diagnostics import diagnose_episode, run_episodes
-from simulator.doe import run_design
-from simulator.envs import ExperimentEnv
-from simulator.export.tasks import collect_bundle_tasks
+from scidatasim.ai.agent import UNPARSEABLE
+from scidatasim.diagnostics import diagnose_episode, run_episodes
+from scidatasim.doe import run_design
+from scidatasim.envs import ExperimentEnv
+from scidatasim.export.tasks import collect_bundle_tasks
 
-LAW_BASE = {"experiment_type": "experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 25,
+LAW_BASE = {"experiment_type": "scidatasim.experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 25,
             "generate_plots": False, "bundle": {"figure": {"show_latent": False}, "qa": {"value_queries": 0}},
             "observation": {"operators": [{"type": "gaussian", "snr_db": 35}]}}
-SPEC = {"base_config": {"experiment_type": "experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 30,
+SPEC = {"base_config": {"experiment_type": "scidatasim.experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 30,
                         "counterfactual": True, "x_min": 0.5, "x_max": 5.0,
                         "observation": {"operators": [{"type": "gaussian", "snr_db": 40}]}},
         "hidden": {"law": {"choices": ["power_law"]}, "law_seed": [0, 1.0e12]},
@@ -34,7 +34,7 @@ def suite(tmp_path_factory):
     out = tmp_path_factory.mktemp("ai")
     table = pd.DataFrame({"law": ["power_law", "hill", "logistic", "arrhenius"] * 3})
     run_design(LAW_BASE, table, output_dir=str(out / "runs"), base_seed=3)
-    from simulator.export.huggingface import export_huggingface
+    from scidatasim.export.huggingface import export_huggingface
     pytest.importorskip("pyarrow")
     release = export_huggingface(str(out / "runs"), str(out / "release"), name="t/ai")
     return str(out / "runs"), release
@@ -258,7 +258,7 @@ def test_agent_budget_after_failed_experiment_and_last_valid_action():
 
 
 def test_evidence_free_view_of_bundle_folder_and_public_tables(tmp_path):
-    from simulator.engine import SimulatorEngine
+    from scidatasim.engine import SimulatorEngine
     run = SimulatorEngine(str(tmp_path / "runs"), verbose=False).run_config(
         dict(LAW_BASE, law="power_law", seed=1, bundle={"public_table": True, "qa": {"value_queries": 0}}))
     view = evidence_free_view(run.experiment_dir)
@@ -267,7 +267,7 @@ def test_evidence_free_view_of_bundle_folder_and_public_tables(tmp_path):
         assert f"{private} ===" not in view
     assert "questions.json ===" in view and "caption.txt ===" in view
     pytest.importorskip("pyarrow")
-    from simulator.export.huggingface import export_huggingface
+    from scidatasim.export.huggingface import export_huggingface
     release = export_huggingface(str(tmp_path / "runs"), str(tmp_path / "rel"), name="t/tables")
     assert os.path.isdir(os.path.join(release, "tables"))
     assert "=== tables" not in evidence_free_view(release)

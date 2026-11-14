@@ -1,6 +1,6 @@
 # tests/test_random_walk.py
 import pytest
-from experiments.example_random_walk.logic import RandomWalkExperiment
+from scidatasim.experiments.example_random_walk.logic import RandomWalkExperiment
 import numpy as np
 
 @pytest.fixture

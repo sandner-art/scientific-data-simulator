@@ -1,6 +1,6 @@
 # tests/test_example_experiment.py
 import pytest
-from experiments.example_experiment.logic import ExampleExperiment
+from scidatasim.experiments.example_experiment.logic import ExampleExperiment
 import numpy as np
 
 @pytest.fixture

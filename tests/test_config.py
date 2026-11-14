@@ -1,6 +1,6 @@
 # tests/test_config.py
 import pytest
-from simulator.config import load_config, get_api_key
+from scidatasim.config import load_config, get_api_key
 import os
 import yaml
 

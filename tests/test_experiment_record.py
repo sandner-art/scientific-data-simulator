@@ -1,7 +1,7 @@
 # tests/test_experiment_record.py
 import pytest
-from simulator.experiment_record import ExperimentRecord
-from simulator.utils import DataDescriptor, DataType
+from scidatasim.experiment_record import ExperimentRecord
+from scidatasim.utils import DataDescriptor, DataType
 import datetime
 import numpy as np
 import pandas as pd

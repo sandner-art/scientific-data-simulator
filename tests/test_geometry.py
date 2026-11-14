@@ -8,9 +8,9 @@ import runpy
 import numpy as np
 import pytest
 
-from experiments.geometry.logic import TriangleExperiment
-from simulator.engine import SimulatorEngine
-from simulator.provenance import file_sha256
+from scidatasim.experiments.geometry.logic import TriangleExperiment
+from scidatasim.engine import SimulatorEngine
+from scidatasim.provenance import file_sha256
 
 ALL = ["circumcircle", "incircle", "centroid", "orthocenter", "medians", "altitudes", "euler_line"]
 
@@ -63,7 +63,7 @@ def test_invalid_configurations(bad):
 
 
 def _bundle_run(tmp_path, **kw):
-    cfg = {"experiment_type": "experiments.geometry.logic.TriangleExperiment", "seed": 7, "constructions": ALL,
+    cfg = {"experiment_type": "scidatasim.experiments.geometry.logic.TriangleExperiment", "seed": 7, "constructions": ALL,
            "bundle": True, "generate_plots": False, **kw}
     return SimulatorEngine(str(tmp_path), verbose=False).run_config(cfg)
 

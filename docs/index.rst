@@ -61,7 +61,7 @@ Output is written to ``experiments_output/``. Each example directory contains
 Creating New Experiments (ExperimentLogic)
 ==========================================
 
-A model subclasses :class:`simulator.base.ExperimentLogic` and implements:
+A model subclasses :class:`scidatasim.base.ExperimentLogic` and implements:
 
 * ``initialize(config)`` - return the initial state (a dict);
 * ``run_step(state, step)`` - advance one step and return the new state;
@@ -69,8 +69,8 @@ A model subclasses :class:`simulator.base.ExperimentLogic` and implements:
 
 .. code-block:: python
 
-    from simulator.base import ExperimentLogic
-    from simulator.utils import DataDescriptor, DataType
+    from scidatasim.base import ExperimentLogic
+    from scidatasim.utils import DataDescriptor, DataType
     import numpy as np
 
     class NoisyDecay(ExperimentLogic):
@@ -96,7 +96,7 @@ A model subclasses :class:`simulator.base.ExperimentLogic` and implements:
                                                    plot_type="line", role="latent")},
             }
 
-Rules for reference-quality models (see also ``experiments/README.md``):
+Rules for reference-quality models (see also ``scidatasim/experiments/README.md``):
 
 * draw random numbers only from ``self.rng`` (set by the engine from the run seed);
 * give every output a ``role``;
@@ -115,7 +115,7 @@ validates its own keys:
 
 .. code-block:: yaml
 
-    experiment_type: experiments.predator_prey.logic.PredatorPreyExperiment  # dotted path (required)
+    experiment_type: scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment  # dotted path (required)
     experiment_description: "..."
     seed: 42                    # optional; drawn and recorded if absent
     n_steps: 3000               # number of run_step calls (default 1)
@@ -169,7 +169,7 @@ adds ``x_observed`` (role ``observation``):
 
 Realised settings (the sigma implied by an SNR, outlier positions, number of
 missing values) are recorded. Custom operators can be added with
-:func:`simulator.observation.register_operator`.
+:func:`scidatasim.observation.register_operator`.
 
 .. _ground_truth:
 
@@ -242,7 +242,7 @@ tolerance is private because it is derived from the answer or the data.
   computed from the exact arrays: argmax, extremes, final and sampled values,
   peak counts, comparisons, and parameter estimates (``inferable_parameters``).
   Each question says whether it is answerable from the ``figure`` or needs
-  ``inference``. Score responses with :func:`simulator.bundle.check_answer`.
+  ``inference``. Score responses with :func:`scidatasim.bundle.check_answer`.
 * ``graph.json`` / ``graph.dot`` - the mechanism graph (``mechanism_graph()``).
 * ``description.md`` - mechanism, parameters, law shift, noise model, fidelity.
 * ``bundle.json`` - manifest with SHA-256 and a ``public``/``private`` label
@@ -256,7 +256,7 @@ tolerance is private because it is derived from the answer or the data.
       graph: true
 
 ``show_latent: false`` draws observations only. Questions about the exact curves
-then become inference tasks. :func:`simulator.doe.run_design` collects the
+then become inference tasks. :func:`scidatasim.doe.run_design` collects the
 questions of all runs into ``questions.jsonl`` (public) and ``qa.jsonl``
 (private).
 
@@ -285,27 +285,27 @@ with ``unit_check: error``: pint reads ``units`` as *micronit* and ``au`` as
 Exporting Data and Tasks
 ========================
 
-* :mod:`simulator.export.tasks` - bundle questions as tasks with prompts, figure
+* :mod:`scidatasim.export.tasks` - bundle questions as tasks with prompts, figure
   paths and answer formats; ``score(task, response)`` accepts free text.
-* :mod:`simulator.export.huggingface` - ``export_huggingface(source, out, name)``
+* :mod:`scidatasim.export.huggingface` - ``export_huggingface(source, out, name)``
   writes a dataset folder: dataset card, ``croissant.json`` (Croissant 1.0),
   ``data/runs.parquet``, ``data/questions.parquet`` with embedded figures. Ground
   truth, answers and tolerances are withheld unless requested.
-* :mod:`simulator.export.sbi` - ``generate_training_data(config, prior, n, seed)``
+* :mod:`scidatasim.export.sbi` - ``generate_training_data(config, prior, n, seed)``
   gives ``theta``/``x`` arrays (and files); ``BatchSimulator`` is a seeded
   ``theta -> x`` simulator; ``to_sbi_prior`` builds an ``sbi`` ``BoxUniform``.
-* :mod:`simulator.export.rl` - ``export_openenv(spec, out)`` writes an OpenEnv
+* :mod:`scidatasim.export.rl` - ``export_openenv(spec, out)`` writes an OpenEnv
   package serving an interactive environment; ``export_verifiers_qa(tasks, out)``
   writes a verifiers taskset. Install openenv and verifiers in separate
   environments (their current releases pin incompatible ``mcp`` versions).
-* :mod:`simulator.export.the_well` - ``export_the_well(source, out, dataset_name)``
+* :mod:`scidatasim.export.the_well` - ``export_the_well(source, out, dataset_name)``
   writes PDE fields as HDF5 in the schema of The Well, with ``stats.yaml``;
   load the result with ``the_well.data.WellDataset(path=out)``.
 
 Leak audit
 ----------
 
-:func:`simulator.audit.audit_export` attacks a public export with the private
+:func:`scidatasim.audit.audit_export` attacks a public export with the private
 runs as the answer key and reports what it recovers:
 
 * ``private_field`` - answers, numeric tolerances or ground truth in public records;
@@ -326,8 +326,8 @@ runs as the answer key and reports what it recovers:
 * ``unreadable`` / ``nothing_scanned`` - a supported file that cannot be parsed,
   or no file read at all: neither can be cleared, so both fail the audit.
 
-``python -m simulator.audit PUBLIC --private RUNS`` exits with status 1 on a
-high-severity finding. :func:`simulator.audit.audit_environment` checks that an
+``python -m scidatasim.audit PUBLIC --private RUNS`` exits with status 1 on a
+high-severity finding. :func:`scidatasim.audit.audit_environment` checks that an
 interactive environment's public observations and state reveal neither the
 episode seed nor the hidden truth. Passing the audit is necessary, not
 sufficient: it covers the known shortcut kinds only.
@@ -335,34 +335,34 @@ sufficient: it covers the known shortcut kinds only.
 Testbed Diagnostics
 -------------------
 
-:mod:`simulator.diagnostics` uses the simulator's knowledge of the truth to test benchmarks
+:mod:`scidatasim.diagnostics` uses the simulator's knowledge of the truth to test benchmarks
 and agents (see ``examples/example_11_testbed``):
 
-* shortcuts - :func:`~simulator.diagnostics.shortcuts.blind_baseline` answers each
+* shortcuts - :func:`~scidatasim.diagnostics.shortcuts.blind_baseline` answers each
   question from the other questions' answers only (majority, correct position, median);
-  :func:`~simulator.diagnostics.shortcuts.feature_shortcuts` answers from public per-run
+  :func:`~scidatasim.diagnostics.shortcuts.feature_shortcuts` answers from public per-run
   cues with a leave-one-out nearest-neighbour rule and a permutation test;
-* scorer loopholes - :func:`~simulator.diagnostics.shortcuts.approximator_baseline`
+* scorer loopholes - :func:`~scidatasim.diagnostics.shortcuts.approximator_baseline`
   submits a polynomial fitted to each run's observations as the formula answer; if it
   passes, the score rewards curve fitting rather than the law;
-* quality - :func:`~simulator.diagnostics.quality.quality_card`: answer balance and
+* quality - :func:`~scidatasim.diagnostics.quality.quality_card`: answer balance and
   entropy, correct-position chi-square, numeric spread, duplicates, fidelity, and the
   accuracy of an optional reference solver;
-* contamination - :func:`~simulator.diagnostics.contamination.make_twin` re-runs a
-  design with new seeds; :func:`~simulator.diagnostics.contamination.contamination_gap`
+* contamination - :func:`~scidatasim.diagnostics.contamination.make_twin` re-runs a
+  design with new seeds; :func:`~scidatasim.diagnostics.contamination.contamination_gap`
   tests score(original) - score(twin) over matched pairs (paired permutation test,
   bootstrap interval). A gap measures score inflation from memorisation; a model that
   solves the task anyway hides its exposure, so pair it with canaries
-  (:func:`~simulator.diagnostics.contamination.add_canary`,
-  :func:`~simulator.diagnostics.contamination.canary_probe`);
-* agent fallacies - :func:`~simulator.diagnostics.episodes.run_episodes` records
-  episodes and :func:`~simulator.diagnostics.episodes.diagnose_episode` flags
+  (:func:`~scidatasim.diagnostics.contamination.add_canary`,
+  :func:`~scidatasim.diagnostics.contamination.canary_probe`);
+* agent fallacies - :func:`~scidatasim.diagnostics.episodes.run_episodes` records
+  episodes and :func:`~scidatasim.diagnostics.episodes.diagnose_episode` flags
   ``answer_without_evidence``, ``premature_commitment``, ``repeated_experiment``,
   ``narrow_sampling``, ``contradicts_own_data`` (a wrong answer that fits the agent's
   own measurements more than three times worse than the truth, with a noise floor of
   tolerance x signal) and ``matches_<name>`` for alternative hypotheses such as the
   textbook form of a counterfactual law
-  (:func:`experiments.law_discovery.logic.textbook_counterpart`), evaluated only where
+  (:func:`scidatasim.experiments.law_discovery.logic.textbook_counterpart`), evaluated only where
   the alternative differs from the truth by more than the tolerance.
 
 Installing, Checking and Running Examples
@@ -372,7 +372,7 @@ Installing, Checking and Running Examples
 macOS) create ``.venv``, install a profile (``core``, ``standard``, ``all``, ``dev``) and run
 ``sds doctor``, which checks the installation and prints the fix for anything missing.
 
-Examples describe themselves in an ``example.yaml`` manifest (see :mod:`simulator.examples`).
+Examples describe themselves in an ``example.yaml`` manifest (see :mod:`scidatasim.examples`).
 ``sds examples list``, ``show``, ``run`` and ``check`` read the manifests, so a new example is
 listed, documented and run like the others once it has one. Every run writes ``run.log`` and
 ``run.json`` with the exact command.
@@ -384,35 +384,35 @@ functions.
 Language Models in Roles
 ------------------------
 
-:mod:`simulator.ai` connects any ``prompt -> text`` function to the simulator in four roles,
-always through :class:`~simulator.ai.clients.LoggedClient`:
+:mod:`scidatasim.ai` connects any ``prompt -> text`` function to the simulator in four roles,
+always through :class:`~scidatasim.ai.clients.LoggedClient`:
 
-* agent - :class:`~simulator.ai.agent.LLMAgent` plays an ``ExperimentEnv``; pair it with
-  :func:`~simulator.diagnostics.episodes.run_episodes` and ``diagnose_episode``;
-* attacker - :func:`~simulator.ai.attacker.llm_attack` answers a release's questions with
+* agent - :class:`~scidatasim.ai.agent.LLMAgent` plays an ``ExperimentEnv``; pair it with
+  :func:`~scidatasim.diagnostics.episodes.run_episodes` and ``diagnose_episode``;
+* attacker - :func:`~scidatasim.ai.attacker.llm_attack` answers a release's questions with
   the evidence removed and is tested against the blind baseline;
-* writer - :func:`~simulator.ai.writer.paraphrase_tasks` rephrases questions; a rewrite is
+* writer - :func:`~scidatasim.ai.writer.paraphrase_tasks` rephrases questions; a rewrite is
   kept only if it has the same numbers, names every option and introduces no answer;
-* solver - :func:`~simulator.ai.solver.solve_tasks` answers bundle questions as text.
+* solver - :func:`~scidatasim.ai.solver.solve_tasks` answers bundle questions as text.
 
 Each call is logged (role, model, settings, prompt, output). A
-:class:`~simulator.ai.clients.ReplayClient` answers the same prompts from the log, so a
+:class:`~scidatasim.ai.clients.ReplayClient` answers the same prompts from the log, so a
 dataset or evaluation that used a model can be regenerated without it, and
-:func:`~simulator.ai.clients.llm_provenance` summarises model use for a release. A model
+:func:`~scidatasim.ai.clients.llm_provenance` summarises model use for a release. A model
 never supplies an answer: ground truth comes from the simulator.
 
 Law Discovery
 -------------
 
-:class:`experiments.law_discovery.logic.HiddenLawExperiment` hides a law
+:class:`scidatasim.experiments.law_discovery.logic.HiddenLawExperiment` hides a law
 ``y = f(x)`` from nine families; ``counterfactual: true`` moves structural
 constants (exponents, Hill coefficient) off their textbook values. Formula
 answers (``answer_type: expression``) are parsed safely by
-:mod:`simulator.expressions` (AST whitelist, no ``eval``) and scored by relative
+:mod:`scidatasim.expressions` (AST whitelist, no ``eval``) and scored by relative
 RMS error on the data range and half of it beyond, so any equivalent form is
 accepted but a curve that only reproduces the data is not. The tolerance is the
 larger of 1 % and what a fit of the true law reaches under the run's noise.
-:func:`simulator.diagnostics.approximator_baseline` checks that a fitted
+:func:`scidatasim.diagnostics.approximator_baseline` checks that a fitted
 polynomial does not pass.
 ``law_suite_design()`` builds a benchmark design; see
 ``examples/example_10_law_discovery``.
@@ -422,7 +422,7 @@ polynomial does not pass.
 Interactive Environments
 ========================
 
-:class:`simulator.envs.ExperimentEnv` turns any model into a discovery task.
+:class:`scidatasim.envs.ExperimentEnv` turns any model into a discovery task.
 Hidden parameters are drawn per episode from priors. The agent sets the
 controlled inputs of up to ``budget`` experiments, receives the noisy
 observations, and answers. A numeric target is correct within ``tolerance``
@@ -438,7 +438,7 @@ and scored on ``domain``. See ``examples/example_9_discovery_env`` and
 Model Checker and LLM-Drafted Models
 ====================================
 
-:func:`simulator.checker.check_model` (or ``python -m simulator.checker
+:func:`scidatasim.checker.check_model` (or ``python -m scidatasim.checker
 module.Class config.yaml``) is the gate for new and generated models:
 
 * a static scan of the source: global random-number use, eval/exec, subprocess,
@@ -450,9 +450,9 @@ module.Class config.yaml``) is the gate for new and generated models:
 * the drift of quantities from ``invariants(results)``;
 * that every parameter in ``inferable_parameters`` changes the output.
 
-:func:`simulator.checker.check_source` runs the same checks on source code in a
+:func:`scidatasim.checker.check_source` runs the same checks on source code in a
 separate, time-limited process, after the static scan.
-:func:`simulator.llm.draft_model` asks any LLM (wrapped with
+:func:`scidatasim.llm.draft_model` asks any LLM (wrapped with
 ``CallableLLMClient``) for a model, gates it, and retries with the checker's
 findings. Accepted drafts are still ``unverified``: passing the gate never makes
 a model ``reference``.
@@ -464,11 +464,11 @@ Data Handling and Storage
 
 Arrays are stored as ``.npy`` (or one ``data.h5`` with ``storage: {format: hdf5}``),
 DataFrames as Parquet (CSV without pyarrow). The record lists every file with
-its SHA-256; :func:`simulator.persistence.load_experiment_record` verifies the
+its SHA-256; :func:`scidatasim.persistence.load_experiment_record` verifies the
 checksums (``verify=False`` to skip) and can memory-map arrays (``mmap=True``).
 ``storage: {format: inline}`` keeps the original JSON-only layout.
 
-Inputs can be loaded with ``simulator.data_handler`` (``load_csv``,
+Inputs can be loaded with ``scidatasim.data_handler`` (``load_csv``,
 ``load_json``, ``load_numpy``); ``save_csv`` / ``results_to_dataframe`` flatten
 results into one table.
 
@@ -479,7 +479,7 @@ Design of Experiments
 
 .. code-block:: python
 
-    from simulator.doe import create_doe_table, run_design
+    from scidatasim.doe import create_doe_table, run_design
 
     design = create_doe_table({"prey_growth_rate": [0.8, 1.4],
                                "observation.operators.0.snr_db": [10, 40]},
@@ -525,7 +525,7 @@ written when a run fails.
 
 .. code-block:: python
 
-    from simulator.engine import SimulatorEngine
+    from scidatasim.engine import SimulatorEngine
 
     engine = SimulatorEngine()
     record = engine.load_experiment_record(experiment_id)
@@ -551,68 +551,68 @@ tests check that observation operators realise the configured noise.
 Extending the Framework
 =======================
 
-* **New experiments:** add a package under ``experiments/`` (see
-  :ref:`experiment_logic` and ``experiments/README.md``).
-* **New observation operators:** :func:`simulator.observation.register_operator`.
+* **New experiments:** add a package under ``scidatasim/experiments/`` (see
+  :ref:`experiment_logic` and ``scidatasim/experiments/README.md``).
+* **New observation operators:** :func:`scidatasim.observation.register_operator`.
 * **Variations by inheritance:** subclass an existing model, as
   ``PredatorPreyCalibrationExperiment`` extends ``PredatorPreyExperiment`` to
   overlay observed data.
-* **Plot types:** ``simulator/visualization.py``; **inputs:** ``simulator/data_handler.py``.
+* **Plot types:** ``scidatasim/visualization.py``; **inputs:** ``scidatasim/data_handler.py``.
 
 .. _api_reference:
 
 API Reference
 =============
 
-.. automodule:: simulator.engine
+.. automodule:: scidatasim.engine
    :members: SimulatorEngine, RunOutput
 
-.. automodule:: simulator.base
+.. automodule:: scidatasim.base
    :members:
 
-.. automodule:: simulator.utils
+.. automodule:: scidatasim.utils
    :members:
 
-.. automodule:: simulator.observation
+.. automodule:: scidatasim.observation
    :members: apply_observation, register_operator, validate_observation_config
 
-.. automodule:: simulator.bundle
+.. automodule:: scidatasim.bundle
    :members: resolve_bundle_config, build_bundle, generate_questions, check_answer
 
-.. automodule:: simulator.envs
+.. automodule:: scidatasim.envs
    :members: ExperimentEnv, ExperimentTaskSpec, render_observation
 
-.. automodule:: simulator.checker
+.. automodule:: scidatasim.checker
    :members: check_model, check_source, lint_source, CheckReport
 
-.. automodule:: simulator.llm
+.. automodule:: scidatasim.llm
    :members: CallableLLMClient, draft_model, Draft
 
-.. automodule:: simulator.units
+.. automodule:: scidatasim.units
    :members: check_units, convert_parameters, parse_units
 
-.. automodule:: simulator.export.tasks
+.. automodule:: scidatasim.export.tasks
    :members: collect_bundle_tasks, write_tasks_jsonl, score
 
-.. automodule:: simulator.export.huggingface
+.. automodule:: scidatasim.export.huggingface
    :members: export_huggingface, write_croissant
 
-.. automodule:: simulator.export.sbi
+.. automodule:: scidatasim.export.sbi
    :members: BatchSimulator, generate_training_data, training_data_from_runs, to_sbi_prior
 
-.. automodule:: simulator.export.rl
+.. automodule:: scidatasim.export.rl
    :members: export_openenv, export_verifiers_qa, verifiers_openenv_taskset_config
 
-.. automodule:: simulator.doe
+.. automodule:: scidatasim.doe
    :members: create_doe_table, add_replicates_and_seeds, run_design, DesignRun, run_parameter_sweep, append_results_to_doe_table
 
-.. automodule:: simulator.storage
+.. automodule:: scidatasim.storage
    :members: write_outputs, read_output, resolve_storage_config, ChecksumError
 
-.. automodule:: simulator.persistence
+.. automodule:: scidatasim.persistence
    :members: save_experiment_record, load_experiment_record
 
-.. automodule:: simulator.rng
+.. automodule:: scidatasim.rng
    :members:
 
 .. _contributing:

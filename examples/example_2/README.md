@@ -1,6 +1,6 @@
 # Example 2: 1D Random Walk
 
-This example demonstrates a simple 1D random walk simulation. It uses the `experiments.example_random_walk.logic.RandomWalkExperiment` class.
+This example demonstrates a simple 1D random walk simulation. It uses the `scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment` class.
 
 ## Configuration
 

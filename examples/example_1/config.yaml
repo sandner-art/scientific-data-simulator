@@ -1,5 +1,5 @@
 # examples/example_1/config.yaml
-experiment_type: experiments.example_experiment.logic.ExampleExperiment
+experiment_type: scidatasim.experiments.example_experiment.logic.ExampleExperiment
 experiment_description: "A simple simulation of a sine wave."
 n_steps: 150
 amplitude: 2.5

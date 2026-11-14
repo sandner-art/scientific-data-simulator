@@ -5,12 +5,12 @@ import os
 import numpy as np
 import pytest
 
-from simulator.engine import SimulatorEngine
-from simulator.observation import apply_observation, register_operator, VALUE_OPERATORS
-from simulator.persistence import load_experiment_record
-from simulator.utils import DataDescriptor, DataType, Role
+from scidatasim.engine import SimulatorEngine
+from scidatasim.observation import apply_observation, register_operator, VALUE_OPERATORS
+from scidatasim.persistence import load_experiment_record
+from scidatasim.utils import DataDescriptor, DataType, Role
 
-LINEAR = {"experiment_type": "experiments.linear_function.logic.LinearFunctionExperiment",
+LINEAR = {"experiment_type": "scidatasim.experiments.linear_function.logic.LinearFunctionExperiment",
           "n_points": 2000, "m": 2.0, "c": 5.0, "x_min": 0.0, "x_max": 10.0,
           "generate_plots": False, "seed": 2024}
 
@@ -162,7 +162,7 @@ def test_real_data_experiment_is_flagged_not_synthetic(tmp_path):
     csv = tmp_path / "d.csv"
     pd.DataFrame({"time": [0, 1], "value": [1.0, 2.0]}).to_csv(csv, index=False)
     run = SimulatorEngine(output_dir=str(tmp_path / "o"), verbose=False).run_config(
-        {"experiment_type": "experiments.data_analysis.logic.DataAnalysisExperiment",
+        {"experiment_type": "scidatasim.experiments.data_analysis.logic.DataAnalysisExperiment",
          "input_data_path": str(csv), "generate_plots": False})
     assert run.record.ground_truth["synthetic"] is False
     assert "input_data_path" not in run.record.ground_truth["parameters"]

@@ -9,7 +9,7 @@ pytest.importorskip("streamlit")
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 from sds_ui import APP, core  # noqa: E402
-from simulator.examples import discover  # noqa: E402
+from scidatasim.examples import discover  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EXAMPLES = os.path.join(ROOT, "examples")

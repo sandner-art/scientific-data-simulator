@@ -1,6 +1,6 @@
  # Example 4: Linear Function
 
- This example demonstrates generating data from a simple linear function, y = mx + c.  It uses the `experiments.linear_function.logic.LinearFunctionExperiment` class.
+ This example demonstrates generating data from a simple linear function, y = mx + c.  It uses the `scidatasim.experiments.linear_function.logic.LinearFunctionExperiment` class.
 
  ## Configuration
 

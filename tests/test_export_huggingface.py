@@ -5,13 +5,13 @@ import os
 import numpy as np
 import pytest
 
-from simulator.provenance import simulator_version
+from scidatasim.provenance import simulator_version
 import yaml
 
-from simulator.config import load_config
-from simulator.doe import create_doe_table, run_design
-from simulator.export.huggingface import PRIVATE_QUESTION_KEYS, export_huggingface
-from simulator.provenance import file_sha256
+from scidatasim.config import load_config
+from scidatasim.doe import create_doe_table, run_design
+from scidatasim.export.huggingface import PRIVATE_QUESTION_KEYS, export_huggingface
+from scidatasim.provenance import file_sha256
 
 pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
@@ -110,7 +110,7 @@ def test_runs_public_by_default(design, public):
     assert [json.loads(r["design_parameters"]) for r in rows] == \
         [{"observation.operators.0.snr_db": v} for v in results["observation.operators.0.snr_db"]]
     assert {r["fidelity"] for r in rows} == {"reference"}
-    assert all(r["model"] == "experiments.predator_prey.logic.PredatorPreyExperiment" for r in rows)
+    assert all(r["model"] == "scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment" for r in rows)
     assert len(rows[0]["time_observed"]) == len(rows[0]["prey_population_observed"])
 
 

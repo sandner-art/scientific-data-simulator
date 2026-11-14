@@ -3,12 +3,12 @@
 
 import os
 import argparse
-from simulator.config import yaml_load
+from scidatasim.config import yaml_load
 import numpy as np
 import pandas as pd
-from simulator.doe import run_parameter_sweep, create_doe_table, append_results_to_doe_table
-from experiments.linear_function.logic import LinearFunctionExperiment  # Import
-from simulator.visualization import generate_plots
+from scidatasim.doe import run_parameter_sweep, create_doe_table, append_results_to_doe_table
+from scidatasim.experiments.linear_function.logic import LinearFunctionExperiment  # Import
+from scidatasim.visualization import generate_plots
 import matplotlib.pyplot as plt  # Import matplotlib
 
 

@@ -29,10 +29,10 @@ pytest --junitxml=pytest-report.xml; python tools/ci_failures.py pytest-report.x
 ## Adding things
 
 - **A model:**
-  - Put an `ExperimentLogic` package in `experiments/<name>/`.
+  - Put an `ExperimentLogic` package in `scidatasim/experiments/<name>/`.
   - Give it a fidelity level and a note: `reference` only with tests that check it against known
     results, `audit` for a deliberately weak model with its flaw documented and pinned by a test.
-  - Check it with `simulator.checker.check_model` (see "Checking a model" in the README).
+  - Check it with `scidatasim.checker.check_model` (see "Checking a model" in the README).
 - **An example:** a folder in `examples/` with `run_experiment.py` and an `example.yaml` (see
   `examples/README.md`). It then appears in `sds examples list` and in the UI.
 - **The UI** lives in `ui/`, a separate package. It may use only the simulator's public

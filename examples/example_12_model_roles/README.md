@@ -27,7 +27,7 @@ def ask(prompt):
 
 1. **Release.** A law-discovery suite (18 runs) is exported to Hugging Face format and passes the
    leak audit.
-2. **Attacker** (`simulator.ai.llm_attack`). The model gets the release with the evidence removed:
+2. **Attacker** (`scidatasim.ai.llm_attack`). The model gets the release with the evidence removed:
    no figures, no measurement columns, no data tables. It is asked to answer every question. Per
    question template, its accuracy is tested against a null rate: the best of the blind baseline
    (majority answer or majority position), chance, and a floor of 0.5/n. The test is an exact
@@ -36,7 +36,7 @@ def ask(prompt):
    - FLAGGED: answerable without the evidence. This is a leak or a legitimate route, such as a
      caption that states the plotted range or a strong prior, so inspect the answers;
    - INCONCLUSIVE: fewer than 90 % of the questions were answered, or the view had to be truncated.
-3. **Writer** (`simulator.ai.paraphrase_tasks`). The model rephrases each question. A rewrite is
+3. **Writer** (`scidatasim.ai.paraphrase_tasks`). The model rephrases each question. A rewrite is
    kept only if it:
    - has the same numbers;
    - names every answer option;
@@ -48,8 +48,8 @@ def ask(prompt):
 
    The rewritten public set is then leak-audited. A nearest-neighbour test checks whether question
    lengths predict the answers, which would be a wording cue the writer added.
-4. **Agent** (`simulator.ai.LLMAgent`). The model plays the interactive environment from example
-   10, and each episode is diagnosed (`simulator.diagnostics.episodes`).
+4. **Agent** (`scidatasim.ai.LLMAgent`). The model plays the interactive environment from example
+   10, and each episode is diagnosed (`scidatasim.diagnostics.episodes`).
 5. **Provenance and replay.** `llm_provenance.json` summarises the calls per role and model, with
    SHA-256 hashes of the logs and no prompt text. The agent episodes are replayed from the log
    without the model and must come out identical. The report lists the roles each model played;

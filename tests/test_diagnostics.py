@@ -6,18 +6,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from simulator.audit import audit_export
-from simulator.bundle import check_answer
-from simulator.diagnostics import (add_canary, blind_baseline, canary_probe, card_markdown, contamination_gap,
+from scidatasim.audit import audit_export
+from scidatasim.bundle import check_answer
+from scidatasim.diagnostics import (add_canary, blind_baseline, canary_probe, card_markdown, contamination_gap,
                                    diagnose_episode, feature_shortcuts, gap_test, law_alternatives, make_canary,
                                    make_twin, pair_tasks, public_features, quality_card, run_episodes, summarize)
-from simulator.diagnostics.stats import binomial_p_greater
-from simulator.doe import run_design
-from simulator.engine import SimulatorEngine
-from simulator.envs import ExperimentEnv
-from simulator.export.tasks import collect_bundle_tasks
+from scidatasim.diagnostics.stats import binomial_p_greater
+from scidatasim.doe import run_design
+from scidatasim.engine import SimulatorEngine
+from scidatasim.envs import ExperimentEnv
+from scidatasim.export.tasks import collect_bundle_tasks
 
-LAW_BASE = {"experiment_type": "experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 25,
+LAW_BASE = {"experiment_type": "scidatasim.experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 25,
             "generate_plots": False, "bundle": {"figure": {"show_latent": False}, "qa": {"value_queries": 0}},
             "observation": {"operators": [{"type": "gaussian", "snr_db": 35}]}}
 
@@ -172,7 +172,7 @@ def test_public_features_and_excluded_templates(tmp_path):
 
 
 # ------------------------------------------------------------------ agent fallacies
-SPEC = {"base_config": {"experiment_type": "experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 30,
+SPEC = {"base_config": {"experiment_type": "scidatasim.experiments.law_discovery.logic.HiddenLawExperiment", "n_points": 30,
                         "counterfactual": True, "x_min": 0.5, "x_max": 5.0,
                         "observation": {"operators": [{"type": "gaussian", "snr_db": 40}]}},
         "hidden": {"law": {"choices": ["power_law"]}, "law_seed": [0, 1.0e12]},
@@ -182,7 +182,7 @@ SPEC = {"base_config": {"experiment_type": "experiments.law_discovery.logic.Hidd
 
 
 def _agent(kind):
-    from experiments.law_discovery.logic import textbook_counterpart
+    from scidatasim.experiments.law_discovery.logic import textbook_counterpart
 
     def agent(obs, log):
         n = len(log.experiments)
@@ -267,7 +267,7 @@ def test_clustered_gap_test_keeps_its_size():
 
 
 def test_contradiction_flag_spares_correct_answers_and_numeric_invalid():
-    from simulator.diagnostics.episodes import EpisodeLog
+    from scidatasim.diagnostics.episodes import EpisodeLog
     xs = list(np.linspace(0.5, 5, 30))
     truth = "2*x**1.7"
     ys = list(2 * np.asarray(xs) ** 1.7)  # noise-free measurements
@@ -298,7 +298,7 @@ def test_canary_chance_skips_fixed_uuid_digits():
 
 
 def test_twin_of_pre_replicated_table_and_numpy_answers(tmp_path):
-    from simulator.doe import add_replicates_and_seeds
+    from scidatasim.doe import add_replicates_and_seeds
     table = add_replicates_and_seeds(pd.DataFrame({"law": ["power_law", "hill"]}), replicates=3, base_seed=4)
     run_design(LAW_BASE, table, output_dir=str(tmp_path / "o"))
     twin = make_twin(str(tmp_path / "o"), str(tmp_path / "t"), base_seed=99)
@@ -328,7 +328,7 @@ def test_feature_shortcuts_groups_exclude_replicates():
 
 
 def test_approximator_baseline_catches_a_scorer_loophole():
-    from simulator.diagnostics import approximator_baseline, polynomial_formula
+    from scidatasim.diagnostics import approximator_baseline, polynomial_formula
     x = np.linspace(0.5, 5.0, 40)
     y = 3 * np.exp(-0.8 * x)
     loose = {"id": "q1", "experiment_id": "r1", "template": "law_formula", "answer_type": "expression",

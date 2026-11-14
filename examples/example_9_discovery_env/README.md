@@ -12,8 +12,8 @@ The scripted baseline removes the predators, fits the exponential growth of the 
 ## Using it with agents and RL frameworks
 
 ```python
-from simulator.config import yaml_load
-from simulator.envs import ExperimentEnv
+from scidatasim.config import yaml_load
+from scidatasim.envs import ExperimentEnv
 
 env = ExperimentEnv(yaml_load(open("examples/example_9_discovery_env/env.yaml")))
 obs = env.reset(seed=0)                     # obs["task"] is the instruction text
@@ -22,8 +22,8 @@ out = env.step({"type": "answer", "value": 1.1})
 out["reward"], out["info"]["truth"]
 ```
 
-- **OpenEnv:** `simulator.export.rl.export_openenv("examples/example_9_discovery_env/env.yaml", "rl/", name="lv_discovery")` writes an OpenEnv package. Serve it with `uvicorn server.app:app` inside the package, or as a Docker image or a Hugging Face Space.
-- **verifiers:** the `openenv` taskset of verifiers can drive that server for multi-turn training. See the module docstring of `simulator/export/rl.py`.
+- **OpenEnv:** `scidatasim.export.rl.export_openenv("examples/example_9_discovery_env/env.yaml", "rl/", name="lv_discovery")` writes an OpenEnv package. Serve it with `uvicorn server.app:app` inside the package, or as a Docker image or a Hugging Face Space.
+- **verifiers:** the `openenv` taskset of verifiers can drive that server for multi-turn training. See the module docstring of `scidatasim/export/rl.py`.
 
 Each episode is reproducible from its seed. Every experiment uses its own seed, derived from the episode seed.
 

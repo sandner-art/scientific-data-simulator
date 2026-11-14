@@ -12,7 +12,7 @@ a week.
   can open it can run the examples with any parameters and fill the disk with results.
   Example 12 also lets them make Python import a module by name. Expose it with `--address` only
   on a network you trust.
-- **Model roles** (`simulator.ai`) send prompts to whatever model function you supply and log
+- **Model roles** (`scidatasim.ai`) send prompts to whatever model function you supply and log
   prompts and outputs in plain text. Keep API keys in your environment, not in configs or
   logs.
 - **The model checker** runs model code in a subprocess with a reduced environment. That limits

@@ -1,7 +1,7 @@
 # tests/test_data_analysis.py
 import pytest
-from experiments.data_analysis.logic import DataAnalysisExperiment
-from simulator.data_handler import load_csv
+from scidatasim.experiments.data_analysis.logic import DataAnalysisExperiment
+from scidatasim.data_handler import load_csv
 import numpy as np
 import pandas as pd
 import os

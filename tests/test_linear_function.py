@@ -1,7 +1,7 @@
 # tests/test_linear_function.py
 
 import pytest
-from experiments.linear_function.logic import LinearFunctionExperiment
+from scidatasim.experiments.linear_function.logic import LinearFunctionExperiment
 import numpy as np
 
 @pytest.fixture

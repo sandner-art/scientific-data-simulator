@@ -8,7 +8,7 @@ if not exist "%SDS_PY%" (
   exit /b 1
 )
 cd /d "%~dp0.."
-"%SDS_PY%" -m simulator ui %*
+"%SDS_PY%" -m scidatasim ui %*
 set "SDS_EXIT=%ERRORLEVEL%"
 if not "%SDS_EXIT%"=="0" pause
 exit /b %SDS_EXIT%

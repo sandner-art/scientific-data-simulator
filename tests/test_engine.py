@@ -1,9 +1,9 @@
 # tests/test_engine.py
 import pytest
-from simulator.engine import SimulatorEngine
-from simulator.base import ExperimentLogic
-from simulator.utils import DataDescriptor, DataType
-from simulator.experiment_record import ExperimentRecord
+from scidatasim.engine import SimulatorEngine
+from scidatasim.base import ExperimentLogic
+from scidatasim.utils import DataDescriptor, DataType
+from scidatasim.experiment_record import ExperimentRecord
 import os
 import json
 import shutil  # Import shutil for directory removal
@@ -28,7 +28,7 @@ def test_run_experiment_valid_config(temp_test_dir):
     config_path = os.path.join(temp_test_dir, "config.yaml")
     with open(config_path, "w") as f:
         yaml.dump({
-            "experiment_type": "experiments.example_experiment.logic.ExampleExperiment",  # CORRECT
+            "experiment_type": "scidatasim.experiments.example_experiment.logic.ExampleExperiment",  # CORRECT
             "experiment_description": "Test experiment",
             "n_steps": 3,
             "amplitude": 5,  # Correct parameter for ExampleExperiment

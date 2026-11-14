@@ -1,7 +1,7 @@
 # tests/test_visualization.py
 import pytest
-from simulator.visualization import generate_plots
-from simulator.utils import DataDescriptor, DataType
+from scidatasim.visualization import generate_plots
+from scidatasim.utils import DataDescriptor, DataType
 import os
 import numpy as np
 import pandas as pd
@@ -168,8 +168,8 @@ def test_plots_never_load_pyplot(tmp_path):
     import sys
     code = (
         "import sys, numpy as np\n"
-        "from simulator.utils import DataDescriptor, DataType\n"
-        "from simulator.visualization import generate_plots\n"
+        "from scidatasim.utils import DataDescriptor, DataType\n"
+        "from scidatasim.visualization import generate_plots\n"
         "t = np.arange(5.0)\n"
         "results = {'time': {'data': t, 'descriptor': DataDescriptor('time', DataType.NDARRAY, group='time_series')},\n"
         "           'v': {'data': t ** 2, 'descriptor': DataDescriptor('v', DataType.NDARRAY, group='time_series',\n"

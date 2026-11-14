@@ -1,4 +1,4 @@
 # examples/example_5/config.yaml
-experiment_type: experiments.data_analysis.logic.DataAnalysisExperiment  # CORRECTED
+experiment_type: scidatasim.experiments.data_analysis.logic.DataAnalysisExperiment  # CORRECTED
 experiment_description: "Loads data from a CSV file, performs analysis, and generates plots."
 input_data_path: "examples/example_5/data.csv"

@@ -9,7 +9,7 @@ Runs on the law-discovery suite of example 10 and writes ``report.md`` and ``rep
    (at several contamination rates) against an honest solver; paired gap tests.
 4. Canary probe with a model that saw the release and one that did not.
 5. Agent fallacies: scripted agents with known faults in the interactive environment, and the
-   flags :mod:`simulator.diagnostics.episodes` raises for each.
+   flags :mod:`scidatasim.diagnostics.episodes` raises for each.
 
     python -m examples.example_11_testbed.run_experiment [--quick]
 """
@@ -25,20 +25,20 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from examples.example_10_law_discovery.run_experiment import fit_best_law  # noqa: E402
-from experiments.law_discovery.logic import law_suite_design, textbook_counterpart  # noqa: E402
-from simulator.audit import audit_export  # noqa: E402
-from simulator.bundle import check_answer  # noqa: E402
-from simulator.config import load_config, yaml_load  # noqa: E402
-from simulator.diagnostics import (add_canary, approximator_baseline, blind_baseline, canary_probe, card_markdown,  # noqa: E402
+from scidatasim.experiments.law_discovery.logic import law_suite_design, textbook_counterpart  # noqa: E402
+from scidatasim.audit import audit_export  # noqa: E402
+from scidatasim.bundle import check_answer  # noqa: E402
+from scidatasim.config import load_config, yaml_load  # noqa: E402
+from scidatasim.diagnostics import (add_canary, approximator_baseline, blind_baseline, canary_probe, card_markdown,  # noqa: E402
                                    contamination_gap, diagnose_episode, feature_shortcuts, law_alternatives,
                                    make_canary, make_twin, pair_tasks, public_features, quality_card,
                                    run_episodes, summarize)
-from simulator.doe import run_design  # noqa: E402
-from simulator.examples import prepare_output_dir  # noqa: E402
-from simulator.envs import ExperimentEnv  # noqa: E402
-from simulator.export.tasks import collect_bundle_tasks  # noqa: E402
-from simulator.expressions import evaluate  # noqa: E402
-from simulator.persistence import load_experiment_record  # noqa: E402
+from scidatasim.doe import run_design  # noqa: E402
+from scidatasim.examples import prepare_output_dir  # noqa: E402
+from scidatasim.envs import ExperimentEnv  # noqa: E402
+from scidatasim.export.tasks import collect_bundle_tasks  # noqa: E402
+from scidatasim.expressions import evaluate  # noqa: E402
+from scidatasim.persistence import load_experiment_record  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EX10 = os.path.join(HERE, "..", "example_10_law_discovery")
@@ -229,7 +229,7 @@ def main():
     md += ["", "Power laws remain partly within a polynomial's reach: their exponents are often close to 1 or 2.", ""]
 
     # -- 3. leak audit with canary ---------------------------------------------------
-    from simulator.export.huggingface import export_huggingface
+    from scidatasim.export.huggingface import export_huggingface
     release = export_huggingface(original_dir, os.path.join(out, "release"), name="sds-testbed-laws",
                                  overwrite=True)
     canary = make_canary("sds-testbed-laws")

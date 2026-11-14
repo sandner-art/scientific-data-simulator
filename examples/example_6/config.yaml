@@ -1,5 +1,5 @@
 # examples/example_6/config.yaml
-experiment_type: experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment
+experiment_type: scidatasim.experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment
 experiment_description: "Calibration of the Predator-Prey model using observed data."
 n_steps: 350  # Simulate for a longer time
 initial_prey: 100  # Initial values - these might be adjusted

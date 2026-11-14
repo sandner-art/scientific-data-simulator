@@ -6,4 +6,4 @@ if [ ! -x .venv/bin/python ]; then
   echo "No .venv found: run  bash scripts/install.sh ui  first." >&2
   exit 1
 fi
-exec .venv/bin/python -m simulator ui "$@"
+exec .venv/bin/python -m scidatasim ui "$@"

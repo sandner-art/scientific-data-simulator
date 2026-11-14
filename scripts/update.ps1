@@ -51,5 +51,5 @@ if ($Setup -eq "ui") {
 }
 Set-Content -Path ".venv\sds-profile" -Value $Setup
 Write-Host ""
-& $venvPython -m simulator doctor
+& $venvPython -m scidatasim doctor
 exit 0

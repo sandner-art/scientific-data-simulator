@@ -241,7 +241,7 @@ def page_results():
 
 def page_installation():
     st.header("Installation check")
-    from simulator.doctor import run_checks
+    from scidatasim.doctor import run_checks
     if st.button("Run the check", key="doctor_run") or "doctor" not in st.session_state:
         import tempfile
         with st.spinner("Checking ..."):

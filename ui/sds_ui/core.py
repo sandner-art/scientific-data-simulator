@@ -2,7 +2,7 @@
 """Everything the UI needs from the simulator, as plain functions (no Streamlit here).
 
 The UI uses only the simulator's public functions - the example manifests and runner
-(:mod:`simulator.examples`), the doctor (:mod:`simulator.doctor`) and the version - so whatever
+(:mod:`scidatasim.examples`), the doctor (:mod:`scidatasim.doctor`) and the version - so whatever
 it does can also be done from the command line, and a run started here is recorded exactly
 like one started with ``sds examples run``.
 """
@@ -16,9 +16,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional
 
-from simulator import __version__ as SIMULATOR_VERSION
-from simulator.doctor import EXTRAS
-from simulator.examples import Example, ExampleRun, Param, discover, effective_values, run_example
+from scidatasim import __version__ as SIMULATOR_VERSION
+from scidatasim.doctor import EXTRAS
+from scidatasim.examples import Example, ExampleRun, Param, discover, effective_values, run_example
 
 UI_SETTINGS = ("SDS_EXAMPLES", "SDS_RUNS")
 
@@ -218,7 +218,7 @@ def repeat_command(cwd: str, pythonpath: str, command_line: str, windows: Option
 
 def outputs_of(record: RunRecord, examples: Mapping[str, Example]) -> List[Dict[str, str]]:
     """The outputs of a past run, with the kinds its example's manifest gives them."""
-    from simulator.examples import find_outputs
+    from scidatasim.examples import find_outputs
     example = examples.get(record.example)
     if example is not None:
         return find_outputs(example, record.folder)
@@ -236,9 +236,9 @@ def figures_in(folder: str, limit: int = 12) -> List[Dict[str, str]]:
 
 def citation() -> Dict[str, str]:
     """Title, authors, version and DOI from ``CITATION.cff`` in a source checkout (empty if absent)."""
-    import simulator
+    import scidatasim
     import yaml
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(simulator.__file__))), "CITATION.cff")
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(scidatasim.__file__))), "CITATION.cff")
     try:
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}

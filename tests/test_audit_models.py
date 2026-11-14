@@ -4,13 +4,13 @@ present and measurable, and their reference counterparts must stay correct."""
 import numpy as np
 import pytest
 
-from experiments.example_random_walk.logic import RANDU_MODULUS, randu
-from experiments.pendulum.logic import PendulumExperiment, exact_period
-from simulator.engine import simulate
+from scidatasim.experiments.example_random_walk.logic import RANDU_MODULUS, randu
+from scidatasim.experiments.pendulum.logic import PendulumExperiment, exact_period
+from scidatasim.engine import simulate
 
-PEND = {"experiment_type": "experiments.pendulum.logic.PendulumExperiment", "n_steps": 2000, "dt": 0.005,
+PEND = {"experiment_type": "scidatasim.experiments.pendulum.logic.PendulumExperiment", "n_steps": 2000, "dt": 0.005,
         "generate_plots": False, "seed": 0}
-WALK = {"experiment_type": "experiments.example_random_walk.logic.RandomWalkExperiment", "n_steps": 3000,
+WALK = {"experiment_type": "scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment", "n_steps": 3000,
         "step_size": 1.0, "generate_plots": False, "seed": 5}
 
 

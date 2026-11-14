@@ -18,8 +18,8 @@ import os
 
 import pandas as pd
 
-from simulator.config import load_config
-from simulator.doe import run_design
+from scidatasim.config import load_config
+from scidatasim.doe import run_design
 
 
 def main():
@@ -42,7 +42,7 @@ def main():
     print(f"{len(design.table)} triangles in {design.output_dir} (base seed {design.base_seed})")
 
     if not args.no_export:
-        from simulator.export.huggingface import export_huggingface
+        from scidatasim.export.huggingface import export_huggingface
         path = export_huggingface(args.output_dir, os.path.join(args.output_dir, "hf_dataset"),
                                   name="sds-triangle-diagrams", overwrite=True,
                                   description="Triangle diagrams with exact constructions and verifiable questions.")

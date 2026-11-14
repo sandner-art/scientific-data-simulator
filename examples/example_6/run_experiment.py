@@ -2,7 +2,7 @@
 # examples/example_6/run_experiment.py
 import argparse
 import os
-from simulator.engine import SimulatorEngine
+from scidatasim.engine import SimulatorEngine
 
 def main():
     parser = argparse.ArgumentParser(description="Run the predator-prey calibration example.")

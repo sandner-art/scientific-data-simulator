@@ -1,6 +1,6 @@
 # Example 3: Predator-Prey Simulation
 
-This example demonstrates a simulation of predator-prey population dynamics using the Lotka-Volterra equations.  It uses the `experiments.predator_prey.logic.PredatorPreyExperiment` class.
+This example demonstrates a simulation of predator-prey population dynamics using the Lotka-Volterra equations.  It uses the `scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment` class.
 
 ## Configuration
 

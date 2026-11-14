@@ -23,4 +23,4 @@ python -m examples.parameter_sweep_example.run_experiment --output_dir my_result
 - `design.csv`, `design_manifest.json` and `design_results.csv` for the whole sweep;
 - `parameter_sweep_plot.png` when `--plot` is given.
 
-The base config uses the model's default forward-Euler step (dt = 1), the 0.1.0 behaviour. For reference-quality trajectories, add `integrator: rk4` and a smaller `dt`; see `experiments/predator_prey/README.md`.
+The base config uses the model's default forward-Euler step (dt = 1), the 0.1.0 behaviour. For reference-quality trajectories, add `integrator: rk4` and a smaller `dt`; see `scidatasim/experiments/predator_prey/README.md`.

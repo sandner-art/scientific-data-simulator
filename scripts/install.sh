@@ -82,7 +82,7 @@ fi
 echo "$PROFILE" > .venv/sds-profile
 
 echo
-.venv/bin/python -m simulator doctor || true
+.venv/bin/python -m scidatasim doctor || true
 echo
 echo "Done. Activate with:  source .venv/bin/activate"
 echo "Then try:             sds examples list"

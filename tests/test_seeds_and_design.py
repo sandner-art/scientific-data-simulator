@@ -6,14 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from simulator.doe import (add_replicates_and_seeds, apply_overrides, create_doe_table,
+from scidatasim.doe import (add_replicates_and_seeds, apply_overrides, create_doe_table,
                            get_by_path, run_design, run_parameter_sweep, set_by_path)
-from simulator.engine import SimulatorEngine
-from simulator.persistence import load_experiment_record
-from simulator.rng import RunRandomness, derive_seeds
-from simulator.schema import validate_engine_config
+from scidatasim.engine import SimulatorEngine
+from scidatasim.persistence import load_experiment_record
+from scidatasim.rng import RunRandomness, derive_seeds
+from scidatasim.schema import validate_engine_config
 
-WALK = {"experiment_type": "experiments.example_random_walk.logic.RandomWalkExperiment",
+WALK = {"experiment_type": "scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment",
         "n_steps": 50, "step_size": 1.0, "generate_plots": False}
 
 
@@ -160,14 +160,14 @@ def test_parallel_matches_serial(tmp_path):
 def test_run_design_continue_on_error(tmp_path):
     table = pd.DataFrame({"step_size": [1.0, None]})
     base = dict(WALK)
-    base["experiment_type"] = "experiments.linear_function.logic.LinearFunctionExperiment"
+    base["experiment_type"] = "scidatasim.experiments.linear_function.logic.LinearFunctionExperiment"
     design = run_design(base, table, output_dir=str(tmp_path), on_error="continue", base_seed=1)
     assert (design.table["status"] == "failed").all()
     assert design.table["error"].str.contains("KeyError").all()
 
 
 def test_sweep_supports_nested_noise_keys_and_replicates(tmp_path):
-    from experiments.linear_function.logic import LinearFunctionExperiment
+    from scidatasim.experiments.linear_function.logic import LinearFunctionExperiment
     base = {"n_points": 5, "m": 1.0, "c": 0.0, "x_min": 0.0, "x_max": 1.0, "generate_plots": False,
             "extra": {"level": 0}}
     runs = run_parameter_sweep(LinearFunctionExperiment, base, {"extra.level": [1, 2]},

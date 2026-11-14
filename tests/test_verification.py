@@ -10,9 +10,9 @@ import numpy as np
 import pytest
 from scipy.integrate import solve_ivp
 
-from experiments.example_experiment.logic import ExampleExperiment
-from experiments.linear_function.logic import LinearFunctionExperiment
-from experiments.predator_prey.logic import PredatorPreyExperiment
+from scidatasim.experiments.example_experiment.logic import ExampleExperiment
+from scidatasim.experiments.linear_function.logic import LinearFunctionExperiment
+from scidatasim.experiments.predator_prey.logic import PredatorPreyExperiment
 
 LV = dict(initial_prey=10.0, initial_predators=5.0, prey_growth_rate=1.1, prey_death_rate=0.4,
           predator_growth_rate=0.1, predator_death_rate=0.4)
@@ -157,8 +157,8 @@ def test_invalid_model_options(bad):
 
 
 def test_law_shift_to_holling2_through_engine(tmp_path):
-    from simulator.engine import SimulatorEngine
-    cfg = dict(LV, experiment_type="experiments.predator_prey.logic.PredatorPreyExperiment",
+    from scidatasim.engine import SimulatorEngine
+    cfg = dict(LV, experiment_type="scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment",
                n_steps=500, dt=0.01, integrator="rk4", generate_plots=False, seed=0,
                law_shift={"changes": {"functional_response": "holling2", "handling_time": 0.5},
                           "description": "saturating predation"})

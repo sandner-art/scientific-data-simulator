@@ -8,11 +8,11 @@ import os
 import numpy as np
 import pytest
 
-from experiments.heat.logic import HeatExperiment
-from simulator.checker import check_model
-from simulator.engine import SimulatorEngine, simulate
+from scidatasim.experiments.heat.logic import HeatExperiment
+from scidatasim.checker import check_model
+from scidatasim.engine import SimulatorEngine, simulate
 
-HEAT = "experiments.heat.logic.HeatExperiment"
+HEAT = "scidatasim.experiments.heat.logic.HeatExperiment"
 MODES_1D = [{"k": 1, "a": 1.0, "b": 0.3}, {"k": 3, "a": 0.2, "b": -0.5}]
 MODES_2D = [{"k": [1, 0], "a": 1.0, "b": 0.0}, {"k": [1, 2], "a": 0.3, "b": -0.4}, {"k": [-2, 1], "a": 0.0, "b": 0.5}]
 BASE = {"experiment_type": HEAT, "alpha": 1e-3, "length": 1.0, "nx": 32, "dt": 0.1, "n_steps": 200,
@@ -184,7 +184,7 @@ def test_invalid_heat_options(bad):
 # ---------------------------------------------------------------------------- The Well export
 @pytest.fixture(scope="module")
 def heat_design(tmp_path_factory):
-    from simulator.doe import create_doe_table, run_design
+    from scidatasim.doe import create_doe_table, run_design
     out = str(tmp_path_factory.mktemp("design"))
     table = create_doe_table({"alpha": [0.001, 0.002]}, "full_factorial")
     run_design(dict(BASE, dims=2, nx=16, dt=1.0, n_steps=12), table, output_dir=out, replicates=3, base_seed=7,
@@ -193,7 +193,7 @@ def heat_design(tmp_path_factory):
 
 
 def _export(src, out, **kw):
-    from simulator.export.the_well import export_the_well
+    from scidatasim.export.the_well import export_the_well
     return export_the_well(src, out, "sds_heat", **kw)
 
 
@@ -284,7 +284,7 @@ def test_the_well_loader_reads_the_export(heat_design, tmp_path):
 
 def test_fractional_split_with_one_run_per_parameter_set(tmp_path):
     pytest.importorskip("h5py")
-    from simulator.doe import create_doe_table, run_design
+    from scidatasim.doe import create_doe_table, run_design
     out = str(tmp_path / "design")
     table = create_doe_table({"alpha": [0.0005, 0.003]}, "lhs", n_samples=10, seed=1)
     run_design(dict(BASE, nx=16, dt=1.0, n_steps=8), table, output_dir=out, base_seed=3, generate_plots=False)

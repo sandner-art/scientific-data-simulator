@@ -2,13 +2,13 @@
 import numpy as np
 import pytest
 
-from experiments.oscillator.logic import OscillatorExperiment
-from simulator.engine import SimulatorEngine, simulate
+from scidatasim.experiments.oscillator.logic import OscillatorExperiment
+from scidatasim.engine import SimulatorEngine, simulate
 
 pint = pytest.importorskip("pint")
-from simulator.units import check_units, convert_parameters  # noqa: E402
+from scidatasim.units import check_units, convert_parameters  # noqa: E402
 
-OSC = {"experiment_type": "experiments.oscillator.logic.OscillatorExperiment",
+OSC = {"experiment_type": "scidatasim.experiments.oscillator.logic.OscillatorExperiment",
        "n_steps": 2000, "dt": 0.005, "mass": 1.0, "stiffness": 40.0, "damping": 0.0,
        "x0": 0.1, "v0": 0.0, "generate_plots": False, "seed": 1}
 
@@ -44,14 +44,14 @@ def test_engine_converts_units_and_records_them(tmp_path):
     np.testing.assert_allclose(run.results["position"]["data"],
                                model(n_steps=10)["position"]["data"])
     assert run.record.provenance["units"]["checked"] is True
-    from simulator.units import parse_units
+    from scidatasim.units import parse_units
     energy_units = run.record.provenance["units"]["outputs"]["energy"]["canonical"]
     assert parse_units(energy_units).dimensionality == parse_units("kg*m**2/s**2").dimensionality
 
 
 def test_unit_trap_is_reported_and_can_be_an_error(tmp_path):
-    from simulator.base import ExperimentLogic
-    from simulator.utils import DataDescriptor, DataType
+    from scidatasim.base import ExperimentLogic
+    from scidatasim.utils import DataDescriptor, DataType
 
     class Trap(ExperimentLogic):
         def __init__(self, config): pass
@@ -69,12 +69,12 @@ def test_unit_trap_is_reported_and_can_be_an_error(tmp_path):
 def test_bundled_models_have_clean_units(tmp_path):
     configs = [
         dict(OSC, n_steps=5),
-        {"experiment_type": "experiments.predator_prey.logic.PredatorPreyExperiment", "n_steps": 5,
+        {"experiment_type": "scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment", "n_steps": 5,
          "initial_prey": 10, "initial_predators": 5, "prey_growth_rate": 1.1, "prey_death_rate": 0.4,
          "predator_growth_rate": 0.1, "predator_death_rate": 0.4},
-        {"experiment_type": "experiments.example_random_walk.logic.RandomWalkExperiment", "n_steps": 5, "step_size": 1.0},
-        {"experiment_type": "experiments.example_experiment.logic.ExampleExperiment", "n_steps": 5, "amplitude": 1.0},
-        {"experiment_type": "experiments.linear_function.logic.LinearFunctionExperiment", "n_points": 3, "m": 1.0,
+        {"experiment_type": "scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment", "n_steps": 5, "step_size": 1.0},
+        {"experiment_type": "scidatasim.experiments.example_experiment.logic.ExampleExperiment", "n_steps": 5, "amplitude": 1.0},
+        {"experiment_type": "scidatasim.experiments.linear_function.logic.LinearFunctionExperiment", "n_points": 3, "m": 1.0,
          "c": 0.0, "x_min": 0.0, "x_max": 1.0, "x_units": "s", "y_units": "m"},
     ]
     for cfg in configs:

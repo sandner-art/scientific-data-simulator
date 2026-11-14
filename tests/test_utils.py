@@ -1,6 +1,6 @@
 # tests/test_utils.py
 import pytest
-from simulator.utils import DataDescriptor, DataType
+from scidatasim.utils import DataDescriptor, DataType
 import numpy as np  # Import numpy
 import pandas as pd
 

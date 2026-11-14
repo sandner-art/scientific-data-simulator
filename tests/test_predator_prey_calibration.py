@@ -1,6 +1,6 @@
 # tests/test_predator_prey_calibration.py
 import pytest
-from experiments.predator_prey_calibration.logic import PredatorPreyCalibrationExperiment
+from scidatasim.experiments.predator_prey_calibration.logic import PredatorPreyCalibrationExperiment
 import numpy as np
 import pandas as pd
 import os

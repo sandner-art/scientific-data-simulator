@@ -1,6 +1,6 @@
 # Example 1: Sine Wave Simulation
 
-This example demonstrates a simple simulation of a sine wave.  It uses the `experiments.example_experiment.logic.ExampleExperiment` class.
+This example demonstrates a simple simulation of a sine wave.  It uses the `scidatasim.experiments.example_experiment.logic.ExampleExperiment` class.
 
 ## Configuration
 

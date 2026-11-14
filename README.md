@@ -50,16 +50,16 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
 
   Models that describe a diagram (`figure_elements()`) get a geometric drawing instead of a chart, and can add their own exact questions (`questions()`). Files are marked public (what a system under test sees) or private (the answers and the numeric tolerances, which would reveal them). Hiding the exact curves (`show_latent: false`) turns figure-reading questions into inference questions. A design collects all of its runs' questions into `questions.jsonl` (public) and `qa.jsonl` (private).
 * **Model fidelity labels.** Every model declares a fidelity level with a short reason, recorded in each run (see [Model fidelity](#model-fidelity-reference-and-deliberately-weak-models)).
-* **Exporters** (`simulator.export`):
+* **Exporters** (`scidatasim.export`):
   * questions as scored tasks (`tasks.jsonl`);
   * Hugging Face dataset folders with a dataset card and Croissant 1.0 metadata (validated with `mlcroissant`, loadable with `datasets`);
   * (θ, x) training sets and a batch simulator for simulation-based inference (`sbi`);
   * OpenEnv environment packages and verifiers tasksets for reinforcement learning.
 
   Ground truth is withheld unless you ask for it.
-* **Interactive discovery environments** (`simulator.envs`). An agent runs a limited number of noisy experiments on a system with hidden parameters, then reports an estimate, which is scored automatically. It has a Gymnasium-style `reset`/`step`/`state` API and no dependencies.
+* **Interactive discovery environments** (`scidatasim.envs`). An agent runs a limited number of noisy experiments on a system with hidden parameters, then reports an estimate, which is scored automatically. It has a Gymnasium-style `reset`/`step`/`state` API and no dependencies.
 * **Physical units** (optional `pint`). Parameters can be given with units (`stiffness: "2 kN/m"`) and are converted to the model's declared units. Output units are checked, including traps such as `units` (pint reads it as *micronit*) and `au` (astronomical unit).
-* **Model checker** (`simulator.checker`). A gate for new and LLM-written models:
+* **Model checker** (`scidatasim.checker`). A gate for new and LLM-written models:
   * a static scan of the source;
   * determinism and untouched global random state;
   * finite outputs;
@@ -68,11 +68,11 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
   * dead parameters;
   * units.
 
-  `simulator.llm.draft_model` asks any LLM for a model, runs the checker in a separate time-limited process, and retries with the findings.
-* **Law discovery** (`experiments.law_discovery`). Hidden laws y = f(x) from nine families (power law, inverse power, exponential decay, logistic, Michaelis–Menten, Hill, damped oscillation, Gaussian peak, Arrhenius), each with a textbook or a *counterfactual* setting of its structural constants (e.g. an inverse-*2.3* law). Formula answers are scored by evaluating them on the data range and half of it beyond (`simulator.expressions`: a safe parser with no `eval`), so any equivalent form counts but a polynomial that only reproduces the observed curve does not; the tolerance follows the run's noise. A suite design, a classical curve-fitting baseline and an interactive formula-discovery environment come with it (example 10).
-* **Leak audit** (`simulator.audit`). Before publishing, attack your own export: it tries seed replay, config-hash lookup, tolerance inversion, answer lookup in public files and exposure of hidden arrays, using the private runs as the answer key, and reports what would leak. `audit_environment` does the same for interactive environments.
-* **Testbed diagnostics** (`simulator.diagnostics`, example 11). Because every hidden value is known and every run can be regenerated, the simulator can test benchmarks and agents: blind and metadata-only baselines (shortcut artefacts), a fitted-polynomial baseline for formula questions (scorer loopholes), a quality card (answer balance, position bias, duplicates), fresh twins and paired gap tests (contamination), canaries and canary probes, and agent-fallacy flags for interactive episodes (answering without evidence, ignoring one's own data, preferring a textbook law to the counterfactual one, narrow sampling, repeated experiments).
-* **Language models in defined roles** (`simulator.ai`, example 12). A model can play the agent in an environment, attack a release, rephrase questions or answer them. Every call is logged (role, model, settings, prompt, output) and can be replayed without the model. Rephrased questions are accepted only if they keep the numbers and options and add no answer. Answers always come from the simulator.
+  `scidatasim.llm.draft_model` asks any LLM for a model, runs the checker in a separate time-limited process, and retries with the findings.
+* **Law discovery** (`scidatasim.experiments.law_discovery`). Hidden laws y = f(x) from nine families (power law, inverse power, exponential decay, logistic, Michaelis–Menten, Hill, damped oscillation, Gaussian peak, Arrhenius), each with a textbook or a *counterfactual* setting of its structural constants (e.g. an inverse-*2.3* law). Formula answers are scored by evaluating them on the data range and half of it beyond (`scidatasim.expressions`: a safe parser with no `eval`), so any equivalent form counts but a polynomial that only reproduces the observed curve does not; the tolerance follows the run's noise. A suite design, a classical curve-fitting baseline and an interactive formula-discovery environment come with it (example 10).
+* **Leak audit** (`scidatasim.audit`). Before publishing, attack your own export: it tries seed replay, config-hash lookup, tolerance inversion, answer lookup in public files and exposure of hidden arrays, using the private runs as the answer key, and reports what would leak. `audit_environment` does the same for interactive environments.
+* **Testbed diagnostics** (`scidatasim.diagnostics`, example 11). Because every hidden value is known and every run can be regenerated, the simulator can test benchmarks and agents: blind and metadata-only baselines (shortcut artefacts), a fitted-polynomial baseline for formula questions (scorer loopholes), a quality card (answer balance, position bias, duplicates), fresh twins and paired gap tests (contamination), canaries and canary probes, and agent-fallacy flags for interactive episodes (answering without evidence, ignoring one's own data, preferring a textbook law to the counterfactual one, narrow sampling, repeated experiments).
+* **Language models in defined roles** (`scidatasim.ai`, example 12). A model can play the agent in an environment, attack a release, rephrase questions or answer them. Every call is logged (role, model, settings, prompt, output) and can be replayed without the model. Rephrased questions are accepted only if they keep the numbers and options and add no answer. Answers always come from the simulator.
 * **Automatic plots.** matplotlib PNG and interactive Plotly HTML, driven by output descriptors; observed points are drawn over the latent curves. Static SVG/PDF export needs the optional `kaleido` package.
 
 ### Planned
@@ -135,7 +135,7 @@ Install `openenv` and `verifiers` in separate environments: their current releas
 
 ## Quick start
 
-Examples are listed, explained and run by the `sds` command (also `python -m simulator`):
+Examples are listed, explained and run by the `sds` command (also `python -m scidatasim`):
 
 ```bash
 sds examples list                      # title, level, fields, runtime
@@ -165,7 +165,7 @@ pytest                                                            # full test su
 A minimal config:
 
 ```yaml
-experiment_type: experiments.predator_prey.logic.PredatorPreyExperiment
+experiment_type: scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment
 seed: 42
 n_steps: 3000
 dt: 0.01
@@ -195,8 +195,8 @@ bundle: true                    # figure + code + table + caption + Q&A + graph
 From Python:
 
 ```python
-from simulator.engine import SimulatorEngine
-from simulator.doe import create_doe_table, run_design
+from scidatasim.engine import SimulatorEngine
+from scidatasim.doe import create_doe_table, run_design
 
 engine = SimulatorEngine(output_dir="experiments_output")
 run = engine.run_config(config)                 # or engine.run_experiment("config.yaml")
@@ -240,12 +240,12 @@ A model sets its level with the class attributes `fidelity_level` and `fidelity_
 ## Exporting and using the data
 
 ```python
-from simulator.export.tasks import collect_bundle_tasks, write_tasks_jsonl, score
-from simulator.export.huggingface import export_huggingface
-from simulator.export.sbi import generate_training_data
-from simulator.export.rl import export_openenv, export_verifiers_qa
-from simulator.export.the_well import export_the_well
-from simulator.audit import audit_export
+from scidatasim.export.tasks import collect_bundle_tasks, write_tasks_jsonl, score
+from scidatasim.export.huggingface import export_huggingface
+from scidatasim.export.sbi import generate_training_data
+from scidatasim.export.rl import export_openenv, export_verifiers_qa
+from scidatasim.export.the_well import export_the_well
+from scidatasim.audit import audit_export
 
 tasks = collect_bundle_tasks("experiments_output/my_design")          # questions from bundles
 write_tasks_jsonl(tasks, "tasks.jsonl")                              # public (no answers)
@@ -264,7 +264,7 @@ Ground truth stays private by default:
 - The Hugging Face export omits latent and label arrays, `ground_truth.json`, run configurations, answers and numeric tolerances.
 - `include_seeds=False` also withholds seeds, since a seed plus the simulator regenerates the data.
 
-Run the leak audit (`audit_export`, or `python -m simulator.audit PUBLIC --private RUNS`) on anything you publish. It reports, per attack, how many hidden answers it recovered: published seeds (seed replay), config hashes, numeric tolerances that are a fixed fraction of the answer, answers that appear in public tables or text (exactly, rounded to 4 or more digits, or as a formula with other spacing), hidden arrays (noise-free curves) found among public numbers, and public design-point indices. It reads JSON/JSONL, CSV, Parquet, NumPy and HDF5 files and text; a file it cannot read is itself a failure, because it cannot be cleared. It exits with status 1 on a high-severity finding, so it can gate a release. It finds the known kinds of shortcut only: passing it is necessary, not sufficient.
+Run the leak audit (`audit_export`, or `python -m scidatasim.audit PUBLIC --private RUNS`) on anything you publish. It reports, per attack, how many hidden answers it recovered: published seeds (seed replay), config hashes, numeric tolerances that are a fixed fraction of the answer, answers that appear in public tables or text (exactly, rounded to 4 or more digits, or as a formula with other spacing), hidden arrays (noise-free curves) found among public numbers, and public design-point indices. It reads JSON/JSONL, CSV, Parquet, NumPy and HDF5 files and text; a file it cannot read is itself a failure, because it cannot be cleared. It exits with status 1 on a high-severity finding, so it can gate a release. It finds the known kinds of shortcut only: passing it is necessary, not sufficient.
 
 The Well export writes HDF5 files in the schema of [The Well](https://github.com/PolymathicAI/the_well) (fields `t0_fields/u`, dimensions, periodic boundary conditions, scalars, `stats.yaml`), loadable with `the_well.data.WellDataset(path=...)`.
 
@@ -273,14 +273,14 @@ The OpenEnv package serves the interactive environment over HTTP/WebSocket and p
 ## Checking a model (and drafting one with an LLM)
 
 ```bash
-python -m simulator.checker experiments.oscillator.logic.OscillatorExperiment config.yaml --markdown check.md
+python -m scidatasim.checker scidatasim.experiments.oscillator.logic.OscillatorExperiment config.yaml --markdown check.md
 ```
 
 ```python
-from simulator.llm import CallableLLMClient, draft_model
+from scidatasim.llm import CallableLLMClient, draft_model
 draft = draft_model(CallableLLMClient(my_llm_function), "A pendulum with linear drag ...", config)
 if draft.accepted:
-    draft.save("experiments/drag_pendulum/logic.py")      # writes logic_check.md next to it
+    draft.save("scidatasim/experiments/drag_pendulum/logic.py")      # writes logic_check.md next to it
 ```
 
 `my_llm_function(prompt) -> text` wraps any provider SDK; the simulator itself depends on none. Generated code is scanned before it runs, then checked in a separate process with a time limit. Rejected drafts cannot be saved.
@@ -288,8 +288,8 @@ if draft.accepted:
 ## Writing a model
 
 ```python
-from simulator.base import ExperimentLogic
-from simulator.utils import DataDescriptor, DataType
+from scidatasim.base import ExperimentLogic
+from scidatasim.utils import DataDescriptor, DataType
 import numpy as np
 
 class Decay(ExperimentLogic):
@@ -334,32 +334,32 @@ experiments_output/<timestamp>_<experiment_id>/
 
 | Model | Path | Notes |
 |---|---|---|
-| Sine wave | `experiments.example_experiment.logic.ExampleExperiment` | `reference`: closed form |
-| Random walk | `experiments.example_random_walk.logic.RandomWalkExperiment` | `reference`: seeded; increment statistics tested. `audit` with `generator: randu`. |
-| Linear function | `experiments.linear_function.logic.LinearFunctionExperiment` | `reference`: closed form |
-| Lotka–Volterra | `experiments.predator_prey.logic.PredatorPreyExperiment` | `reference` with `integrator: rk4`, `dt ≤ 0.04`; `audit` with the 0.1.0 default (forward Euler, dt = 1). Options: `holling2`, logistic prey. |
-| Oscillator | `experiments.oscillator.logic.OscillatorExperiment` | SI units. `reference`: closed form (linear) or DOP853 (Duffing cubic term); `audit` with `integrator: euler`. |
-| Pendulum | `experiments.pendulum.logic.PendulumExperiment` | SI units. `reference`: nonlinear, DOP853; `audit` with `approximation: small_angle`. |
-| Heat equation | `experiments.heat.logic.HeatExperiment` | 1-D/2-D periodic. `reference`: spectral exact solution; `audit` with `integrator: ftcs`. Export to The Well HDF5. |
-| Hidden laws | `experiments.law_discovery.logic.HiddenLawExperiment` | `reference`: closed forms; nine families, textbook or counterfactual constants; formula questions. |
-| Triangle geometry | `experiments.geometry.logic.TriangleExperiment` | `reference`: exact constructions (circumcircle, incircle, centroid, orthocentre, medians, altitudes, Euler line); diagrams and questions in bundles. |
-| Polygons | `experiments.geometry.polygons.PolygonExperiment` | `reference`: regular, convex or simple polygons; area, centroid, angles, convexity, reflex corners. |
-| n-simplex | `experiments.geometry.simplex.SimplexExperiment` | `reference`: simplices in 2–6 dimensions; volume (Cayley–Menger checked), facets, circum- and in-sphere; projected diagrams. |
-| Calibration overlay | `experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment` | overlays observed CSV data (manual calibration); fidelity as for Lotka–Volterra |
-| CSV summary | `experiments.data_analysis.logic.DataAnalysisExperiment` | `observed`: real data, recorded as `synthetic: false` |
+| Sine wave | `scidatasim.experiments.example_experiment.logic.ExampleExperiment` | `reference`: closed form |
+| Random walk | `scidatasim.experiments.example_random_walk.logic.RandomWalkExperiment` | `reference`: seeded; increment statistics tested. `audit` with `generator: randu`. |
+| Linear function | `scidatasim.experiments.linear_function.logic.LinearFunctionExperiment` | `reference`: closed form |
+| Lotka–Volterra | `scidatasim.experiments.predator_prey.logic.PredatorPreyExperiment` | `reference` with `integrator: rk4`, `dt ≤ 0.04`; `audit` with the 0.1.0 default (forward Euler, dt = 1). Options: `holling2`, logistic prey. |
+| Oscillator | `scidatasim.experiments.oscillator.logic.OscillatorExperiment` | SI units. `reference`: closed form (linear) or DOP853 (Duffing cubic term); `audit` with `integrator: euler`. |
+| Pendulum | `scidatasim.experiments.pendulum.logic.PendulumExperiment` | SI units. `reference`: nonlinear, DOP853; `audit` with `approximation: small_angle`. |
+| Heat equation | `scidatasim.experiments.heat.logic.HeatExperiment` | 1-D/2-D periodic. `reference`: spectral exact solution; `audit` with `integrator: ftcs`. Export to The Well HDF5. |
+| Hidden laws | `scidatasim.experiments.law_discovery.logic.HiddenLawExperiment` | `reference`: closed forms; nine families, textbook or counterfactual constants; formula questions. |
+| Triangle geometry | `scidatasim.experiments.geometry.logic.TriangleExperiment` | `reference`: exact constructions (circumcircle, incircle, centroid, orthocentre, medians, altitudes, Euler line); diagrams and questions in bundles. |
+| Polygons | `scidatasim.experiments.geometry.polygons.PolygonExperiment` | `reference`: regular, convex or simple polygons; area, centroid, angles, convexity, reflex corners. |
+| n-simplex | `scidatasim.experiments.geometry.simplex.SimplexExperiment` | `reference`: simplices in 2–6 dimensions; volume (Cayley–Menger checked), facets, circum- and in-sphere; projected diagrams. |
+| Calibration overlay | `scidatasim.experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment` | overlays observed CSV data (manual calibration); fidelity as for Lotka–Volterra |
+| CSV summary | `scidatasim.experiments.data_analysis.logic.DataAnalysisExperiment` | `observed`: real data, recorded as `synthetic: false` |
 
 ## Project structure
 
 ```
-simulator/        engine.py, base.py, config.py, schema.py, rng.py, observation.py,
+scidatasim/       engine.py, base.py, config.py, schema.py, rng.py, observation.py,
                   bundle.py, storage.py, persistence.py, provenance.py, experiment_record.py,
                   doe.py, data_handler.py, visualization.py, utils.py,
                   envs.py, units.py, checker.py, llm.py, expressions.py, audit.py,
                   cli.py (the sds command), doctor.py, examples.py (example manifests),
                   export/ (tasks, huggingface, sbi, rl, the_well),
                   diagnostics/ (shortcuts, contamination, episodes, quality, stats),
-                  ai/ (clients, agent, attacker, writer, solver)
-experiments/      bundled reference models (one package per model)
+                  ai/ (clients, agent, attacker, writer, solver),
+                  experiments/ (bundled reference models, one package per model)
 examples/         runnable examples, each with an example.yaml manifest (sds examples list)
 scripts/          install, update and start-ui scripts for Windows (cmd, PowerShell), Linux and macOS
 ui/               the browser UI: a separate package (scientific-data-simulator-ui), sds ui
@@ -371,7 +371,7 @@ docs/             Sphinx sources
 
 If you use Scientific Data Simulator in your research, please cite it:
 
-> Daniel Sandner. (2025). Scientific Data Simulator (Version 0.3.0.dev0) [Computer software]. https://github.com/sandner-art/scientific-data-simulator
+> Sandner, D. (2026). Scientific Data Simulator (Version 0.7.0rc2.dev0) [Computer software]. https://github.com/sandner-art/scientific-data-simulator
 
 Full citation metadata is in [`CITATION.cff`](CITATION.cff).
 

@@ -2,9 +2,9 @@
 import pytest
 import os
 import json
-from simulator.persistence import save_experiment_record, load_experiment_record
-from simulator.experiment_record import ExperimentRecord
-from simulator.utils import DataDescriptor, DataType
+from scidatasim.persistence import save_experiment_record, load_experiment_record
+from scidatasim.experiment_record import ExperimentRecord
+from scidatasim.utils import DataDescriptor, DataType
 import numpy as np
 import pandas as pd
 import shutil # For cleanup

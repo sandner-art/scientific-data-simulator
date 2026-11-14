@@ -2,7 +2,7 @@
 
 The simulator knows every hidden value and can regenerate any run, so it can test benchmarks
 and agents, not only feed them. This example runs the law-discovery suite of example 10 through
-the diagnostics in `simulator.diagnostics` and writes `report.md` and `report.json`.
+the diagnostics in `scidatasim.diagnostics` and writes `report.md` and `report.json`.
 
 ```bash
 python -m examples.example_11_testbed.run_experiment            # about 3 minutes

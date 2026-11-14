@@ -2,10 +2,10 @@
 # examples/parameter_sweep_example/run_experiment.py
 import os
 import argparse
-from simulator.config import yaml_load
+from scidatasim.config import yaml_load
 import pandas as pd
-from simulator.doe import run_parameter_sweep, create_doe_table, append_results_to_doe_table
-from experiments.predator_prey.logic import PredatorPreyExperiment
+from scidatasim.doe import run_parameter_sweep, create_doe_table, append_results_to_doe_table
+from scidatasim.experiments.predator_prey.logic import PredatorPreyExperiment
 import matplotlib.pyplot as plt
 
 def main():

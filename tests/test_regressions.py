@@ -7,11 +7,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from simulator.data_handler import results_to_dataframe, save_csv
-from simulator.engine import SimulatorEngine
-from simulator.experiment_record import ExperimentRecord
-from simulator.persistence import load_experiment_record, save_experiment_record
-from simulator.utils import DataDescriptor, DataType
+from scidatasim.data_handler import results_to_dataframe, save_csv
+from scidatasim.engine import SimulatorEngine
+from scidatasim.experiment_record import ExperimentRecord
+from scidatasim.persistence import load_experiment_record, save_experiment_record
+from scidatasim.utils import DataDescriptor, DataType
 
 
 def test_descriptor_serialises_enum_value_not_name():
@@ -81,7 +81,7 @@ def test_data_analysis_experiment_runs_end_to_end_with_csv(tmp_path):
     pd.DataFrame({"time": [0, 1, 2], "value": [10, 12, 11]}).to_csv(csv, index=False)
     engine = SimulatorEngine(output_dir=str(tmp_path / "out"), verbose=False)
     run = engine.run_config({
-        "experiment_type": "experiments.data_analysis.logic.DataAnalysisExperiment",
+        "experiment_type": "scidatasim.experiments.data_analysis.logic.DataAnalysisExperiment",
         "input_data_path": str(csv), "save_csv": True, "generate_plots": False,
     })
     assert os.path.exists(os.path.join(run.experiment_dir, "results.csv"))
@@ -89,7 +89,7 @@ def test_data_analysis_experiment_runs_end_to_end_with_csv(tmp_path):
 
 
 def test_calibration_descriptor_shapes_match_truncated_data(tmp_path):
-    from experiments.predator_prey_calibration.logic import PredatorPreyCalibrationExperiment
+    from scidatasim.experiments.predator_prey_calibration.logic import PredatorPreyCalibrationExperiment
     obs = tmp_path / "obs.csv"
     pd.DataFrame({"time": [0, 1, 2], "prey_population": [1, 2, 3],
                   "predator_population": [1, 1, 1]}).to_csv(obs, index=False)
@@ -108,7 +108,7 @@ def test_calibration_descriptor_shapes_match_truncated_data(tmp_path):
 def test_failed_run_still_writes_record(tmp_path):
     engine = SimulatorEngine(output_dir=str(tmp_path), verbose=False)
     with pytest.raises(KeyError):
-        engine.run_config({"experiment_type": "experiments.linear_function.logic.LinearFunctionExperiment"})
+        engine.run_config({"experiment_type": "scidatasim.experiments.linear_function.logic.LinearFunctionExperiment"})
     (run_dir,) = os.listdir(tmp_path)
     with open(tmp_path / run_dir / "experiment_record.json") as f:
         record = json.load(f)
@@ -118,7 +118,7 @@ def test_failed_run_still_writes_record(tmp_path):
 
 def test_software_versions_are_recorded(tmp_path):
     engine = SimulatorEngine(output_dir=str(tmp_path), verbose=False)
-    run = engine.run_config({"experiment_type": "experiments.linear_function.logic.LinearFunctionExperiment",
+    run = engine.run_config({"experiment_type": "scidatasim.experiments.linear_function.logic.LinearFunctionExperiment",
                              "n_points": 3, "m": 1.0, "c": 0.0, "x_min": 0.0, "x_max": 1.0,
                              "generate_plots": False})
     assert "numpy" in run.record.software_versions
