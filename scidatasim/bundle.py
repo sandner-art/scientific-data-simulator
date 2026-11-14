@@ -379,7 +379,10 @@ def _observation_phrase(realized: Optional[Dict[str, Any]]) -> Optional[str]:
     ops = next(iter(realized.get("targets", {}).values()), {}).get("operators", [])
     words = {"gaussian": "additive Gaussian noise", "multiplicative": "multiplicative noise",
              "poisson": "Poisson counting noise", "quantize": "quantisation", "outliers": "occasional outliers",
-             "missing": "missing values", "clip": "clipping"}
+             "missing": "missing values", "clip": "clipping", "ar1": "correlated noise",
+             "drift": "instrument drift", "calibration": "a calibration error", "censor": "a detection limit",
+             "jitter": "timing jitter", "detector": "detector noise", "psf_blur": "blur",
+             "bin": "pixel binning", "vignetting": "vignetting", "shift": "misregistration"}
     noise = [words.get(op["type"], op["type"]) for op in ops]
     if noise:
         parts.append("with " + ", ".join(noise))

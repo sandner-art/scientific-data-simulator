@@ -29,9 +29,11 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
 * **Observation operators** turn exact (latent) outputs into realistic measurements without changing the mechanism:
   * sampling: every k-th step, n points, or explicit indices;
   * Gaussian noise (absolute `sigma` or `snr_db`), multiplicative and Poisson noise;
-  * quantisation, outliers, missing values and clipping.
+  * quantisation, outliers, missing values and clipping;
+  * errors that are not independent per point: correlated (AR(1)) noise, instrument drift, a calibration error (gain and offset), detection limits with censoring, missing values that depend on the true value or on position, and timing jitter;
+  * fields (images, stacks of frames): point-spread-function blur, a camera model (photon and read noise, saturation, ADC bits), pixel binning, vignetting and sub-pixel misregistration.
 
-  Every setting is recorded, including noise levels derived from an SNR and the positions of outliers.
+  Every setting is recorded, including noise levels derived from an SNR, outlier positions and the drawn calibration error.
 * **Ground truth exported separately.** `ground_truth.json` and `data/ground_truth/` hold the answers, while `data/observation/` holds what a method under test gets to see.
 * **Counterfactual law shifts.** `law_shift:` changes a constant or swaps a functional form, recording both the original and the shifted law. Benchmarks built this way cannot be answered from memorised textbook equations.
 * **Provenance in every record:**

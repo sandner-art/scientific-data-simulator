@@ -26,6 +26,40 @@ Configuration::
 
 All random draws use the run's ``observation`` stream, so noise is reproducible
 from the run seed and independent of the model's own randomness.
+
+Beyond independent noise per point (operators on 1-D series unless noted):
+
+* ``{type: ar1, snr_db: 30, rho: 0.8}`` - correlated noise: each error carries ``rho`` of the
+  previous one (stationary AR(1)); ``length: 2.0`` instead sets a correlation length in coordinate
+  units, for uneven spacing.
+* ``{type: drift, rate: 0.01, random_walk: 0.002}`` - slow instrument drift: linear per
+  coordinate unit (per index without a coordinate) and/or a random walk per point.
+* ``{type: calibration, gain: 1.0, offset: 0.0, gain_sd: 0.02, offset_sd: 0.1}`` - one gain and
+  offset error for the whole run (any shape).
+* ``{type: censor, low: 0.5, replace: nan}`` - detection limits: values below ``low`` (or above
+  ``high``) become NaN, the limit (``replace: limit``) or half the lower limit (``half``).
+* ``{type: missing, rate: 0.1, mechanism: mnar, strength: 2, direction: high}`` - missingness
+  that depends on the true value (``mnar``) or on the coordinate (``mar``); ``mcar`` (default) is
+  the random kind. The overall rate stays ``rate``.
+* ``{type: jitter, sigma: 0.05}`` - timing or position jitter: each point is measured at its
+  coordinate plus N(0, sigma) but recorded at the nominal one (the latent series is interpolated
+  linearly, so sample it finely). Must come first.
+
+Fields (2-D images, or stacks such as ``(time, x, y)``; image operators act on the last two axes,
+``axes: [a, b]`` to choose) are observed when named in ``targets``; sampling does not apply:
+
+* ``{type: psf_blur, sigma: 1.5, boundary: reflect}`` - Gaussian point-spread function (pixels;
+  ``boundary: wrap`` for periodic fields).
+* ``{type: detector, scale: 100, read_noise: 5, gain: 2, full_well: 30000, bits: 12}`` - a camera:
+  photon (Poisson) noise on ``value * scale`` electrons, Gaussian read noise, saturation, gain and
+  ADC quantisation, converted back to data units (any shape).
+* ``{type: bin, factor: 2}`` - pixel binning: block averages (the field gets smaller).
+* ``{type: vignetting, strength: 0.3, power: 2}`` - brightness falling off towards the corners.
+* ``{type: shift, dx: 0.3, dy: -0.2}`` or ``{type: shift, sd: 0.5}`` - sub-pixel misregistration.
+
+``gaussian``, ``multiplicative``, ``poisson``, ``quantize``, ``outliers``, ``missing`` (MCAR),
+``calibration``, ``censor``, ``detector`` and ``clip`` work on any shape (dead pixels are
+``missing``, hot pixels ``outliers``).
 """
 from __future__ import annotations
 
@@ -45,15 +79,20 @@ def _rms(x: np.ndarray) -> float:
     return float(np.sqrt(np.mean(finite ** 2))) if finite.size else 0.0
 
 
-def _gaussian(x, rng, p):
+def _noise_sigma(x, p, name):
     if ("sigma" in p) == ("snr_db" in p):
-        raise ValueError("gaussian operator needs exactly one of 'sigma' or 'snr_db'")
+        raise ValueError(f"{name} operator needs exactly one of 'sigma' or 'snr_db'")
     if "sigma" in p:
         sigma = float(p["sigma"])
     else:
         sigma = _rms(x) / (10.0 ** (float(p["snr_db"]) / 20.0))
     if sigma < 0:
-        raise ValueError("gaussian sigma must be >= 0")
+        raise ValueError(f"{name} sigma must be >= 0")
+    return sigma
+
+
+def _gaussian(x, rng, p):
+    sigma = _noise_sigma(x, p, "gaussian")
     return x + rng.normal(0.0, sigma, size=x.shape), {"sigma": sigma}
 
 
@@ -83,14 +122,244 @@ def _quantize(x, rng, p):
     return np.round(x / step) * step, {"step": step}
 
 
-def _missing(x, rng, p):
+def _sigmoid(z):
+    return 1.0 / (1.0 + np.exp(-np.clip(z, -60, 60)))
+
+
+def _missing(x, rng, p, ctx):
     rate = float(p["rate"])
     if not 0.0 <= rate <= 1.0:
         raise ValueError("missing rate must be in [0, 1]")
-    mask = rng.random(x.shape) < rate
+    mechanism = p.get("mechanism", "mcar")
+    info: Info = {"rate": rate, "mechanism": mechanism}
+    if mechanism == "mcar":
+        mask = rng.random(x.shape) < rate
+    elif mechanism in ("mar", "mnar"):
+        if x.ndim != 1:
+            raise ValueError("missing: mechanism 'mar' and 'mnar' apply to 1-D series")
+        direction = p.get("direction", "high")
+        if direction not in ("high", "low"):
+            raise ValueError("missing direction must be 'high' or 'low'")
+        strength = float(p.get("strength", 2.0))
+        if mechanism == "mnar":  # depends on the true value: e.g. signals too weak or too strong
+            score = np.asarray(ctx["latent"], float)
+        else:  # depends on where the point is: e.g. late measurements are lost more often
+            coord = ctx.get("coordinate")
+            score = np.arange(x.size, dtype=float) if coord is None else np.asarray(coord, float)
+        finite = np.isfinite(score)
+        z = np.zeros(x.shape)
+        if finite.any():
+            spread = float(np.std(score[finite])) or 1.0
+            z[finite] = (score[finite] - float(np.mean(score[finite]))) / spread
+        z *= strength if direction == "high" else -strength
+        if rate in (0.0, 1.0):
+            prob = np.full(x.shape, rate)
+        else:  # intercept so that the expected missing share is ``rate``
+            lo, hi = -60.0, 60.0
+            for _ in range(80):
+                mid = 0.5 * (lo + hi)
+                lo, hi = (mid, hi) if _sigmoid(mid + z).mean() < rate else (lo, mid)
+            prob = _sigmoid(0.5 * (lo + hi) + z)
+        mask = rng.random(x.shape) < prob
+        info.update(strength=strength, direction=direction)
+    else:
+        raise ValueError("missing mechanism must be 'mcar', 'mar' or 'mnar'")
     out = x.astype(float, copy=True)
     out[mask] = np.nan
-    return out, {"rate": rate, "n_missing": int(mask.sum())}
+    info["n_missing"] = int(mask.sum())
+    return out, info
+
+
+def _ar1(x, rng, p, ctx):
+    if x.ndim != 1:
+        raise ValueError("ar1 applies to 1-D series")
+    sigma = _noise_sigma(x, p, "ar1")
+    if ("rho" in p) == ("length" in p):
+        raise ValueError("ar1 operator needs exactly one of 'rho' or 'length'")
+    n = x.size
+    if "rho" in p:
+        rho0 = float(p["rho"])
+        if not -1.0 < rho0 < 1.0:
+            raise ValueError("ar1 rho must be in (-1, 1)")
+        rho = np.full(max(n - 1, 0), rho0)
+        info: Info = {"sigma": sigma, "rho": rho0}
+    else:
+        length = float(p["length"])
+        coord = ctx.get("coordinate")
+        if coord is None:
+            raise ValueError("ar1 'length' needs the series' coordinate (its x_axis)")
+        if length <= 0:
+            raise ValueError("ar1 length must be > 0")
+        rho = np.exp(-np.abs(np.diff(np.asarray(coord, float))) / length)
+        info = {"sigma": sigma, "length": length}
+    z = rng.normal(size=n)
+    err = np.empty(n)
+    if n:
+        err[0] = sigma * z[0]
+    for i in range(1, n):  # stationary: every error has standard deviation sigma
+        err[i] = rho[i - 1] * err[i - 1] + sigma * np.sqrt(1.0 - rho[i - 1] ** 2) * z[i]
+    return x + err, info
+
+
+def _drift(x, rng, p, ctx):
+    if x.ndim != 1:
+        raise ValueError("drift applies to 1-D series")
+    rate, walk = float(p.get("rate", 0.0)), float(p.get("random_walk", 0.0))
+    if walk < 0:
+        raise ValueError("drift random_walk must be >= 0")
+    if not rate and not walk:
+        raise ValueError("drift needs 'rate' and/or 'random_walk'")
+    coord = ctx.get("coordinate")
+    position = np.arange(x.size, dtype=float) if coord is None else np.asarray(coord, float)
+    offset = rate * (position - position[0]) if x.size else np.zeros(0)
+    if walk:
+        offset = offset + np.cumsum(rng.normal(0.0, walk, size=x.size))
+    return x + offset, {"rate": rate, "random_walk": walk, "per": "index" if coord is None else "coordinate unit",
+                        "final_offset": float(offset[-1]) if x.size else 0.0}
+
+
+def _calibration(x, rng, p):
+    gain_sd, offset_sd = float(p.get("gain_sd", 0.0)), float(p.get("offset_sd", 0.0))
+    if gain_sd < 0 or offset_sd < 0:
+        raise ValueError("calibration gain_sd and offset_sd must be >= 0")
+    gain = float(p.get("gain", 1.0)) + (rng.normal(0.0, gain_sd) if gain_sd else 0.0)
+    offset = float(p.get("offset", 0.0)) + (rng.normal(0.0, offset_sd) if offset_sd else 0.0)
+    return gain * x + offset, {"gain": float(gain), "offset": float(offset)}
+
+
+def _censor(x, rng, p):
+    low, high = p.get("low"), p.get("high")
+    if low is None and high is None:
+        raise ValueError("censor needs 'low' and/or 'high'")
+    replace = p.get("replace", "nan")
+    if replace not in ("nan", "limit", "half"):
+        raise ValueError("censor replace must be 'nan', 'limit' or 'half'")
+    if replace == "half" and low is None:
+        raise ValueError("censor replace 'half' needs 'low'")
+    out = x.astype(float, copy=True)
+    with np.errstate(invalid="ignore"):
+        below = np.zeros(x.shape, bool) if low is None else x < float(low)
+        above = np.zeros(x.shape, bool) if high is None else x > float(high)
+    if replace == "nan":
+        out[below | above] = np.nan
+    else:
+        out[below] = float(low) / 2.0 if replace == "half" else (float(low) if low is not None else np.nan)
+        out[above] = float(high) if high is not None else np.nan
+    return out, {"low": low, "high": high, "replace": replace, "n_below": int(below.sum()),
+                 "n_above": int(above.sum()), "indices_below": np.flatnonzero(below).tolist(),
+                 "indices_above": np.flatnonzero(above).tolist()}
+
+
+def _jitter(x, rng, p, ctx):
+    if x.ndim != 1:
+        raise ValueError("jitter applies to 1-D series")
+    sigma = float(p["sigma"])
+    if sigma < 0:
+        raise ValueError("jitter sigma must be >= 0")
+    coord, x_full, latent_full = ctx.get("coordinate"), ctx.get("x_full"), ctx.get("latent_full")
+    if coord is None or x_full is None:
+        raise ValueError("jitter needs the series' coordinate (its x_axis)")
+    x_full = np.asarray(x_full, float)
+    if x_full.size > 1 and not np.all(np.diff(x_full) > 0):
+        raise ValueError("jitter needs an increasing coordinate")
+    shift = rng.normal(0.0, sigma, size=np.shape(coord))
+    values = np.interp(np.asarray(coord, float) + shift, x_full, np.asarray(latent_full, float))
+    return values, {"sigma": sigma, "rms_shift": float(np.sqrt(np.mean(shift ** 2))) if shift.size else 0.0}
+
+
+# ------------------------------------------------------------------ fields (images)
+def _image_axes(x, p):
+    if x.ndim < 2:
+        raise ValueError("image operators apply to fields with at least 2 dimensions")
+    axes = tuple(int(a) % x.ndim for a in p.get("axes", (-2, -1)))
+    if len(axes) != 2 or axes[0] == axes[1]:
+        raise ValueError("axes must name two different axes")
+    return axes
+
+
+def _psf_blur(x, rng, p):
+    from scipy.ndimage import gaussian_filter
+    axes = _image_axes(x, p)
+    sigma = p["sigma"]
+    sy, sx = (float(sigma), float(sigma)) if np.isscalar(sigma) else (float(sigma[0]), float(sigma[1]))
+    if sy < 0 or sx < 0:
+        raise ValueError("psf_blur sigma must be >= 0")
+    boundary = p.get("boundary", "reflect")
+    if boundary not in ("reflect", "wrap", "nearest", "constant"):
+        raise ValueError("psf_blur boundary must be reflect, wrap, nearest or constant")
+    widths = [0.0] * x.ndim
+    widths[axes[0]], widths[axes[1]] = sy, sx
+    return gaussian_filter(x.astype(float), sigma=widths, mode=boundary), {"sigma": [sy, sx], "boundary": boundary}
+
+
+def _detector(x, rng, p):
+    scale, gain = float(p.get("scale", 1.0)), float(p.get("gain", 1.0))
+    read_noise, bias = float(p.get("read_noise", 0.0)), float(p.get("bias", 0.0))
+    full_well, bits = p.get("full_well"), p.get("bits")
+    if scale <= 0 or gain <= 0 or read_noise < 0:
+        raise ValueError("detector needs scale > 0, gain > 0 and read_noise >= 0")
+    if bits is not None and not 1 <= int(bits) <= 32:
+        raise ValueError("detector bits must be in [1, 32]")
+    electrons = rng.poisson(np.clip(np.nan_to_num(x, nan=0.0), 0.0, None) * scale).astype(float)
+    electrons += rng.normal(0.0, read_noise, size=x.shape) if read_noise else 0.0
+    saturated = np.zeros(x.shape, bool)
+    if full_well is not None:
+        saturated |= electrons >= float(full_well)
+        electrons = np.minimum(electrons, float(full_well))
+    adu = electrons / gain + bias
+    if bits is not None:
+        top = 2.0 ** int(bits) - 1
+        adu = np.clip(np.round(adu), 0.0, top)
+        saturated |= adu >= top
+    out = (adu - bias) * gain / scale  # back in the field's own units
+    out[np.isnan(x)] = np.nan
+    return out, {"scale": scale, "gain": gain, "read_noise": read_noise, "bias": bias, "full_well": full_well,
+                 "bits": None if bits is None else int(bits), "n_saturated": int(saturated.sum())}
+
+
+def _bin(x, rng, p):
+    axes = _image_axes(x, p)
+    k = int(p["factor"])
+    if k < 1:
+        raise ValueError("bin factor must be >= 1")
+    moved = np.moveaxis(x.astype(float), axes, (-2, -1))
+    ny, nx = moved.shape[-2] // k, moved.shape[-1] // k
+    if ny == 0 or nx == 0:
+        raise ValueError("bin factor is larger than the field")
+    cropped = moved[..., : ny * k, : nx * k]
+    binned = cropped.reshape(*cropped.shape[:-2], ny, k, nx, k).mean(axis=(-3, -1))
+    return np.moveaxis(binned, (-2, -1), axes), {"factor": k, "cropped": [int(moved.shape[-2] - ny * k),
+                                                                          int(moved.shape[-1] - nx * k)]}
+
+
+def _vignetting(x, rng, p):
+    axes = _image_axes(x, p)
+    strength, power = float(p.get("strength", 0.3)), float(p.get("power", 2.0))
+    if not 0.0 <= strength < 1.0 or power <= 0:
+        raise ValueError("vignetting needs 0 <= strength < 1 and power > 0")
+    ny, nx = x.shape[axes[0]], x.shape[axes[1]]
+    yy, xx = np.meshgrid(np.linspace(-1.0, 1.0, ny), np.linspace(-1.0, 1.0, nx), indexing="ij")
+    factor = 1.0 - strength * (np.sqrt(xx ** 2 + yy ** 2) / np.sqrt(2.0)) ** power  # 1 at the centre
+    shape = [1] * x.ndim
+    shape[axes[0]], shape[axes[1]] = ny, nx
+    return x * factor.reshape(shape), {"strength": strength, "power": power,
+                                       "corner_factor": float(1.0 - strength)}
+
+
+def _shift(x, rng, p):
+    from scipy.ndimage import shift as nd_shift
+    axes = _image_axes(x, p)
+    if "sd" in p:
+        sd = float(p["sd"])
+        if sd < 0:
+            raise ValueError("shift sd must be >= 0")
+        dy, dx = (float(v) for v in rng.normal(0.0, sd, size=2))
+    else:
+        dy, dx = float(p.get("dy", 0.0)), float(p.get("dx", 0.0))
+    offsets = [0.0] * x.ndim
+    offsets[axes[0]], offsets[axes[1]] = dy, dx
+    boundary = p.get("boundary", "nearest")
+    return nd_shift(x.astype(float), offsets, order=1, mode=boundary), {"dy": dy, "dx": dx, "boundary": boundary}
 
 
 def _outliers(x, rng, p):
@@ -119,17 +388,39 @@ VALUE_OPERATORS: Dict[str, ValueOperator] = {
     "multiplicative": _multiplicative,
     "poisson": _poisson,
     "quantize": _quantize,
-    "missing": _missing,
     "outliers": _outliers,
     "clip": _clip,
+    "calibration": _calibration,
+    "censor": _censor,
+    "psf_blur": _psf_blur,
+    "detector": _detector,
+    "bin": _bin,
+    "vignetting": _vignetting,
+    "shift": _shift,
 }
+#: Operators that also need the context: ``func(values, rng, params, ctx)`` with ``ctx`` holding
+#: ``coordinate`` (the observed points' x values, or None), ``latent`` (the exact values there),
+#: ``x_full`` and ``latent_full`` (the whole series before sampling).
+CONTEXT_OPERATORS: Dict[str, Callable[..., Tuple[np.ndarray, Info]]] = {
+    "missing": _missing,
+    "ar1": _ar1,
+    "drift": _drift,
+    "jitter": _jitter,
+}
+#: Operators that only make sense first (they start again from the exact values).
+FIRST_ONLY = {"jitter"}
 
 
-def register_operator(name: str, func: ValueOperator) -> None:
-    """Register a custom value operator ``func(values, rng, params) -> (values, info)``."""
-    if name in VALUE_OPERATORS:
+def operator_types() -> List[str]:
+    return sorted(set(VALUE_OPERATORS) | set(CONTEXT_OPERATORS))
+
+
+def register_operator(name: str, func: Callable[..., Tuple[np.ndarray, Info]], context: bool = False) -> None:
+    """Register a custom operator ``func(values, rng, params) -> (values, info)``, or with
+    ``context=True`` ``func(values, rng, params, ctx)`` (see :data:`CONTEXT_OPERATORS`)."""
+    if name in VALUE_OPERATORS or name in CONTEXT_OPERATORS:
         raise ValueError(f"Operator '{name}' is already registered")
-    VALUE_OPERATORS[name] = func
+    (CONTEXT_OPERATORS if context else VALUE_OPERATORS)[name] = func
 
 
 def validate_observation_config(obs: Any) -> Dict[str, Any]:
@@ -143,9 +434,12 @@ def validate_observation_config(obs: Any) -> Dict[str, Any]:
     for i, op in enumerate(obs.get("operators") or []):
         if not isinstance(op, dict) or "type" not in op:
             raise ValueError(f"observation.operators[{i}] must be a mapping with a 'type'")
-        if op["type"] not in VALUE_OPERATORS:
+        if op["type"] not in VALUE_OPERATORS and op["type"] not in CONTEXT_OPERATORS:
             raise ValueError(f"observation.operators[{i}]: unknown type '{op['type']}'. "
-                             f"Available: {sorted(VALUE_OPERATORS)}")
+                             f"Available: {operator_types()}")
+        if op["type"] in FIRST_ONLY and i != 0:
+            raise ValueError(f"observation.operators[{i}]: '{op['type']}' must be the first operator "
+                             "(it starts from the exact values)")
     sampling = obs.get("sampling")
     if sampling is not None:
         if not isinstance(sampling, dict) or not ({"every", "n", "indices"} & set(sampling)):
@@ -208,8 +502,10 @@ def apply_observation(results: Dict[str, Dict[str, Any]], obs: Dict[str, Any],
         if name not in results:
             raise KeyError(f"observation target '{name}' is not an output of the model")
         data = results[name]["data"]
-        if not (isinstance(data, np.ndarray) and data.ndim == 1 and np.issubdtype(data.dtype, np.number)):
-            raise TypeError(f"observation target '{name}' must be a 1-D numeric array")
+        if not (isinstance(data, np.ndarray) and data.ndim >= 1 and np.issubdtype(data.dtype, np.number)):
+            raise TypeError(f"observation target '{name}' must be a numeric array (a series or a field)")
+    if obs.get("sampling") and any(results[t]["data"].ndim != 1 for t in targets):
+        raise ValueError("observation.sampling applies to 1-D series only, not to fields")
 
     lengths = {len(results[t]["data"]) for t in targets}
     if obs.get("sampling") and len(lengths) != 1:
@@ -241,20 +537,29 @@ def apply_observation(results: Dict[str, Dict[str, Any]], obs: Dict[str, Any],
                 coordinate_map[x_name] = new_name
 
     for t in targets:
-        values = np.asarray(results[t]["data"], dtype=float)
-        if indices is not None:
-            values = values[indices]
+        exact = np.asarray(results[t]["data"], dtype=float)
+        values = exact if indices is None else exact[indices]
+        desc = results[t]["descriptor"]
+        x_full = None
+        if exact.ndim == 1 and desc.x_axis and desc.x_axis in results:
+            candidate = np.asarray(results[desc.x_axis]["data"])
+            if candidate.shape == exact.shape and np.issubdtype(candidate.dtype, np.number):
+                x_full = candidate.astype(float)
+        ctx = {"coordinate": None if x_full is None else (x_full if indices is None else x_full[indices]),
+               "latent": values.copy(), "x_full": x_full, "latent_full": exact}
         steps: List[Info] = []
         for op in obs.get("operators") or []:
             params = {k: v for k, v in op.items() if k != "type"}
-            values, info = VALUE_OPERATORS[op["type"]](values, rng, params)
+            if op["type"] in CONTEXT_OPERATORS:
+                values, info = CONTEXT_OPERATORS[op["type"]](values, rng, params, ctx)
+            else:
+                values, info = VALUE_OPERATORS[op["type"]](values, rng, params)
             steps.append({"type": op["type"], **info})
-        desc = results[t]["descriptor"]
         new_name = f"{t}{suffix}"
         added[new_name] = {
             "data": values,
             "descriptor": desc.replace(name=new_name, shape=values.shape, role=Role.OBSERVATION,
-                                       plot_type="scatter",
+                                       plot_type="scatter" if values.ndim == 1 else desc.plot_type,
                                        x_axis=coordinate_map.get(desc.x_axis, desc.x_axis)),
         }
         realized["targets"][t] = {"observed_as": new_name, "operators": steps}

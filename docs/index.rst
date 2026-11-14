@@ -167,9 +167,37 @@ adds ``x_observed`` (role ``observation``):
         - {type: missing, rate: 0.05}
         - {type: clip, low: 0.0}
 
+Errors that are not independent per point, on 1-D series:
+
+.. code-block:: yaml
+
+        - {type: ar1, snr_db: 30, rho: 0.8}             # correlated noise (or length: 2.0 in x units)
+        - {type: drift, rate: 0.01, random_walk: 0.002}  # linear and/or random-walk drift
+        - {type: calibration, gain_sd: 0.02, offset_sd: 0.1}  # one gain/offset error per run
+        - {type: censor, low: 0.5, replace: nan}         # detection limit (or limit / half)
+        - {type: missing, rate: 0.1, mechanism: mnar}    # depends on the true value (mar: on x)
+        - {type: jitter, sigma: 0.05}                    # timing jitter; must come first
+
+Fields (images, or stacks such as ``(time, x, y)``; image operators act on the last two
+axes) are observed when named in ``targets``:
+
+.. code-block:: yaml
+
+    observation:
+      targets: [u]
+      operators:
+        - {type: psf_blur, sigma: 1.5, boundary: wrap}
+        - {type: detector, scale: 1000, read_noise: 3, full_well: 60000, bits: 16}
+        - {type: bin, factor: 2}
+        - {type: vignetting, strength: 0.3}
+        - {type: shift, sd: 0.5}                 # sub-pixel misregistration
+        - {type: missing, rate: 0.001}           # dead pixels
+
 Realised settings (the sigma implied by an SNR, outlier positions, number of
-missing values) are recorded. Custom operators can be added with
-:func:`scidatasim.observation.register_operator`.
+missing values, the drawn calibration error and shift, saturated pixels) are
+recorded. Custom operators can be added with
+:func:`scidatasim.observation.register_operator` (``context=True`` gives them the
+coordinate and the exact values).
 
 .. _ground_truth:
 
