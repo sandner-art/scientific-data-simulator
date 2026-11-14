@@ -1,6 +1,6 @@
 # Scientific Data Simulator
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/sandner-art/scientific-data-simulator/blob/main/LICENSE)
 [![Python Version](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![tests](https://github.com/sandner-art/scientific-data-simulator/actions/workflows/tests.yml/badge.svg)](https://github.com/sandner-art/scientific-data-simulator/actions/workflows/tests.yml)
 
@@ -95,8 +95,8 @@ installation and says how to fix what is missing.
 | Windows (PowerShell) | `scripts\install.cmd standard`, or `.\scripts\install.ps1 -Setup standard` if scripts are allowed | `scripts\update.cmd` |
 | Linux, macOS | `bash scripts/install.sh [profile]` | `bash scripts/update.sh` |
 
-Profiles: `core` (simulate, CSV/NPY storage, interactive plots), `standard` (the default: adds static
-plot export, Parquet, HDF5 and physical units), `all` (adds dataset validation: mlcroissant and
+Profiles: `core` (simulate, CSV/NPY storage, PNG plots), `standard` (the default: adds interactive
+HTML plots and their static export, Parquet, HDF5 and physical units), `all` (adds dataset validation: mlcroissant and
 datasets), `dev` (standard plus the test tools) and `ui` (standard plus the browser UI).
 The update scripts pull the latest code if the folder is a git checkout on a branch with an
 upstream, then reinstall the profile chosen at install time.
@@ -373,8 +373,8 @@ If you use Scientific Data Simulator in your research, please cite it:
 
 > Sandner, D. (2026). Scientific Data Simulator (Version 0.7.0rc2.dev0) [Computer software]. https://github.com/sandner-art/scientific-data-simulator
 
-Full citation metadata is in [`CITATION.cff`](CITATION.cff).
+Full citation metadata is in [`CITATION.cff`](https://github.com/sandner-art/scientific-data-simulator/blob/main/CITATION.cff).
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache License 2.0. See [LICENSE](https://github.com/sandner-art/scientific-data-simulator/blob/main/LICENSE) and [NOTICE](https://github.com/sandner-art/scientific-data-simulator/blob/main/NOTICE).

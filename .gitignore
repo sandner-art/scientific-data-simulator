@@ -174,6 +174,8 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 /experiments_output
+# dataset releases built by example 13: private/ holds the answer key and secret seeds
+/release/
 /sds_runs
 tests/testlog
 /parameter_sweep_results

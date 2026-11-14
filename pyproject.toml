@@ -21,7 +21,11 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Operating System :: OS Independent",
 ]
+keywords = ["simulation", "synthetic data", "reference data", "benchmarks", "data leakage",
+            "contamination", "law discovery", "provenance", "reproducibility"]
 dependencies = [
     "numpy>=1.22",
     "scipy>=1.9",
@@ -35,7 +39,6 @@ dependencies = [
     # Ghostscript) and memory-corruption bugs in its TIFF and JPEG decoders. Pillow comes in through
     # matplotlib (and Streamlit); this keeps a resolver from settling on an older one.
     "pillow>=13.0",
-    "plotly>=5.0",
 ]
 
 [project.scripts]
@@ -47,6 +50,8 @@ standard = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=
 # Static export of plotly figures (svg/pdf/png). Kaleido >= 1.0 needs a Chrome install
 # and plotly >= 6.1.1 (older plotly prints deprecation warnings about 'engine').
 static-plots = ["kaleido>=1.0", "plotly>=6.1.1"]
+# Interactive HTML plots next to the matplotlib PNGs.
+interactive-plots = ["plotly>=6.1.1"]
 # Columnar storage of DataFrame outputs; Hugging Face dataset export.
 parquet = ["pyarrow>=12"]
 huggingface = ["pyarrow>=12"]
@@ -67,6 +72,9 @@ all = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24"
 
 [project.urls]
 Homepage = "https://github.com/sandner-art/scientific-data-simulator"
+Source = "https://github.com/sandner-art/scientific-data-simulator"
+Issues = "https://github.com/sandner-art/scientific-data-simulator/issues"
+Changelog = "https://github.com/sandner-art/scientific-data-simulator/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["scidatasim*"]  # the bundled models live in scidatasim.experiments

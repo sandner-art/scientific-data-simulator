@@ -26,10 +26,11 @@ from typing import List, Optional
 
 OK, INFO, WARN, FAIL = "ok", "info", "warn", "fail"  # info: an optional part you may not need
 MIN_PYTHON = (3, 11)
-CORE = ("numpy", "scipy", "pandas", "yaml", "dotenv", "pydantic", "psutil", "matplotlib", "plotly")
+CORE = ("numpy", "scipy", "pandas", "yaml", "dotenv", "pydantic", "psutil", "matplotlib")
 #: extra -> (modules it provides, what it is for)
 EXTRAS = {
-    "static-plots": (("kaleido",), "PNG/SVG/PDF export of plotly figures"),
+    "interactive-plots": (("plotly",), "interactive HTML plots next to the PNGs"),
+    "static-plots": (("plotly", "kaleido"), "PNG/SVG/PDF export of plotly figures"),
     "parquet": (("pyarrow",), "Parquet storage and the Hugging Face export"),
     "hdf5": (("h5py",), "HDF5 storage and The Well export"),
     "units": (("pint",), "physical units in configs"),
@@ -52,6 +53,20 @@ class Check:
     status: str
     detail: str
     fix: str = ""
+
+
+def _from_checkout() -> bool:
+    """True when the package runs from a source checkout (pyproject.toml next to it)."""
+    return os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                       "pyproject.toml"))
+
+
+def install_hint(extra: str = "") -> str:
+    """The pip command that installs the simulator (with ``extra``) the way it is installed now:
+    editable from a checkout, or from PyPI."""
+    if _from_checkout():
+        return f'pip install -e ".[{extra}]"' if extra else "pip install -e ."
+    return f'pip install "scientific-data-simulator[{extra}]"' if extra else "pip install --force-reinstall scientific-data-simulator"
 
 
 def _version(module: str) -> Optional[str]:
@@ -102,7 +117,7 @@ def run_checks(output_dir: str = "experiments_output", plots: bool = False) -> L
     missing = [m for m in CORE if _version(m) is None]
     checks.append(Check("core packages", FAIL if missing else OK,
                         "missing: " + ", ".join(missing) if missing else ", ".join(f"{m} {_version(m)}" for m in CORE[:4]) + ", ...",
-                        'pip install -e .' if missing else ""))
+                        install_hint() if missing else ""))
     from importlib import metadata
     for package, (floor, why) in SECURITY_FLOORS.items():
         try:
@@ -118,7 +133,7 @@ def run_checks(output_dir: str = "experiments_output", plots: bool = False) -> L
         absent = [m for m in modules if _version(m) is None]
         checks.append(Check(f"extra: {extra}", INFO if absent else OK,
                             f"{purpose}: " + ("not installed (optional)" if absent else "installed"),
-                            f'pip install -e ".[{extra}]"' if absent else ""))
+                            install_hint(extra) if absent else ""))
     if _version("kaleido") is not None:
         chrome = _find_chrome()
         checks.append(Check("chrome for static plots", OK if chrome else WARN,
@@ -165,8 +180,8 @@ def run_checks(output_dir: str = "experiments_output", plots: bool = False) -> L
                                 "" if same else "report this as a bug, with the output of: sds doctor --json"))
         except Exception as e:  # report, do not crash
             checks.append(Check("test simulation", FAIL, f"{type(e).__name__}: {e}",
-                                "reinstall: pip install -e . (from the repository folder)"))
-        if plots and _version("kaleido") is not None:
+                                "reinstall: " + install_hint()))
+        if plots and _version("kaleido") is not None and _version("plotly") is not None:
             try:
                 import plotly.graph_objects as go
                 go.Figure(go.Scatter(y=[1, 3, 2])).write_image(os.path.join(tmp, "probe.png"))

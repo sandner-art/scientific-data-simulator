@@ -1,0 +1,16 @@
+title: A frozen law-discovery release
+summary: Builds one fixed law-discovery dataset to publish and cite - secret seeds, answers withheld, leak audit, baselines, checksums - and scores model predictions against the private key.
+entry: examples.example_13_law_release.run_experiment
+fields: [ai, methods]
+level: research
+runtime: {full: 105 s, quick: 20 s}
+extras: [parquet]
+quick_args: [--quick]
+params:
+  - {name: name, arg: --name, type: str, default: sds-law-discovery, help: dataset name (Hub repository id)}
+  - {name: version, arg: --version, type: str, default: 1.0.0, help: dataset version}
+  - {name: replicates, arg: --replicates, type: int, default: 3, min: 1, max: 50, help: independent laws per design point}
+outputs:
+  - {path: private/REPORT.md, kind: markdown}
+  - {path: public/README.md, kind: markdown}
+  - {path: private/audit.json, kind: json}

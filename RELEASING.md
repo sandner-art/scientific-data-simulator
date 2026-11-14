@@ -30,10 +30,10 @@ lists every version; versions 0.2–0.6 were development steps, not separate rel
 ## Each release
 
 1. On the development branch:
-   - set the version (no `.dev0`) in `pyproject.toml`, `CITATION.cff` (`version`,
-     `date-released`), `docs/conf.py` and the README's citation line (also its year), and the
-     same version in `ui/pyproject.toml` (also its `scientific-data-simulator>=` floor) and
-     `ui/sds_ui/__init__.py`; the tests check they agree;
+   - set the version (no `.dev0`; a release candidate is e.g. `0.7.0rc2`) in `pyproject.toml`,
+     `CITATION.cff` (`version`, `date-released`), `docs/conf.py` and the README's citation line
+     (also its year), and the same version in `ui/pyproject.toml` (also its
+     `scientific-data-simulator>=` floor) and `ui/sds_ui/__init__.py`; the tests check they agree;
    - date the changelog section;
    - run `pytest`, `pytest ui/tests` and `sds examples check --run-quick`.
 2. Open a pull request into `main`. CI must pass on all three systems, including the
@@ -48,13 +48,50 @@ lists every version; versions 0.2–0.6 were development steps, not separate rel
    - bump to the next `.dev0` version;
    - merge `main` back in so the branches do not diverge.
 
-## Optional: PyPI
+## PyPI
 
-Before uploading, decide how examples ship: they are not part of the installed package. The
-`sds examples` commands find them in a source checkout, or through `SDS_EXAMPLES`.
+`.github/workflows/publish.yml` builds both packages (`scientific-data-simulator` and
+`scientific-data-simulator-ui`), checks them with `twine check --strict`, installs the two wheels in
+a clean environment and runs `sds doctor`, then uploads them with *trusted publishing*: GitHub
+proves to PyPI which workflow is uploading, so no token is stored anywhere.
 
-Publish with PyPI trusted publishing from a GitHub Actions workflow triggered by the release.
-Then `pip install scientific-data-simulator` works without a clone.
+One-time setup:
+
+1. Create accounts on [pypi.org](https://pypi.org) and [test.pypi.org](https://test.pypi.org)
+   (two-factor authentication is required).
+2. On each site, under *Account* > *Publishing*, add a **pending publisher** for each of the two
+   project names: owner `sandner-art`, repository `scientific-data-simulator`, workflow
+   `publish.yml`, environment `pypi` (on test.pypi.org: `testpypi`). The first upload then creates
+   the project.
+3. In the GitHub repository, *Settings* > *Environments*: create `pypi` and `testpypi`. Give `pypi`
+   a required reviewer (yourself), so nothing reaches PyPI without your click.
+
+Each release:
+
+1. **Dry run.** *Actions* > *publish* > *Run workflow* on the branch to release uploads to
+   TestPyPI. Install from there in a fresh environment and run `sds doctor`:
+
+   ```bash
+   pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
+       "scientific-data-simulator==X.Y.Z"
+   ```
+
+2. **Publish.** Publishing the GitHub release (step 4 above) runs the workflow again and, after
+   your approval, uploads to PyPI. The tag must be `v` plus the version in `pyproject.toml`, and a
+   `.dev` version is refused. A release candidate (`0.7.0rc2`) is a pre-release on PyPI too: pip
+   installs it only when asked for it (`pip install --pre ...` or `==0.7.0rc2`).
+
+PyPI never accepts a version twice, and a published version cannot be replaced, only yanked; fix
+problems in the next version. Examples are not part of the package: `sds examples` finds them in a
+source checkout, or through `SDS_EXAMPLES`.
+
+## Datasets
+
+Example 13 (`examples/example_13_law_release`) builds a frozen law-discovery dataset: secret seeds,
+answers withheld, reference baselines and a canary in the dataset card, a leak audit that must
+pass, and checksums. Its README describes the upload to the Hugging Face Hub and how to get a
+DOI. Release a dataset after the software version that built it, and name that version in the
+dataset card; keep the private folder, which is the only answer key.
 
 ## Citing in a paper
 

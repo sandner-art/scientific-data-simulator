@@ -184,3 +184,34 @@ def test_plots_never_load_pyplot(tmp_path):
     result = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True, env=env)
     assert result.returncode == 0, result.stderr
     assert {"time_series_matplotlib.png", "histogram_matplotlib.png"} <= set(os.listdir(tmp_path))
+
+
+def test_plots_without_plotly(tmp_path):
+    """plotly is an optional extra: without it the PNGs are written and the HTML skipped."""
+    import subprocess
+    import sys
+    code = (
+        "import sys, builtins\n"
+        "real = builtins.__import__\n"
+        "def no_plotly(name, *a, **k):\n"
+        "    if name.split('.')[0] == 'plotly':\n"
+        "        raise ImportError('no plotly')\n"
+        "    return real(name, *a, **k)\n"
+        "builtins.__import__ = no_plotly\n"
+        "import numpy as np\n"
+        "from scidatasim.utils import DataDescriptor, DataType\n"
+        "from scidatasim.visualization import generate_plots\n"
+        "t = np.arange(5.0)\n"
+        "results = {'time': {'data': t, 'descriptor': DataDescriptor('time', DataType.NDARRAY, group='time_series')},\n"
+        "           'v': {'data': t ** 2, 'descriptor': DataDescriptor('v', DataType.NDARRAY, group='time_series',\n"
+        "                 plot_type='line', x_axis='time')},\n"
+        "           'h': {'data': t, 'descriptor': DataDescriptor('h', DataType.NDARRAY, group='histogram',\n"
+        "                 plot_type='histogram')}}\n"
+        f"generate_plots(results, {str(tmp_path)!r}, static_format='svg')\n"
+    )
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    result = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    files = set(os.listdir(tmp_path))
+    assert {"time_series_matplotlib.png", "histogram_matplotlib.png"} <= files
+    assert not any(f.endswith(".html") for f in files)

@@ -1,15 +1,34 @@
 # scidatasim/visualization.py
 # Figures are drawn with matplotlib.figure.Figure, never pyplot: the simulator only writes files,
 # so it must not pick or start a GUI backend (Tk on Windows can fail to start, or open windows).
+# Interactive HTML versions come from plotly, an optional extra ("standard" profile): without it
+# only the matplotlib PNGs are written.
+import logging
 import matplotlib
 from matplotlib.figure import Figure
-import plotly.express as px
-import plotly.io as pio  # Import plotly.io for static image export
 import os
 from typing import Dict, Any, List
 from .utils import DataType
 import pandas as pd
 import numpy as np
+
+logger = logging.getLogger(__name__)
+_PLOTLY_MISSING_LOGGED = False
+
+
+def _plotly():
+    """``(plotly.express, plotly.graph_objects)``, or None when plotly is not installed."""
+    global _PLOTLY_MISSING_LOGGED
+    try:
+        import plotly.express as px
+        import plotly.graph_objects as go
+    except ImportError:
+        if not _PLOTLY_MISSING_LOGGED:
+            logger.info("plotly is not installed: interactive HTML plots are skipped "
+                        "(pip install 'scientific-data-simulator[standard]')")
+            _PLOTLY_MISSING_LOGGED = True
+        return None
+    return px, go
 
 def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_format: str = "svg"):
     """
@@ -53,8 +72,11 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
             ax.grid(True)
             figure.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
 
-            # Plotly
-            # Combine into DataFrame for plotting
+            # Plotly (optional)
+            plotly = _plotly()
+            if plotly is None:
+                continue
+            px = plotly[0]
             hist_df = pd.DataFrame()
             for data_info in data_list:
                 descriptor = data_info['descriptor']
@@ -83,7 +105,6 @@ def _time_series_plot(results, group_name, data_list, output_dir, static_format)
     (``descriptor.x_axis``, default ``time``). Observed series that were
     sampled at a subset of points carry their own coordinate, so latent and
     observed series can share one figure."""
-    import plotly.graph_objects as go
 
     series = []
     for data_info in data_list:
@@ -126,6 +147,10 @@ def _time_series_plot(results, group_name, data_list, output_dir, static_format)
     ax.grid(True)
     figure.savefig(os.path.join(output_dir, f"{group_name}_matplotlib.png"))
 
+    plotly = _plotly()
+    if plotly is None:
+        return
+    go = plotly[1]
     fig = go.Figure()
     for descriptor, x_info, data in series:
         mode = "markers" if descriptor.plot_type == "scatter" else "lines"
@@ -158,7 +183,11 @@ def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str,
     ax.grid(True)
     figure.savefig(os.path.join(output_dir, "combined_populations_matplotlib.png"))
 
-    # Plotly
+    # Plotly (optional)
+    plotly = _plotly()
+    if plotly is None:
+        return
+    px = plotly[0]
     df = pd.DataFrame({
       'time': results['time']['data'],
       'Prey Population': results['prey_population']['data'],

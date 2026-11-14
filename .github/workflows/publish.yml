@@ -1,0 +1,80 @@
+# Build both packages, check them, install them in a clean environment, then publish.
+#
+#   - Run by hand (Actions > publish > Run workflow): uploads to TestPyPI, for a dry run.
+#   - Publishing a GitHub release: uploads to PyPI. The release tag must match the version
+#     (tag v0.7.0rc2 for version 0.7.0rc2).
+#
+# Uses PyPI trusted publishing: no token is stored. One-time setup on pypi.org and
+# test.pypi.org is described in RELEASING.md ("PyPI").
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build --outdir dist .
+          python -m build --outdir dist ui
+          python -m twine check --strict dist/*
+      - name: Tag matches version
+        if: github.event_name == 'release'
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "${GITHUB_REF_NAME}" = "v${version}" || { echo "tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
+          case "$version" in *dev*) echo "a .dev version cannot be released"; exit 1;; esac
+      - name: Install the wheels in a clean environment
+        run: |
+          python -m venv /tmp/check
+          /tmp/check/bin/pip install dist/*.whl  # these exact files, not whatever an index offers
+          cd /tmp
+          /tmp/check/bin/sds doctor
+          /tmp/check/bin/python -c "import scidatasim, sds_ui; print(scidatasim.__version__, sds_ui.__version__)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  pypi:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
