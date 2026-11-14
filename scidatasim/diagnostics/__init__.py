@@ -16,7 +16,7 @@ behaviour checked against the truth step by step.
 from .contamination import (add_canary, canary_probe, contamination_gap, make_canary, make_twin,  # noqa: F401
                             pair_tasks)
 from .episodes import EpisodeLog, diagnose_episode, law_alternatives, run_episodes, summarize  # noqa: F401
-from .quality import card_markdown, quality_card  # noqa: F401
+from .quality import accuracy_by, card_markdown, quality_card  # noqa: F401
 from .shortcuts import (approximator_baseline, blind_baseline, feature_shortcuts, polynomial_formula,  # noqa: F401
                         public_features)
 from .stats import gap_test  # noqa: F401

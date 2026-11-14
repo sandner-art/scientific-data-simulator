@@ -69,6 +69,7 @@ def run_suite(args):
                         replicates=args.replicates)
     print(f"{len(design.table)} hidden laws in {design.output_dir}")
     scores = {"law_family": [], "law_formula": [], "extrapolation": []}
+    reachable = {True: [], False: []}  # formula score split by the private polynomial_reachable label
     for result, row in zip(design.results, design.table.to_dict("records")):
         family, formula = fit_best_law(result["x"]["data"], result["y_observed"]["data"])
         tasks = [t for t in collect_bundle_tasks(os.path.join(args.output_dir, _run_dir(args.output_dir,
@@ -78,11 +79,18 @@ def run_suite(args):
                 scores["law_family"].append(check_answer(task, family or ""))
             elif task["template"] == "law_formula":
                 scores["law_formula"].append(check_answer(task, formula or "0"))
+                reachable[bool(task.get("polynomial_reachable"))].append(scores["law_formula"][-1])
             elif task["template"] == "extrapolation" and formula:
                 x_star = float(re.findall(r"x = ([-+0-9.e]+)", task["question"])[0])
                 scores["extrapolation"].append(check_answer(task, float(evaluate(formula, x=x_star))))
     for name, values in scores.items():
         print(f"baseline {name:14s}: {np.mean(values):.2f} correct ({len(values)} questions)")
+    # Formula questions that a fitted polynomial also passes do not separate law discovery from
+    # curve fitting (mostly power laws with exponents near 1 or 2): report the rest separately.
+    for label, values in ((False, reachable[False]), (True, reachable[True])):
+        if values:
+            kind = "polynomial-reachable" if label else "not polynomial-reachable"
+            print(f"  law_formula, {kind:24s}: {np.mean(values):.2f} correct ({len(values)} questions)")
     if args.export:
         from scidatasim.export.huggingface import export_huggingface
         path = export_huggingface(args.output_dir, os.path.join(args.output_dir, "hf_dataset"),

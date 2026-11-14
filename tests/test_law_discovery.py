@@ -283,3 +283,36 @@ def test_compile_expression_matches_evaluate():
         f(x=x, a=2.0)
     with pytest.raises(ExpressionError):
         compile_expression("__import__('os')", ["x"])
+
+
+def test_polynomial_reachable_label_is_private_and_correct():
+    from scidatasim.bundle import public_question
+    from scidatasim.diagnostics import polynomial_formula
+    from scidatasim.export.tasks import public_view
+    labels = {}
+    for law in ("power_law", "gaussian_peak"):
+        labels[law] = []
+        for seed in range(8):
+            item, x, y, _ = _formula_item(law, snr_db=20, seed=seed)
+            assert isinstance(item["polynomial_reachable"], bool)
+            assert item["polynomial_reachable"] == check_answer(item, polynomial_formula(x, y))
+            assert "polynomial_reachable" not in public_question(item)
+            assert "polynomial_reachable" not in public_view(dict(item, id="t"))
+            labels[law].append(item["polynomial_reachable"])
+    assert any(labels["power_law"]) and not any(labels["gaussian_peak"])
+
+
+def test_quality_card_splits_formula_accuracy_by_reachability():
+    from scidatasim.diagnostics import accuracy_by, card_markdown, quality_card
+    base = {"template": "law_formula", "answer_type": "expression", "domain": [0.5, 2.0], "tolerance": 0.01,
+            "experiment_id": "r", "fidelity": "reference"}
+    tasks = [dict(base, id="a", answer="x**2", polynomial_reachable=True),
+             dict(base, id="b", answer="exp(x)", polynomial_reachable=False),
+             dict(base, id="c", answer="exp(-x)", polynomial_reachable=False)]
+    card = quality_card(tasks, solver=lambda t: "x**2")
+    entry = card["templates"]["law_formula"]
+    assert entry["polynomial_reachable"] == 1 / 3
+    assert entry["solver_accuracy"] == 1 / 3 and entry["solver_accuracy_by_reachable"] == {"False": 0.0, "True": 1.0}
+    assert "0.00 without polynomial-reachable items" in card_markdown(card)
+    assert accuracy_by(tasks, {"a": True, "b": False}, "polynomial_reachable") == {
+        "False": {"n": 1, "accuracy": 0.0}, "True": {"n": 1, "accuracy": 1.0}}

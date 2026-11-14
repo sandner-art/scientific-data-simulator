@@ -66,7 +66,9 @@ PRIVATE = "private"
 #: because it is derived from the answer (5 % of a parameter) or from the data
 #: (3 % of a series' range) and would leak them; public files carry the textual
 #: ``tolerance_rule`` instead.
-PRIVATE_QUESTION_KEYS = ("answer", "tolerance")
+#: Never shown to a system under test: the answer, the (answer-derived) numeric tolerance, and
+#: labels that hint at the answer (``polynomial_reachable`` on law-discovery formula questions).
+PRIVATE_QUESTION_KEYS = ("answer", "tolerance", "polynomial_reachable")
 
 
 def public_question(item: Dict[str, Any]) -> Dict[str, Any]:

@@ -22,7 +22,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 from ..bundle import PRIVATE_QUESTION_KEYS, check_answer
 
-PRIVATE_KEYS = PRIVATE_QUESTION_KEYS  # answer and the (answer-derived) numeric tolerance
+PRIVATE_KEYS = PRIVATE_QUESTION_KEYS  # answer, the (answer-derived) tolerance, answer-hinting labels
 
 _FORMAT = {
     "number": "Respond with a single number.",
@@ -118,6 +118,7 @@ def collect_bundle_tasks(paths: Union[str, Sequence[str]], relative_to: Optional
                 "model": manifest.get("model"),
                 "fidelity": manifest.get("fidelity"),
                 "answer": item["answer"],
+                "polynomial_reachable": item.get("polynomial_reachable"),
             })
     return tasks
 

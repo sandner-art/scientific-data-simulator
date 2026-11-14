@@ -27,7 +27,8 @@ the parameters, an extrapolated value and the formula itself.
 The formula is scored by :func:`scidatasim.expressions.matches` on the data range *and* half of
 the range beyond it. Scored on the data range alone, a polynomial fitted to the data passes for
 five of the nine families: it reproduces a smooth curve without finding the law. Power laws stay
-partly within its reach (``scidatasim.diagnostics.approximator_baseline`` measures this). The tolerance is "auto" by default: the larger of 1 % and the error that a
+partly within its reach: each formula question carries a private ``polynomial_reachable`` label,
+and reports give accuracy with and without those items. The tolerance is "auto" by default: the larger of 1 % and the error that a
 least-squares fit of the true family reaches in 90 % of replicates of the run's own noise
 (residuals resampled). A fixed 1 % cannot be met at 20 dB even with the right law.
 """
@@ -166,6 +167,19 @@ def achievable_tolerance(family: str, values: Dict[str, float], x, y_observed, d
         errors.append(float(np.sqrt(np.mean(diff ** 2)) / scale) if np.all(np.isfinite(diff)) else np.inf)
     achieved = float(np.quantile(errors, quantile))
     return max(floor, achieved) if np.isfinite(achieved) else floor
+
+
+def polynomial_reachable(item: Dict[str, Any], results) -> bool:
+    """Whether a polynomial fitted to the run's observations (degree by BIC) passes the formula
+    question ``item``. Stored with the question as a *private* label (it hints at the family):
+    such items can be met by curve fitting, so reports give accuracy with and without them. Power
+    laws with exponents near 1 or 2 are the usual case."""
+    from scidatasim.bundle import check_answer
+    from scidatasim.diagnostics.shortcuts import polynomial_formula
+    observed = _observed_series(results)
+    x, y = observed if observed is not None else (results["x"]["data"], results["y"]["data"])
+    formula = polynomial_formula(x, y)
+    return bool(formula is not None and check_answer(item, formula))
 
 
 def _observed_series(results) -> Optional[Tuple[np.ndarray, np.ndarray]]:
@@ -310,12 +324,14 @@ class HiddenLawExperiment(ExperimentLogic):
                     "this run's noise")
         else:
             tolerance, rule = float(self.formula_tolerance), "relative RMS error on the stated range (fixed)"
-        items.append(dict(template="law_formula",
+        formula_item = dict(template="law_formula",
                           question=f"Give a formula for y as a function of x (e.g. 2.5*x**1.3). It is scored on "
                                    f"[{format_number(lo)}, {format_number(x_end, 4)}]: the observed range "
                                    f"[{format_number(lo)}, {format_number(hi)}] and half of it beyond.",
                           answer=self.expression(), answer_type="expression", tolerance=round(tolerance, 6),
-                          tolerance_rule=rule, domain=[lo, x_end], variable="x", answerable_from="inference"))
+                          tolerance_rule=rule, domain=[lo, x_end], variable="x", answerable_from="inference")
+        formula_item["polynomial_reachable"] = polynomial_reachable(formula_item, results)
+        items.append(formula_item)
         y_star = float(evaluate(self.expression(), x=x_star))
         if np.isfinite(y_star):
             items.append(dict(template="extrapolation",

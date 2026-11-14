@@ -22,7 +22,8 @@ python -m examples.example_11_testbed.run_experiment --quick    # about 1 minute
    a tolerance set by what the true law reaches under the run's noise) it passed none, while the
    curve-fitting baseline went from 0.86 to 0.92. On the data range alone a smooth curve can be
    matched without finding the law; power laws stay partly within a polynomial's reach, because
-   their exponents are often close to 1 or 2.
+   their exponents are often close to 1 or 2. Those questions carry the private label
+   `polynomial_reachable`, and the section gives the law fitter's accuracy without them.
 3. **Leak audit** of the Hugging Face release, with a canary string added.
 4. **Contamination.** A fresh twin of the suite has the same design and new seeds, so its hidden
    laws have never been released. A solver that has memorised part of a leaked answer key is

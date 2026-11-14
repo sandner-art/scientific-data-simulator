@@ -32,7 +32,10 @@ them 56–78 % of the time (example 11 measures this).
   polynomial fitted to the data would pass for five of the nine families without finding the law.
   The tolerance is the larger of 1 % and the error a least-squares fit of the true family reaches
   in 90 % of replicates of the run's own noise (1 % at 40 dB; at 20 dB a median of 4 %, at most 10 %): a fixed 1 %
-  could not be met at 20 dB even with the right law. `formula_tolerance: 0.01` fixes it instead;
+  could not be met at 20 dB even with the right law. `formula_tolerance: 0.01` fixes it instead.
+  Power laws stay partly within a polynomial's reach (exponents near 1 or 2), so each formula
+  question carries a private label `polynomial_reachable`, and the baseline's formula score is
+  also printed without those items;
 * **extrapolation**: the value of y a quarter of the range beyond the data.
 
 ## Run

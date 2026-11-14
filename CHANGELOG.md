@@ -12,8 +12,9 @@ Versions 0.2–0.6 were development steps; they were first released together in 
 - `law_alternatives` fits the textbook form over the range the agent measured, so `matches_textbook` still applies when the scoring range extends beyond it.
 
 ### Added
-- `simulator.diagnostics.approximator_baseline` and `polynomial_formula`: a polynomial fitted to each run's observations, submitted as the formula answer. If it passes, the score rewards curve fitting, not the law (a scorer loophole). Example 11 reports it under the old and the current rule.
-- `experiments.law_discovery.logic`: `fit_law`, `law_function`, `achievable_tolerance`; `simulator.expressions.compile_expression` (parse once, evaluate many times).
+- Law-discovery formula questions carry a private label, `polynomial_reachable`: whether a polynomial fitted to the run's observations passes the question. No scoring range separates power laws with exponents near 1 or 2 from polynomials, so reports split accuracy by the label instead of hiding or dropping those items. The label is withheld like answers and tolerances (`PRIVATE_QUESTION_KEYS`); `quality_card` reports the share of labelled items and the solver's accuracy without them; `scidatasim.diagnostics.accuracy_by` splits any score by a task field. Example 10 prints its formula score both ways; example 11 reports the label.
+- `scidatasim.diagnostics.approximator_baseline` and `polynomial_formula`: a polynomial fitted to each run's observations, submitted as the formula answer. If it passes, the score rewards curve fitting, not the law (a scorer loophole). Example 11 reports it under the old and the current rule.
+- `scidatasim.experiments.law_discovery.logic`: `fit_law`, `law_function`, `achievable_tolerance`; `scidatasim.expressions.compile_expression` (parse once, evaluate many times).
 
 ## 0.7.0rc1 (2026-11-09)
 

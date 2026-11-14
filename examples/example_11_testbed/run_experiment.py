@@ -29,8 +29,8 @@ from scidatasim.experiments.law_discovery.logic import law_suite_design, textboo
 from scidatasim.audit import audit_export  # noqa: E402
 from scidatasim.bundle import check_answer  # noqa: E402
 from scidatasim.config import load_config, yaml_load  # noqa: E402
-from scidatasim.diagnostics import (add_canary, approximator_baseline, blind_baseline, canary_probe, card_markdown,  # noqa: E402
-                                   contamination_gap, diagnose_episode, feature_shortcuts, law_alternatives,
+from scidatasim.diagnostics import (accuracy_by, add_canary, approximator_baseline, blind_baseline,  # noqa: E402
+                                   canary_probe, card_markdown, contamination_gap, diagnose_episode, feature_shortcuts, law_alternatives,
                                    make_canary, make_twin, pair_tasks, public_features, quality_card,
                                    run_episodes, summarize)
 from scidatasim.doe import run_design  # noqa: E402
@@ -220,13 +220,22 @@ def main():
         poly = approximator_baseline(rule_tasks, observations).get("law_formula", {"accuracy": float("nan")})
         fitter = float(np.mean([check_answer(t, honest(t)) for t in rule_tasks]))
         loophole[rule] = {"polynomial": poly["accuracy"], "law_fitter": fitter}
+    reachable = [t for t in formula_tasks if t.get("polynomial_reachable")]
+    fit_hits = {t["id"]: bool(check_answer(t, honest(t))) for t in formula_tasks}
+    split = accuracy_by(formula_tasks, fit_hits, "polynomial_reachable")
+    loophole["labelled_reachable"] = {"n": len(reachable), "of": len(formula_tasks),
+                                      "law_fitter_without": split.get("False", {}).get("accuracy")}
     report["scorer_loophole"] = loophole
     md += ["## 2. Scorer loophole: does a polynomial pass the formula question?", "",
            "A polynomial fitted to the observations (degree by BIC) is submitted as the formula. If it passes, "
            "the score rewards curve fitting, not the law.", "",
            "| scoring rule | polynomial | law fitter |", "|---|---|---|"]
-    md += [f"| {rule} | {v['polynomial']:.2f} | {v['law_fitter']:.2f} |" for rule, v in loophole.items()]
-    md += ["", "Power laws remain partly within a polynomial's reach: their exponents are often close to 1 or 2.", ""]
+    md += [f"| {rule} | {v['polynomial']:.2f} | {v['law_fitter']:.2f} |" for rule, v in loophole.items()
+           if "polynomial" in v]
+    lab = loophole["labelled_reachable"]
+    without = "" if lab["law_fitter_without"] is None else f"; the law fitter scores {lab['law_fitter_without']:.2f} on the rest"
+    md += ["", f"{lab['n']} of {lab['of']} formula questions carry the private label `polynomial_reachable` "
+               f"(a fitted polynomial passes them; mostly power laws with exponents near 1 or 2){without}.", ""]
 
     # -- 3. leak audit with canary ---------------------------------------------------
     from scidatasim.export.huggingface import export_huggingface

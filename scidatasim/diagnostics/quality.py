@@ -81,16 +81,34 @@ def quality_card(tasks: Sequence[Mapping[str, Any]], solver: Optional[Callable[[
             entry["range"] = [float(values.min()), float(values.max())]
         else:
             entry["distinct_ratio"] = len({str(a) for a in answers}) / len(answers)
+        labelled = [t for t in group if t.get("polynomial_reachable") is not None]
+        if labelled:  # formula questions a fitted polynomial passes (a scorer loophole)
+            entry["polynomial_reachable"] = sum(bool(t["polynomial_reachable"]) for t in labelled) / len(labelled)
         if solver is not None:
-            hits = 0
+            hit = {}
             for t in group:
                 try:
-                    hits += bool(check_answer(t, solver(t)))
+                    hit[t["id"]] = bool(check_answer(t, solver(t)))
                 except Exception:
-                    pass
-            entry["solver_accuracy"] = hits / len(group)
+                    hit[t["id"]] = False
+            entry["solver_accuracy"] = sum(hit.values()) / len(group)
+            if labelled:
+                entry["solver_accuracy_by_reachable"] = {
+                    k: v["accuracy"] for k, v in accuracy_by(labelled, hit, "polynomial_reachable").items()}
         card["templates"][template] = entry
     return card
+
+
+def accuracy_by(tasks: Sequence[Mapping[str, Any]], correct: Mapping[str, bool], key: str
+                ) -> Dict[str, Dict[str, Any]]:
+    """Accuracy split by the value of ``task[key]`` (e.g. ``polynomial_reachable``): ``{value:
+    {"n", "accuracy"}}`` with values as strings. ``correct`` maps task ids to right/wrong; tasks
+    missing from it are skipped."""
+    groups: Dict[str, list] = {}
+    for t in tasks:
+        if t["id"] in correct:
+            groups.setdefault(str(t.get(key)), []).append(bool(correct[t["id"]]))
+    return {k: {"n": len(v), "accuracy": sum(v) / len(v)} for k, v in sorted(groups.items())}
 
 
 def card_markdown(card: Mapping[str, Any]) -> str:
@@ -110,7 +128,12 @@ def card_markdown(card: Mapping[str, Any]) -> str:
             balance = "no finite answers"
         pos = e.get("position_p")
         solver = e.get("solver_accuracy")
+        if "polynomial_reachable" in e:
+            balance += f"; polynomial passes {e['polynomial_reachable']:.2f}"
+        split = e.get("solver_accuracy_by_reachable") or {}
+        solver_text = "" if solver is None else f"{solver:.2f}"
+        if solver is not None and "False" in split:
+            solver_text += f" ({split['False']:.2f} without polynomial-reachable items)"
         lines.append(f"| {template} | {e['n']} | {e['answer_type']} | {balance} | "
-                     f"{'' if pos is None else f'{pos:.3f}'} | {e['duplicates']} | "
-                     f"{'' if solver is None else f'{solver:.2f}'} |")
+                     f"{'' if pos is None else f'{pos:.3f}'} | {e['duplicates']} | {solver_text} |")
     return "\n".join(lines)

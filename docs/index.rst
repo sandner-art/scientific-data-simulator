@@ -344,7 +344,9 @@ and agents (see ``examples/example_11_testbed``):
   cues with a leave-one-out nearest-neighbour rule and a permutation test;
 * scorer loopholes - :func:`~scidatasim.diagnostics.shortcuts.approximator_baseline`
   submits a polynomial fitted to each run's observations as the formula answer; if it
-  passes, the score rewards curve fitting rather than the law;
+  passes, the score rewards curve fitting rather than the law. Law-discovery formula
+  questions carry a private ``polynomial_reachable`` label, and
+  :func:`~scidatasim.diagnostics.quality.accuracy_by` splits any score by it;
 * quality - :func:`~scidatasim.diagnostics.quality.quality_card`: answer balance and
   entropy, correct-position chi-square, numeric spread, duplicates, fidelity, and the
   accuracy of an optional reference solver;
