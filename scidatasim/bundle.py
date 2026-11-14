@@ -36,6 +36,20 @@ Configuration (``bundle:`` in the experiment config; ``bundle: true`` uses defau
         grid: true
         title: true
         axes: true             # diagrams: coordinate axes (false: bare diagram)
+        # Style and clutter (time-series charts), as design factors: the same data drawn
+        # differently separates perception errors from reasoning errors (see cross_styles).
+        style: default         # preset: default | minimal | dense | print | presentation
+        palette: tab10         # tab10 | colorblind (Okabe-Ito) | grayscale (also varies dashes, markers)
+        line_width: 1.5
+        marker_size: 3
+        font_size: 10
+        log_x: false
+        log_y: false
+        ticks: auto            # auto | sparse | dense
+        legend_position: best  # best | outside
+        distractors: 0         # unrelated curves ("other A", ...), named in the caption
+        annotations: 0         # stray numbers placed on the chart
+        variant: null          # a name for this style, recorded with the bundle
       qa:
         enabled: true
         value_queries: 2       # random "value at x" questions per series
@@ -77,7 +91,10 @@ def public_question(item: Dict[str, Any]) -> Dict[str, Any]:
 
 DEFAULTS: Dict[str, Any] = {
     "figure": {"format": "png", "dpi": 120, "width": 6.4, "height": 4.8, "show_latent": True,
-               "show_observed": True, "legend": True, "grid": True, "title": True, "axes": True},
+               "show_observed": True, "legend": True, "grid": True, "title": True, "axes": True,
+               "style": "default", "palette": "tab10", "line_width": 1.5, "marker_size": 3.0,
+               "font_size": 10.0, "log_x": False, "log_y": False, "ticks": "auto",
+               "legend_position": "best", "distractors": 0, "annotations": 0, "variant": None},
     "qa": {"enabled": True, "value_queries": 2, "parameters": None, "exclude": []},
     "graph": True,
     # The table/elements file holds the exact values drawn (curve values, circle
@@ -90,6 +107,21 @@ DEFAULTS: Dict[str, Any] = {
 # depend on the user's rcParams.
 PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
            "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+PALETTES = {
+    "tab10": PALETTE,
+    "colorblind": ["#0072B2", "#E69F00", "#009E73", "#D55E00", "#CC79A7", "#56B4E9", "#F0E442", "#000000"],
+    "grayscale": ["#000000", "#555555", "#8c8c8c", "#b0b0b0"],
+}
+#: Figure presets: values for the figure keys a config does not set itself.
+FIGURE_STYLES: Dict[str, Dict[str, Any]] = {
+    "default": {},
+    "minimal": {"grid": False, "title": False, "line_width": 1.0, "marker_size": 2.0, "font_size": 9.0},
+    "dense": {"font_size": 7.0, "ticks": "dense", "distractors": 2, "annotations": 4},
+    "print": {"palette": "grayscale", "line_width": 1.2},
+    "presentation": {"font_size": 14.0, "line_width": 2.5, "marker_size": 5.0},
+}
+_DASHES = ["-", "--", ":", "-."]
+_MARKERS = ["o", "s", "^", "D"]
 
 
 # ---------------------------------------------------------------------------- config
@@ -113,6 +145,13 @@ def resolve_bundle_config(spec: Any) -> Optional[Dict[str, Any]]:
         if unknown:
             raise ValueError(f"Unknown bundle.{section} keys: {sorted(unknown)}")
         cfg[section].update(sub)
+        if section == "figure":
+            preset = cfg["figure"]["style"]
+            if preset not in FIGURE_STYLES:
+                raise ValueError(f"bundle.figure.style must be one of {sorted(FIGURE_STYLES)}")
+            for key, value in FIGURE_STYLES[preset].items():
+                if key not in sub:  # the config's own settings win over the preset
+                    cfg["figure"][key] = value
     if "graph" in spec:
         cfg["graph"] = bool(spec["graph"])
     if "public_table" in spec:
@@ -122,9 +161,20 @@ def resolve_bundle_config(spec: Any) -> Optional[Dict[str, Any]]:
         raise ValueError("bundle.figure.format must be png, svg or pdf")
     if not (fig["show_latent"] or fig["show_observed"]):
         raise ValueError("bundle.figure: show_latent and show_observed cannot both be false")
-    for key in ("dpi", "width", "height"):
-        if not (isinstance(fig[key], (int, float)) and fig[key] > 0):
+    for key in ("dpi", "width", "height", "line_width", "marker_size", "font_size"):
+        if not (isinstance(fig[key], (int, float)) and not isinstance(fig[key], bool) and fig[key] > 0):
             raise ValueError(f"bundle.figure.{key} must be a positive number")
+    if fig["palette"] not in PALETTES:
+        raise ValueError(f"bundle.figure.palette must be one of {sorted(PALETTES)}")
+    if fig["ticks"] not in ("auto", "sparse", "dense"):
+        raise ValueError("bundle.figure.ticks must be auto, sparse or dense")
+    if fig["legend_position"] not in ("best", "outside"):
+        raise ValueError("bundle.figure.legend_position must be best or outside")
+    for key, top in (("distractors", 6), ("annotations", 20)):
+        value = fig[key]
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or not 0 <= int(value) <= top:
+            raise ValueError(f"bundle.figure.{key} must be an integer from 0 to {top}")
+        fig[key] = int(value)
     if int(cfg["qa"]["value_queries"]) < 0:
         raise ValueError("bundle.qa.value_queries must be >= 0")
     exclude = cfg["qa"].get("exclude") or []
@@ -182,10 +232,15 @@ def _plotted_series(results, fig_cfg, suffix) -> List[Dict[str, Any]]:
         series.append({"name": name, "x": x, "style": "scatter" if d.plot_type == "scatter" else "line",
                        "base": _base_name(name, suffix), "role": d.role.value if d.role else None,
                        "units": d.units})
-    colours: Dict[str, str] = {}
+    palette = PALETTES[fig_cfg.get("palette", "tab10")]
+    grey = fig_cfg.get("palette") == "grayscale"
+    order: Dict[str, int] = {}
     for s in series:
-        colours.setdefault(s["base"], PALETTE[len(colours) % len(PALETTE)])
-        s["color"] = colours[s["base"]]
+        i = order.setdefault(s["base"], len(order))
+        s["color"] = palette[i % len(palette)]
+        # in grayscale, dashes and marker shapes keep the series apart
+        s["linestyle"] = _DASHES[i % len(_DASHES)] if grey else "-"
+        s["marker"] = _MARKERS[i % len(_MARKERS)] if grey else "o"
     return series
 
 
@@ -208,24 +263,41 @@ SPEC = json.loads(r"""{spec}""")
 
 def main(output=None):
     table = pd.read_csv(HERE / SPEC["table"])
+    style = SPEC.get("style", {{}})
+    fs = style.get("font_size", 10.0)
     fig = Figure(figsize=(SPEC["width"], SPEC["height"]), dpi=SPEC["dpi"])
     ax = fig.add_subplot()
     for s in SPEC["series"]:
         d = table[[s["x"], s["y"]]].dropna()
         if s["style"] == "line":
-            ax.plot(d[s["x"]], d[s["y"]], color=s["color"], linewidth=1.5, label=s["label"])
+            ax.plot(d[s["x"]], d[s["y"]], color=s["color"], linewidth=style.get("line_width", 1.5),
+                    linestyle=s.get("linestyle", "-"), label=s["label"])
         else:
-            ax.plot(d[s["x"]], d[s["y"]], color=s["color"], linestyle="none", marker="o",
-                    markersize=3, alpha=0.8, label=s["label"])
-    ax.set_xlabel(SPEC["xlabel"])
-    ax.set_ylabel(SPEC["ylabel"])
+            ax.plot(d[s["x"]], d[s["y"]], color=s["color"], linestyle="none", marker=s.get("marker", "o"),
+                    markersize=style.get("marker_size", 3), alpha=0.8, label=s["label"])
+    for a in SPEC.get("annotations", []):
+        ax.text(a["x"], a["y"], a["text"], transform=ax.transAxes, fontsize=fs * 0.9, color="#444444")
+    if style.get("log_x"):
+        ax.set_xscale("log")
+    if style.get("log_y"):
+        ax.set_yscale("log")
+    if style.get("ticks") in ("sparse", "dense"):
+        ax.locator_params(nbins=3 if style["ticks"] == "sparse" else 12)
+    ax.tick_params(labelsize=fs)
+    ax.set_xlabel(SPEC["xlabel"], fontsize=fs)
+    ax.set_ylabel(SPEC["ylabel"], fontsize=fs)
     if SPEC["title"]:
-        ax.set_title(SPEC["title"])
+        ax.set_title(SPEC["title"], fontsize=fs * 1.2)
     if SPEC["grid"]:
         ax.grid(True, alpha=0.3)
+    outside = style.get("legend_position") == "outside"
     if SPEC["legend"]:
-        ax.legend(fontsize="small")
-    fig.savefig(output or HERE / SPEC["output"], metadata=SPEC["metadata"])
+        if outside:
+            ax.legend(fontsize=fs * 0.833, loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
+        else:
+            ax.legend(fontsize=fs * 0.833)
+    fig.savefig(output or HERE / SPEC["output"], metadata=SPEC["metadata"],
+                bbox_inches="tight" if outside and SPEC["legend"] else None)
 
 
 if __name__ == "__main__":
@@ -306,7 +378,41 @@ def _base_coordinate(series, suffix) -> str:
     return _base_name(series[0]["x"], suffix)
 
 
-def _write_figure(bundle_dir, results, series, fig_cfg, experiment_id, model_name, suffix) -> Dict[str, Any]:
+STYLE_KEYS = ("style", "palette", "line_width", "marker_size", "font_size", "log_x", "log_y", "ticks",
+              "legend_position", "distractors", "annotations", "variant")
+
+
+def _clutter(table, series, fig_cfg, rng):
+    """Distractor curves (added to ``table`` and ``series``) and stray annotations, drawn from the
+    run's ``figure`` stream so the questions do not change with the style."""
+    ys = np.concatenate([pd.to_numeric(table[s["name"]], errors="coerce").to_numpy(float) for s in series])
+    ys = ys[np.isfinite(ys)]
+    lo, hi = (float(ys.min()), float(ys.max())) if ys.size else (0.0, 1.0)
+    span = (hi - lo) or 1.0
+    x_col = series[0]["x"]
+    x = pd.to_numeric(table[x_col], errors="coerce").to_numpy(float)
+    finite = np.isfinite(x)
+    u = (x - np.nanmin(x)) / ((np.nanmax(x) - np.nanmin(x)) or 1.0) if finite.any() else x
+    palette = PALETTES[fig_cfg["palette"]]
+    used = len({s["base"] for s in series})
+    for j in range(fig_cfg["distractors"]):
+        freqs, phases, amps = rng.uniform(0.3, 2.5, 3), rng.uniform(0, 2 * np.pi, 3), rng.uniform(0.2, 1.0, 3)
+        shape = sum(a * np.sin(2 * np.pi * f * u + p) for a, f, p in zip(amps, freqs, phases))
+        shape = shape / (np.nanmax(np.abs(shape)) or 1.0)
+        name = f"other_{chr(65 + j)}"
+        table[name] = lo + span * (0.5 + 0.4 * shape)
+        i = used + j
+        series.append({"name": name, "x": x_col, "style": "line", "base": name, "role": None, "units": None,
+                       "color": palette[i % len(palette)], "label": f"other {chr(65 + j)}",
+                       "linestyle": _DASHES[i % len(_DASHES)] if fig_cfg["palette"] == "grayscale" else "-",
+                       "marker": None, "distractor": True})
+    notes = [{"x": round(float(rng.uniform(0.05, 0.85)), 3), "y": round(float(rng.uniform(0.05, 0.92)), 3),
+              "text": f"{rng.uniform(lo, hi):.3g}"} for _ in range(fig_cfg["annotations"])]
+    return notes
+
+
+def _write_figure(bundle_dir, results, series, fig_cfg, experiment_id, model_name, suffix,
+                  rng=None) -> Dict[str, Any]:
     columns = {s["name"] for s in series} | {s["x"] for s in series}
     subset = {n: results[n] for n in columns}
     if "observation_index" in results:
@@ -314,6 +420,10 @@ def _write_figure(bundle_dir, results, series, fig_cfg, experiment_id, model_nam
     table = results_to_dataframe(subset)
     table = table[[c for c in table.columns if c in columns]]
     table = table[sorted(table.columns, key=lambda c: (c not in {s["x"] for s in series}, c))]
+    series = [dict(s) for s in series]
+    annotations = []
+    if fig_cfg.get("distractors") or fig_cfg.get("annotations"):
+        annotations = _clutter(table, series, fig_cfg, rng if rng is not None else np.random.default_rng(0))
     table.to_csv(os.path.join(bundle_dir, "table.csv"), index=False)
 
     x_units = results[series[0]["x"]]["descriptor"].units
@@ -327,8 +437,11 @@ def _write_figure(bundle_dir, results, series, fig_cfg, experiment_id, model_nam
         "title": model_name if fig_cfg["title"] else None,
         "grid": fig_cfg["grid"], "legend": fig_cfg["legend"],
         "metadata": _METADATA[fig_cfg["format"]],
+        "style": {k: fig_cfg.get(k, DEFAULTS["figure"][k]) for k in STYLE_KEYS},
+        "annotations": annotations,
         "series": [{"x": s["x"], "y": s["name"], "style": s["style"], "color": s["color"],
-                    "label": s["name"]} for s in series],
+                    "linestyle": s.get("linestyle", "-"), "marker": s.get("marker", "o"),
+                    "label": s.get("label", s["name"])} for s in series],
     }
     script = _SCRIPT.format(output=spec["output"], table=spec["table"], spec=json.dumps(spec, indent=2))
     script_path = os.path.join(bundle_dir, "plot_figure.py")
@@ -548,8 +661,11 @@ def _graph_dot(graph: Dict[str, Any]) -> str:
 
 # ---------------------------------------------------------------------------- main entry
 def build_bundle(experiment_dir: str, record, results: Dict[str, Dict[str, Any]], logic, model_config,
-                 bundle_cfg: Dict[str, Any], rng: np.random.Generator) -> Dict[str, Any]:
-    """Write ``<experiment_dir>/bundle/`` and return its manifest."""
+                 bundle_cfg: Dict[str, Any], rng: np.random.Generator,
+                 figure_rng: Optional[np.random.Generator] = None) -> Dict[str, Any]:
+    """Write ``<experiment_dir>/bundle/`` and return its manifest. ``rng`` (the run's ``bundle``
+    stream) draws the questions; ``figure_rng`` (its ``figure`` stream) the clutter, so the
+    questions are the same whatever the figure style."""
     bundle_dir = os.path.join(experiment_dir, "bundle")
     os.makedirs(bundle_dir, exist_ok=True)
     gt = record.ground_truth or {}
@@ -571,10 +687,14 @@ def build_bundle(experiment_dir: str, record, results: Dict[str, Dict[str, Any]]
         caption = caption_hook(results) if callable(caption_hook) else f"Diagram from the {model_name} model."
     elif plotted:
         figure_spec = _write_figure(bundle_dir, results, plotted, bundle_cfg["figure"],
-                                    record.experiment_id, model_name, suffix)
+                                    record.experiment_id, model_name, suffix,
+                                    figure_rng if figure_rng is not None else rng.spawn(1)[0])
         files.update({figure_spec["output"]: PUBLIC, "plot_figure.py": PUBLIC,
                       "table.csv": PUBLIC if bundle_cfg["public_table"] else PRIVATE})
         caption = _caption(plotted, results, gt.get("observation"), model_name, suffix)
+        others = [s["label"] for s in figure_spec["series"] if s["y"].startswith("other_")]
+        if others:
+            caption += f" Unrelated curves ({', '.join(others)}) are also drawn."
     else:
         caption = f"Run of the {model_name} model (no time-series outputs to draw)."
     with open(os.path.join(bundle_dir, "caption.txt"), "w", encoding="utf-8") as f:
@@ -637,7 +757,8 @@ def build_bundle(experiment_dir: str, record, results: Dict[str, Dict[str, Any]]
         "fidelity": (fidelity or {}).get("level"),
         "caption": caption,
         "n_questions": len(questions),
-        "figure": ({k: figure_spec[k] for k in ("output", "width", "height", "dpi")}
+        "figure": ({**{k: figure_spec[k] for k in ("output", "width", "height", "dpi")},
+                    **({"style": figure_spec["style"]} if "style" in figure_spec else {})}
                    if figure_spec else None),
         "files": {name: {"path": f"bundle/{name}", "visibility": vis,
                          "sha256": file_sha256(os.path.join(bundle_dir, name))}

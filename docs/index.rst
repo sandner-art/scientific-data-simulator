@@ -288,6 +288,33 @@ then become inference tasks. :func:`scidatasim.doe.run_design` collects the
 questions of all runs into ``questions.jsonl`` (public) and ``qa.jsonl``
 (private).
 
+Figure style and clutter (time-series charts) are design factors. A preset
+(``style: default | minimal | dense | print | presentation``) fills the keys a
+config leaves open; the knobs are ``palette`` (``tab10``, ``colorblind``,
+``grayscale``; grayscale also varies dashes and markers), ``line_width``,
+``marker_size``, ``font_size``, ``log_x``/``log_y``, ``ticks`` (``auto``,
+``sparse``, ``dense``), ``legend_position`` (``best``, ``outside``),
+``distractors`` (unrelated curves, named in the caption) and ``annotations``
+(stray numbers on the chart). Clutter draws from the run's ``figure`` random
+stream, so the questions do not change with the style.
+
+.. code-block:: python
+
+    from scidatasim.doe import cross_styles, run_design
+    from scidatasim.diagnostics import style_gap
+
+    table = cross_styles(design, {"plain": {}, "busy": {"style": "dense"},
+                                  "grey": {"palette": "grayscale"}}, replicates=3)
+    run_design(base_config, table, output_dir="styled")
+    # ... score a vision-language model on the tasks, then per style on matched items:
+    gaps = style_gap(tasks, correct, base="plain")
+
+Every row is drawn in every style with the same seed: the same data, questions
+and answers. A drop in accuracy from ``plain`` to ``busy`` is a perception
+effect. :func:`~scidatasim.diagnostics.perception.style_gap` pairs the items by
+seed and question and tests the difference with a paired permutation test
+clustered by run.
+
 .. _units:
 
 Physical Units

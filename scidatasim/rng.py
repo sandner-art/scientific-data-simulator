@@ -24,7 +24,8 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-STREAMS = ("model", "observation", "bundle")
+# New streams go at the end: SeedSequence.spawn keeps the earlier children, so old runs reproduce.
+STREAMS = ("model", "observation", "bundle", "figure")
 MAX_SEED = 2 ** 63 - 1
 
 

@@ -117,6 +117,7 @@ def collect_bundle_tasks(paths: Union[str, Sequence[str]], relative_to: Optional
                 "seed": manifest.get("seed"),
                 "model": manifest.get("model"),
                 "fidelity": manifest.get("fidelity"),
+                "figure_variant": ((manifest.get("figure") or {}).get("style") or {}).get("variant"),
                 "answer": item["answer"],
                 "polynomial_reachable": item.get("polynomial_reachable"),
             })

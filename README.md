@@ -51,6 +51,8 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
   * the mechanism graph (JSON and Graphviz).
 
   Models that describe a diagram (`figure_elements()`) get a geometric drawing instead of a chart, and can add their own exact questions (`questions()`). Files are marked public (what a system under test sees) or private (the answers and the numeric tolerances, which would reveal them). Hiding the exact curves (`show_latent: false`) turns figure-reading questions into inference questions. A design collects all of its runs' questions into `questions.jsonl` (public) and `qa.jsonl` (private).
+
+  Figure style and clutter are design factors: presets (`default`, `minimal`, `dense`, `print`, `presentation`) and knobs for palette (including grayscale and colour-blind safe), line and marker size, font size, log axes, tick density, legend placement, unrelated curves and stray numbers on the chart. `scidatasim.doe.cross_styles` draws every run of a design in several styles with the same seed, so data, questions and answers stay identical and only the picture changes; `scidatasim.diagnostics.style_gap` then measures a vision-language model's accuracy per style on matched items, separating perception errors from reasoning errors.
 * **Model fidelity labels.** Every model declares a fidelity level with a short reason, recorded in each run (see [Model fidelity](#model-fidelity-reference-and-deliberately-weak-models)).
 * **Exporters** (`scidatasim.export`):
   * questions as scored tasks (`tasks.jsonl`);

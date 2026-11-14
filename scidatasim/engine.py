@@ -157,7 +157,7 @@ class SimulatorEngine:
         if bundle_config:
             try:
                 record.bundle = build_bundle(experiment_dir, record, results, experiment_logic, model_config,
-                                             bundle_config, streams["bundle"])
+                                             bundle_config, streams["bundle"], streams["figure"])
             except Exception as e:
                 record.add_log_message(f"Bundle generation failed: {type(e).__name__}: {e}")
                 update_record_json(experiment_dir, record, "log_messages")

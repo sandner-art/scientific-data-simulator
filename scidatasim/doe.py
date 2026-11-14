@@ -158,6 +158,49 @@ class DesignRun:
     base_seed: Optional[int] = None
 
 
+def cross_styles(doe_table: pd.DataFrame, styles: Mapping[str, Mapping[str, Any]], replicates: int = 1,
+                 base_seed: Optional[int] = None, seed_mode: str = "per_row") -> pd.DataFrame:
+    """Draw every run of a design in several figure styles: same data, same questions, other pictures.
+
+    Each row of ``doe_table`` (times ``replicates``) gets its seed first; then it is repeated once
+    per style with that *same* seed, so the hidden values, the observations and the questions
+    are identical across styles and only the figure changes (bundle clutter draws from its own
+    stream). Comparing a vision-language model's accuracy across styles then measures
+    perception, holding reasoning fixed.
+
+    ``styles`` maps a name to bundle figure settings (``{"plain": {}, "busy": {"style": "dense"},
+    "grey": {"palette": "grayscale"}}``). The result has ``bundle.figure.<key>`` columns with each
+    style's effective values (preset included) and ``bundle.figure.variant`` = the style name;
+    the base config must have a ``bundle`` mapping. Pass it to :func:`run_design`.
+    """
+    from .bundle import DEFAULTS, FIGURE_STYLES, STYLE_KEYS
+    if not styles:
+        raise ValueError("styles must name at least one style")
+    data = add_replicates_and_seeds(doe_table, replicates, base_seed, seed_mode)
+    effective = {}
+    for name, settings in styles.items():
+        unknown = set(settings) - set(DEFAULTS["figure"])
+        if unknown:
+            raise ValueError(f"style {name!r}: unknown figure keys {sorted(unknown)}")
+        preset = settings.get("style", "default")
+        if preset not in FIGURE_STYLES:
+            raise ValueError(f"style {name!r}: unknown preset {preset!r}")
+        merged = {**{k: DEFAULTS["figure"][k] for k in STYLE_KEYS}, **FIGURE_STYLES[preset], **settings}
+        merged["variant"] = name
+        effective[name] = merged
+    keys = sorted({k for m in effective.values() for k in m} - {"style"})
+    rows = []
+    for record in data.to_dict("records"):  # keeps the seeds exact
+        for name, merged in effective.items():
+            row = dict(record)
+            row.update({f"bundle.figure.{k}": merged.get(k, DEFAULTS["figure"][k]) for k in keys})
+            rows.append(row)
+    table = pd.DataFrame(rows)
+    table["seed"] = table["seed"].astype(object)
+    table.attrs.update(data.attrs)
+    return table
+
+
 _DESIGN_META_COLUMNS = ("design_point", "replicate", "seed")
 
 
