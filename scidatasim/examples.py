@@ -13,8 +13,8 @@ Manifest fields::
     title: Law discovery from noisy data          # required
     summary: One sentence.                        # required
     entry: examples.example_10_law_discovery.run_experiment   # required: module run with -m
-    fields: [physics, mathematics]                # physics, mathematics, geometry, social,
-                                                  # economics, methods, ai
+    fields: [physics, mathematics]                # physics, mathematics, statistics, geometry,
+                                                  # social, economics, methods, ai
     level: research                               # student | research
     runtime: {full: 30 s, quick: 10 s}
     extras: [parquet]                             # pip extras it needs (beyond the core)
@@ -50,7 +50,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import yaml
 
-FIELDS = ("physics", "mathematics", "geometry", "social", "economics", "methods", "ai")
+FIELDS = ("physics", "mathematics", "statistics", "geometry", "social", "economics", "methods", "ai")
 LEVELS = ("student", "research")
 PARAM_TYPES = ("int", "float", "str", "flag", "choice")
 OUTPUT_KINDS = ("markdown", "image", "html", "table", "json", "text", "folder")

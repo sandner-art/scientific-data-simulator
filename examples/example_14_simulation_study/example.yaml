@@ -1,0 +1,13 @@
+title: A simulation study (ADEMP) with Monte Carlo standard errors
+summary: Three slope estimators under outliers and a detection limit - bias, empirical SE, MSE, coverage and model-SE error, each with its Monte Carlo SE.
+entry: examples.example_14_simulation_study.run_experiment
+fields: [statistics, methods]
+level: research
+runtime: {full: 10 s, quick: 3 s}
+quick_args: [--quick]
+params:
+  - {name: seed, arg: --seed, type: int, default: 14, help: base seed of the study}
+outputs:
+  - {path: report.md, kind: markdown}
+  - {path: performance.csv, kind: table}
+  - {path: study.json, kind: json}

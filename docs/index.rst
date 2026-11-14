@@ -557,6 +557,38 @@ Design of Experiments
 * ``run_parameter_sweep`` is a full-factorial convenience wrapper;
   ``append_results_to_doe_table`` flattens array outputs into columns.
 
+.. _ademp:
+
+Simulation Studies (ADEMP)
+==========================
+
+:mod:`scidatasim.ademp` compares statistical methods on simulated data in the
+structure of Morris, White and Crowther (2019): **A**ims; **D**ata-generating
+mechanisms (rows of a design table applied to any configuration, observation
+operators and law shifts included); **E**stimands (a parameter of each run's
+ground truth, a label output, or a function of the run); **M**ethods (functions
+that see only the run's observations and coordinates); and **P**erformance
+measures with Monte Carlo standard errors.
+
+.. code-block:: python
+
+    from scidatasim.ademp import Estimate, SimulationStudy, n_sim_for
+
+    study = SimulationStudy(aims="...", base_config=config, mechanisms=design,
+                            estimands={"slope": "m"}, methods={"ols": ols, "theil_sen": ts},
+                            n_sim=n_sim_for(0.01, "coverage"), base_seed=14)
+    result = study.run("study")        # estimates.csv, performance.csv, study.json, report.md
+    print(result.markdown())
+
+Measures: bias, relative bias, empirical SE, mean squared error, the relative
+error of the model-based SE, coverage, bias-eliminated coverage and the rejection
+rate (from a method's p-value, or a Wald test against ``null``), each with its
+Monte Carlo SE. Every method gets the same simulated data in a repetition, and
+each repetition's seed is recorded, so it can be re-run alone. Methods that raise
+or return no finite estimate are counted as failures per mechanism and left out
+of the measures. :func:`~scidatasim.ademp.n_sim_for` gives the number of
+repetitions for a target Monte Carlo SE. See ``examples/example_14_simulation_study``.
+
 .. _visualization:
 
 Visualization
