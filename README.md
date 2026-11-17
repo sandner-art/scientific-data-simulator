@@ -403,7 +403,7 @@ tools/            make_readme_figures.py (regenerates docs/images), ci_failures.
 
 If you use Scientific Data Simulator in your research, please cite it:
 
-> Sandner, D. (2026). Scientific Data Simulator (Version 0.7.0rc2.dev0) [Computer software]. https://github.com/sandner-art/scientific-data-simulator
+> Sandner, D. (2026). Scientific Data Simulator (Version 0.7.0rc2) [Computer software]. https://github.com/sandner-art/scientific-data-simulator
 
 Full citation metadata is in [`CITATION.cff`](https://github.com/sandner-art/scientific-data-simulator/blob/main/CITATION.cff).
 

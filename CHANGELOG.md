@@ -2,7 +2,9 @@
 
 Versions 0.2–0.6 were development steps; they were first released together in 0.7.0.
 
-## 0.7.0rc2 (unreleased)
+## 0.7.0rc2 (2026-11-17)
+
+Second release candidate, and the first on PyPI. Breaking: the import package is now `scidatasim` (see Changed).
 
 ### Changed
 - **The import package is now `scidatasim`** (was `simulator`, with the models in a separate top-level `experiments` package). Both names were generic enough to clash with other packages in the same environment. The models live in `scidatasim.experiments`; the PyPI distribution (`scientific-data-simulator`) and the `sds` command keep their names, and `python -m scidatasim` replaces `python -m simulator`. Configs and saved run records that name a model by its old path (`experiments.law_discovery.logic.HiddenLawExperiment`) still load, as long as no installed package of the old name provides it. Bundled models are no longer copied into OpenEnv packages, since they ship with the simulator.
