@@ -400,6 +400,18 @@ def prepare_output_dir(path: str) -> str:
     return path
 
 
+def missing_extras(example) -> List[str]:
+    """The example's extras whose packages are not importable (see ``sds doctor``)."""
+    import importlib.util
+    from .doctor import EXTRAS
+    missing = []
+    for extra in example.extras:
+        modules = EXTRAS.get(extra, ((),))[0]
+        if any(importlib.util.find_spec(m) is None for m in modules):
+            missing.append(extra)
+    return missing
+
+
 def run_example(example: Example, values: Optional[Mapping[str, Any]] = None, quick: bool = False,
                 output_dir: Optional[str] = None, timeout: Optional[float] = None,
                 on_line: Optional[Callable[[str], None]] = None, python: str = sys.executable) -> ExampleRun:

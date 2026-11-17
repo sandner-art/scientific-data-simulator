@@ -1,0 +1,12 @@
+title: Agent-based models with Mesa, and a planted effect to recover
+summary: Schelling segregation, an epidemic with a randomised trial, and wealth exchange - run through the Mesa adapter - then a simulation study of three estimators of the trial's planted treatment effect.
+entry: examples.example_15_agent_based.run_experiment
+fields: [social, economics, statistics, methods]
+level: research
+runtime: {full: 45 s, quick: 12 s}
+extras: [mesa]
+quick_args: [--quick]
+outputs:
+  - {path: report.md, kind: markdown}
+  - {path: study/report.md, kind: markdown}
+  - {path: runs, kind: folder}

@@ -589,6 +589,39 @@ or return no finite estimate are counted as failures per mechanism and left out
 of the measures. :func:`~scidatasim.ademp.n_sim_for` gives the number of
 repetitions for a target Monte Carlo SE. See ``examples/example_14_simulation_study``.
 
+.. _mesa:
+
+Agent-Based Models (Mesa)
+=========================
+
+:class:`scidatasim.adapters.mesa.MesaExperiment` runs any `Mesa
+<https://mesa.readthedocs.io>`_ model (Mesa 3.0 or newer, ``pip install
+"scientific-data-simulator[mesa]"``) as an experiment: the run's seed reaches the
+model, reporters become latent time series against ``step``, snapshots become
+arrays or fields, and the model parameters are the ground truth.
+
+.. code-block:: yaml
+
+    experiment_type: scidatasim.adapters.mesa.MesaExperiment
+    model: mymodels.city.CityModel     # constructor accepts rng= (or seed=)
+    model_params: {density: 0.8, homophily: 0.4}
+    n_steps: 100
+    reporters: {happy: n_happy, segregation: "mymodels.city:segregation_index"}
+    snapshots: {grid: grid_array}
+    stop_when_done: true
+
+:func:`scidatasim.adapters.mesa.init_mesa_model` passes the seed to Mesa as
+``rng`` or ``seed``, whichever the installed version takes. External models are
+labelled ``unverified``.
+
+The pack :mod:`scidatasim.experiments.social` adds three Mesa models with a
+planted effect, labelled ``reference`` (invariants and known results are
+tested): ``SegregationExperiment`` (``homophily``), ``EpidemicTrialExperiment``
+(a randomised trial inside an SIR epidemic; ``effect``, the relative reduction
+of infection risk per contact) and ``WealthExchangeExperiment`` (``saving``).
+Their bundles ask for the planted effect; example 15 compares estimators of the
+trial's effect in a simulation study.
+
 .. _visualization:
 
 Visualization

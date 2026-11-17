@@ -35,6 +35,7 @@ EXTRAS = {
     "hdf5": (("h5py",), "HDF5 storage and The Well export"),
     "units": (("pint",), "physical units in configs"),
     "validate": (("mlcroissant", "datasets"), "validating exported datasets"),
+    "mesa": (("mesa",), "agent-based models (Mesa adapter, social and economics pack)"),
 }
 #: package -> (minimum version, why): versions below these have known security problems
 SECURITY_FLOORS = {"pillow": ((13, 0), "CVE-2026-112900 and TIFF/JPEG memory bugs are fixed in Pillow 13.0")}

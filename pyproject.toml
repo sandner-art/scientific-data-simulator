@@ -60,6 +60,8 @@ hdf5 = ["h5py>=3.8"]
 the-well = ["h5py>=3.8", "pyyaml>=5.4"]
 # Physical units (unit-bearing parameters, unit checks of outputs).
 units = ["pint>=0.24"]
+# Agent-based models written with Mesa (scidatasim.adapters.mesa, the social pack).
+mesa = ["mesa>=3.0"]
 # Validate exported datasets (Croissant metadata, loading with datasets).
 validate = ["mlcroissant>=1.0", "datasets>=2.18"]
 # Using exported RL packages (writing them needs nothing extra). openenv and
@@ -67,8 +69,9 @@ validate = ["mlcroissant>=1.0", "datasets>=2.18"]
 openenv = ["openenv>=0.12"]
 verifiers = ["verifiers>=0.4.1"]
 docs = ["sphinx>=7", "sphinx-rtd-theme", "myst-parser"]
-dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido>=1.0", "plotly>=6.1.1", "pint>=0.24"]
-all = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24", "mlcroissant>=1.0", "datasets>=2.18"]
+dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido>=1.0", "plotly>=6.1.1", "pint>=0.24", "mesa>=3.0"]
+all = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24", "mlcroissant>=1.0", "datasets>=2.18",
+       "mesa>=3.0"]
 
 [project.urls]
 Homepage = "https://github.com/sandner-art/scientific-data-simulator"

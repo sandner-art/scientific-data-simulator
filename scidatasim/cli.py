@@ -121,7 +121,13 @@ def _cmd_check(args) -> int:
         if unknown:
             print(f"unknown example(s): {', '.join(unknown)}. Available: {', '.join(found)}", file=sys.stderr)
             return 2
+        from .examples import missing_extras
         for name in names:
+            absent = missing_extras(found[name])
+            if absent:  # not a failure: the example needs an optional part that is not installed
+                print(f"[skip] {name} (needs the extra(s) {', '.join(absent)}: "
+                      f"pip install \"scientific-data-simulator[{','.join(absent)}]\")")
+                continue
             with tempfile.TemporaryDirectory() as tmp:
                 run = run_example(found[name], quick=True, output_dir=tmp, timeout=args.timeout)
                 tail = ""

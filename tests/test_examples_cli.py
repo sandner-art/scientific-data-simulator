@@ -303,3 +303,14 @@ def test_runner_log_survives_an_example_that_cleans_its_folder(tmp_path):
     log = (tmp_path / "out" / "run.log").read_text(encoding="utf-8")
     assert log.strip(), "run.log was deleted while the example ran"
     assert (tmp_path / "out" / "run.json").exists()
+
+
+def test_quick_check_skips_examples_whose_extras_are_missing():
+    code = ("import sys, importlib.util as u\n"
+            "real = u.find_spec\n"
+            "u.find_spec = lambda n, *a, **k: None if n == 'mesa' else real(n, *a, **k)\n"
+            "from scidatasim.cli import main\n"
+            "sys.exit(main(['examples', 'check', '--run-quick', '--only', 'example_15_agent_based']))\n")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "[skip] example_15_agent_based" in result.stdout and "[mesa]" in result.stdout
