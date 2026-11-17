@@ -15,7 +15,10 @@ It is meant for situations where real data are unavailable, not yet available, o
 
 - validating analysis methods, fitting code and inference pipelines;
 - testing and training AI systems, including law discovery, parameter inference and noisy-data robustness;
+- auditing benchmarks and datasets for leaks, shortcuts and contamination before they are published;
 - teaching, and early-stage research before experiments exist.
+
+The bundled models cover physics, geometry and mathematics, and, through the Mesa adapter, agent-based models in social science, epidemiology and economics.
 
 The simulator does not try to be a general solver. It is an **observation-and-provenance layer** between a mechanism (yours, or a wrapped library) and whatever consumes the data.
 
@@ -34,6 +37,11 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
   * fields (images, stacks of frames): point-spread-function blur, a camera model (photon and read noise, saturation, ADC bits), pixel binning, vignetting and sub-pixel misregistration.
 
   Every setting is recorded, including noise levels derived from an SNR, outlier positions and the drawn calibration error.
+
+  ![One exact series observed with independent noise, correlated noise, drift and a calibration error, a detection limit, missing high values, and outliers](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/series_operators.png)
+
+
+  ![A 2-D field observed with point-spread blur, camera noise, vignetting and misregistration, binning, and dead and hot pixels](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/field_operators.png)
 * **Ground truth exported separately.** `ground_truth.json` and `data/ground_truth/` hold the answers, while `data/observation/` holds what a method under test gets to see.
 * **Counterfactual law shifts.** `law_shift:` changes a constant or swaps a functional form, recording both the original and the shifted law. Benchmarks built this way cannot be answered from memorised textbook equations.
 * **Provenance in every record:**
@@ -53,6 +61,8 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
   Models that describe a diagram (`figure_elements()`) get a geometric drawing instead of a chart, and can add their own exact questions (`questions()`). Files are marked public (what a system under test sees) or private (the answers and the numeric tolerances, which would reveal them). Hiding the exact curves (`show_latent: false`) turns figure-reading questions into inference questions. A design collects all of its runs' questions into `questions.jsonl` (public) and `qa.jsonl` (private).
 
   Figure style and clutter are design factors: presets (`default`, `minimal`, `dense`, `print`, `presentation`) and knobs for palette (including grayscale and colour-blind safe), line and marker size, font size, log axes, tick density, legend placement, unrelated curves and stray numbers on the chart. `scidatasim.doe.cross_styles` draws every run of a design in several styles with the same seed, so data, questions and answers stay identical and only the picture changes; `scidatasim.diagnostics.style_gap` then measures a vision-language model's accuracy per style on matched items, separating perception errors from reasoning errors.
+
+  ![The same run drawn in the default, minimal, dense and grayscale styles](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/figure_styles.png)
 * **Model fidelity labels.** Every model declares a fidelity level with a short reason, recorded in each run (see [Model fidelity](#model-fidelity-reference-and-deliberately-weak-models)).
 * **Exporters** (`scidatasim.export`):
   * questions as scored tasks (`tasks.jsonl`);
@@ -73,19 +83,26 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
   * units.
 
   `scidatasim.llm.draft_model` asks any LLM for a model, runs the checker in a separate time-limited process, and retries with the findings.
-* **Law discovery** (`scidatasim.experiments.law_discovery`). Hidden laws y = f(x) from nine families (power law, inverse power, exponential decay, logistic, Michaelis–Menten, Hill, damped oscillation, Gaussian peak, Arrhenius), each with a textbook or a *counterfactual* setting of its structural constants (e.g. an inverse-*2.3* law). Formula answers are scored by evaluating them on the data range and half of it beyond (`scidatasim.expressions`: a safe parser with no `eval`), so any equivalent form counts but a polynomial that only reproduces the observed curve does not; the tolerance follows the run's noise. A suite design, a classical curve-fitting baseline and an interactive formula-discovery environment come with it (example 10).
+* **Law discovery** (`scidatasim.experiments.law_discovery`). Hidden laws y = f(x) from nine families (power law, inverse power, exponential decay, logistic, Michaelis–Menten, Hill, damped oscillation, Gaussian peak, Arrhenius), each with a textbook or a *counterfactual* setting of its structural constants (e.g. an inverse-*2.3* law). Formula answers are scored by evaluating them on the data range and half of it beyond (`scidatasim.expressions`: a safe parser with no `eval`), so any equivalent form counts but a polynomial that only reproduces the observed curve does not; the tolerance follows the run's noise. A suite design, a classical curve-fitting baseline and an interactive formula-discovery environment come with it (example 10). Example 13 builds a frozen release of the suite to publish and cite.
+
+  ![A polynomial fitted to the data matches it but diverges beyond the data, where the formula is also scored; the fitted law passes](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/scorer_loophole.png)
 * **Leak audit** (`scidatasim.audit`). Before publishing, attack your own export: it tries seed replay, config-hash lookup, tolerance inversion, answer lookup in public files and exposure of hidden arrays, using the private runs as the answer key, and reports what would leak. `audit_environment` does the same for interactive environments.
 * **Agent-based models with Mesa** (`scidatasim.adapters.mesa`, example 15). Any [Mesa](https://mesa.readthedocs.io) model runs under the simulator's seeds, roles, observation operators, bundles, designs, audits and simulation studies, without being rewritten. A pack of three Mesa models with a planted effect covers social science (Schelling segregation), epidemiology and causal inference (an epidemic with a randomised trial inside it) and economics (wealth exchange with saving). `pip install "scientific-data-simulator[mesa]"`.
+
+  ![Schelling segregation before and after 40 steps, and the share infected in the treated and control arms of an epidemic trial](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/agent_based.png)
 * **Simulation studies** (`scidatasim.ademp`, example 14). Compare statistical methods on data with a known truth, in the ADEMP structure (aims, data-generating mechanisms, estimands, methods, performance measures): bias, empirical SE, MSE, coverage, model-SE error and rejection rate, each with its Monte Carlo standard error; methods see only the observations; every repetition's seed is recorded.
+
+  ![Bias of three estimators of a planted treatment effect, with 95 % Monte Carlo intervals: the attack-rate ratio is badly biased in large epidemics](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/simulation_study.png)
 * **Testbed diagnostics** (`scidatasim.diagnostics`, example 11). Because every hidden value is known and every run can be regenerated, the simulator can test benchmarks and agents: blind and metadata-only baselines (shortcut artefacts), a fitted-polynomial baseline for formula questions (scorer loopholes), a quality card (answer balance, position bias, duplicates), fresh twins and paired gap tests (contamination), canaries and canary probes, and agent-fallacy flags for interactive episodes (answering without evidence, ignoring one's own data, preferring a textbook law to the counterfactual one, narrow sampling, repeated experiments).
 * **Language models in defined roles** (`scidatasim.ai`, example 12). A model can play the agent in an environment, attack a release, rephrase questions or answer them. Every call is logged (role, model, settings, prompt, output) and can be replayed without the model. Rephrased questions are accepted only if they keep the numbers and options and add no answer. Answers always come from the simulator.
-* **Automatic plots.** matplotlib PNG and interactive Plotly HTML, driven by output descriptors; observed points are drawn over the latent curves. Static SVG/PDF export needs the optional `kaleido` package.
+* **Automatic plots.** matplotlib PNG, and interactive Plotly HTML with the `interactive-plots` extra, driven by output descriptors; observed points are drawn over the latent curves. Static SVG/PDF export of Plotly figures needs the optional `kaleido` package. The figures in this README are made by `tools/make_readme_figures.py`.
 
 ### Planned
 
 * Multi-variable and dynamical (ODE) law discovery; symbolic-regression baselines (e.g. PySR) as optional comparisons.
 * 3-D solids beyond the tetrahedron; dihedral angles.
-* Adapters: Mesa (agent-based), Exponax (PDE), FMPy (FMI models), MLflow/DVC tracking.
+* Adapters: Exponax (PDE), FMPy (FMI models), MLflow/DVC tracking; ingest adapters for external simulators (GalSim, multislice codes).
+* Generic inputs for the leak audit (any answer key) and the fallacy flags (any labelling log); metadata scanning of image and audio files.
 
 ## Installation
 
@@ -126,7 +143,9 @@ Optional extras (the profiles combine them):
 
 | Extra | Adds |
 |---|---|
+| `interactive-plots` | plotly ≥ 6.1.1, for interactive HTML plots |
 | `static-plots` | kaleido and plotly ≥ 6.1.1. Static SVG/PDF export also needs Chrome. |
+| `mesa` | Mesa ≥ 3.0, for agent-based models (the adapter and the social pack) |
 | `parquet`, `huggingface` | pyarrow |
 | `hdf5` | h5py |
 | `the-well` | h5py and PyYAML, to write The Well HDF5 (loading it needs `the_well` and PyTorch) |
@@ -135,7 +154,7 @@ Optional extras (the profiles combine them):
 | `openenv` | the OpenEnv library, to use exported RL packages |
 | `verifiers` | the verifiers library, to use exported RL packages |
 | `standard` | static-plots, parquet, hdf5 and units |
-| `all` | `standard` plus validate |
+| `all` | `standard` plus validate and mesa |
 
 Install `openenv` and `verifiers` in separate environments: their current releases pin incompatible versions of `mcp`.
 
@@ -353,6 +372,10 @@ experiments_output/<timestamp>_<experiment_id>/
 | n-simplex | `scidatasim.experiments.geometry.simplex.SimplexExperiment` | `reference`: simplices in 2–6 dimensions; volume (Cayley–Menger checked), facets, circum- and in-sphere; projected diagrams. |
 | Calibration overlay | `scidatasim.experiments.predator_prey_calibration.logic.PredatorPreyCalibrationExperiment` | overlays observed CSV data (manual calibration); fidelity as for Lotka–Volterra |
 | CSV summary | `scidatasim.experiments.data_analysis.logic.DataAnalysisExperiment` | `observed`: real data, recorded as `synthetic: false` |
+| Segregation (Mesa) | `scidatasim.experiments.social.logic.SegregationExperiment` | `reference`: Schelling; planted homophily; agents conserved, no moves at homophily 0 |
+| Epidemic trial (Mesa) | `scidatasim.experiments.social.logic.EpidemicTrialExperiment` | `reference`: SIR with a randomised trial; planted treatment effect; S + I + R and arms conserved |
+| Wealth exchange (Mesa) | `scidatasim.experiments.social.logic.WealthExchangeExperiment` | `reference`: kinetic exchange with saving; wealth conserved; Gini checked against the Gamma law |
+| Any Mesa model | `scidatasim.adapters.mesa.MesaExperiment` | `unverified`: wraps a Mesa model given by dotted path, with reporters and snapshots |
 
 ## Project structure
 
@@ -361,16 +384,19 @@ scidatasim/       engine.py, base.py, config.py, schema.py, rng.py, observation.
                   bundle.py, storage.py, persistence.py, provenance.py, experiment_record.py,
                   doe.py, data_handler.py, visualization.py, utils.py,
                   envs.py, units.py, checker.py, llm.py, expressions.py, audit.py,
+                  ademp.py (simulation studies),
                   cli.py (the sds command), doctor.py, examples.py (example manifests),
                   export/ (tasks, huggingface, sbi, rl, the_well),
-                  diagnostics/ (shortcuts, contamination, episodes, quality, stats),
+                  diagnostics/ (shortcuts, contamination, episodes, quality, perception, stats),
                   ai/ (clients, agent, attacker, writer, solver),
-                  experiments/ (bundled reference models, one package per model)
+                  adapters/ (mesa),
+                  experiments/ (bundled reference models, one package per model; social/ uses Mesa)
 examples/         runnable examples, each with an example.yaml manifest (sds examples list)
 scripts/          install, update and start-ui scripts for Windows (cmd, PowerShell), Linux and macOS
 ui/               the browser UI: a separate package (scientific-data-simulator-ui), sds ui
 tests/            pytest suite, incl. test_verification.py (numerical verification)
-docs/             Sphinx sources
+docs/             Sphinx sources; images/ holds the README figures
+tools/            make_readme_figures.py (regenerates docs/images), ci_failures.py (CI summary)
 ```
 
 ## Citation

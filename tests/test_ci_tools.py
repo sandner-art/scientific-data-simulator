@@ -73,3 +73,12 @@ def test_writes_utf8_even_on_a_cp1252_console(tmp_path):
     result = subprocess.run([sys.executable, SCRIPT, _report(tmp_path), "job"], capture_output=True, env=env)
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     assert "❌" in result.stdout.decode("utf-8")
+
+
+def test_readme_figures_still_build(tmp_path):
+    """tools/make_readme_figures.py uses the public API; the cheap figures must keep building."""
+    env = dict(os.environ, SDS_FIGURES_OUT=str(tmp_path))
+    result = subprocess.run([sys.executable, "-W", "ignore", os.path.join(ROOT, "tools", "make_readme_figures.py"),
+                             "--only", "loophole", "series", "fields"], capture_output=True, text=True, env=env)
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert {"scorer_loophole.png", "series_operators.png", "field_operators.png"} <= set(os.listdir(tmp_path))
