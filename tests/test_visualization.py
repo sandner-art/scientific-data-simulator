@@ -215,3 +215,46 @@ def test_plots_without_plotly(tmp_path):
     files = set(os.listdir(tmp_path))
     assert {"time_series_matplotlib.png", "histogram_matplotlib.png"} <= files
     assert not any(f.endswith(".html") for f in files)
+
+
+class _FlakyFigure:
+    """Stands in for a plotly figure whose static export fails the first ``failures`` times."""
+
+    def __init__(self, failures):
+        self.failures, self.calls = failures, 0
+
+    def write_image(self, path, format=None):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise RuntimeError("ReferenceError: kaleido_scopes is not defined")
+        with open(path, "w") as f:
+            f.write("<svg/>")
+
+
+def test_static_export_retries_once(tmp_path):
+    """kaleido 1.5.1 sometimes runs a figure before its page script has loaded; a retry recovers."""
+    from scidatasim.visualization import _write_static
+    failed = []
+    fig = _FlakyFigure(failures=1)
+    assert _write_static(fig, str(tmp_path / "a.svg"), "svg", failed)
+    assert fig.calls == 2 and failed == [] and (tmp_path / "a.svg").exists()
+    fig = _FlakyFigure(failures=5)
+    assert not _write_static(fig, str(tmp_path / "b.svg"), "svg", failed)
+    assert fig.calls == 2 and len(failed) == 1
+    assert "b.svg" in failed[0] and "kaleido_scopes" in failed[0]
+
+
+def test_failed_static_export_keeps_the_other_plots(example_results, tmp_path, monkeypatch):
+    """When every static export fails, the PNGs and HTML are still written and one error names the files."""
+    pytest.importorskip("plotly")
+    import plotly.basedatatypes as bdt
+
+    def broken(self, *args, **kwargs):
+        raise RuntimeError("no Chrome")
+
+    monkeypatch.setattr(bdt.BaseFigure, "write_image", broken)
+    with pytest.raises(RuntimeError) as err:
+        generate_plots(example_results, str(tmp_path))
+    assert "time_series_plotly.svg" in str(err.value) and "histogram_plotly.svg" in str(err.value)
+    for name in ("time_series_plotly.html", "histogram_plotly.html", "histogram_matplotlib.png"):
+        assert (tmp_path / name).exists(), name

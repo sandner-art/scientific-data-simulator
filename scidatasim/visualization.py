@@ -30,6 +30,26 @@ def _plotly():
         return None
     return px, go
 
+
+def _write_static(fig, path: str, static_format: str, failed: List[str], attempts: int = 2) -> bool:
+    """Write a static image of a plotly figure through kaleido and Chrome.
+
+    That route can fail for reasons outside the simulator: Chrome missing, or a race in kaleido
+    (1.5.1 sometimes ran a figure before its page script had loaded). The data and the HTML plot
+    are already written by then, so retry once, then note the file in ``failed`` and go on with
+    the other plots; ``generate_plots`` reports the failures together at the end.
+    """
+    error = None
+    for _ in range(attempts):
+        try:
+            fig.write_image(path, format=static_format)
+            return True
+        except Exception as e:  # kaleido raises RuntimeError subclasses; report, do not lose the run
+            error = e
+    failed.append(f"{os.path.basename(path)} ({type(error).__name__}: {str(error).strip()[:200]})")
+    return False
+
+
 def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_format: str = "svg"):
     """
     Generates plots based on the results and their DataDescriptors.
@@ -45,6 +65,8 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
         raise ValueError(f"Invalid static_format: {static_format}.  Must be one of None, 'svg', 'pdf', 'png', 'jpeg', 'webp'.")
 
 
+    failed: List[str] = []  # static exports that did not succeed
+
     # Group data items by their 'group' field
     grouped_data: Dict[str, List[Dict[str, Any]]] = {}
     for data_name, data_info in results.items():
@@ -55,7 +77,7 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
 
     for group_name, data_list in grouped_data.items():
         if group_name == "time_series":
-            _time_series_plot(results, group_name, data_list, output_dir, static_format)
+            _time_series_plot(results, group_name, data_list, output_dir, static_format, failed)
 
         elif group_name == 'histogram':
             # Matplotlib
@@ -91,16 +113,20 @@ def generate_plots(results: Dict[str, Dict[str, Any]], output_dir: str, static_f
                               opacity=0.7) # transparency
             fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
             if static_format:
-                # Explicitly set mathjax to None when using a static renderer
-                fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
+                _write_static(fig, os.path.join(output_dir, f"{group_name}_plotly.{static_format}"),
+                              static_format, failed)
 
         # Add support for other groups as needed
 
     # Add combined plot for Predator-Prey (and similar scenarios)
     if "prey_population" in results and "predator_population" in results:
-        _generate_combined_plot(results, output_dir, static_format) # Pass static_format
+        _generate_combined_plot(results, output_dir, static_format, failed)
 
-def _time_series_plot(results, group_name, data_list, output_dir, static_format):
+    if failed:
+        raise RuntimeError("static plot export failed for " + "; ".join(failed)
+                           + ". The data and the other plots are written; `sds doctor` checks kaleido and Chrome.")
+
+def _time_series_plot(results, group_name, data_list, output_dir, static_format, failed):
     """Plot each line/scatter series of the group against its own x axis
     (``descriptor.x_axis``, default ``time``). Observed series that were
     sampled at a subset of points carry their own coordinate, so latent and
@@ -159,11 +185,13 @@ def _time_series_plot(results, group_name, data_list, output_dir, static_format)
                       yaxis_title="Value", legend_title_text="Series")
     fig.write_html(os.path.join(output_dir, f"{group_name}_plotly.html"))
     if static_format:
-        fig.write_image(os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), format=static_format)
+        _write_static(fig, os.path.join(output_dir, f"{group_name}_plotly.{static_format}"), static_format, failed)
 
 
-def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str, static_format: str = "svg"):
+def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str, static_format: str = "svg",
+                            failed: List[str] = None):
     """Generates a combined plot of prey and predator populations."""
+    failed = [] if failed is None else failed
 
     # Matplotlib
     figure = Figure()
@@ -210,5 +238,5 @@ def _generate_combined_plot(results: Dict[str, Dict[str, Any]], output_dir: str,
                     title="Predator-Prey Population Dynamics")
     fig.write_html(os.path.join(output_dir, "combined_populations_plotly.html"))
     if static_format:
-      # Explicitly set mathjax to None when using a static renderer
-      fig.write_image(os.path.join(output_dir, f"combined_populations_plotly.{static_format}"), format=static_format)
+        _write_static(fig, os.path.join(output_dir, f"combined_populations_plotly.{static_format}"),
+                      static_format, failed)

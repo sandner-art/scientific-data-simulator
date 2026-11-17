@@ -46,10 +46,11 @@ sds = "scidatasim.cli:main"
 
 [project.optional-dependencies]
 # Install profiles used by scripts/install.*: core (no extra), standard, all, dev.
-standard = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24"]
+standard = ["kaleido>=1.0,!=1.5.1", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24"]
 # Static export of plotly figures (svg/pdf/png). Kaleido >= 1.0 needs a Chrome install
-# and plotly >= 6.1.1 (older plotly prints deprecation warnings about 'engine').
-static-plots = ["kaleido>=1.0", "plotly>=6.1.1"]
+# and plotly >= 6.1.1 (older plotly prints deprecation warnings about 'engine'). kaleido 1.5.1
+# sometimes runs a figure before its page script has loaded ('kaleido_scopes is not defined').
+static-plots = ["kaleido>=1.0,!=1.5.1", "plotly>=6.1.1"]
 # Interactive HTML plots next to the matplotlib PNGs.
 interactive-plots = ["plotly>=6.1.1"]
 # Columnar storage of DataFrame outputs; Hugging Face dataset export.
@@ -69,8 +70,8 @@ validate = ["mlcroissant>=1.0", "datasets>=2.18"]
 openenv = ["openenv>=0.12"]
 verifiers = ["verifiers>=0.4.1"]
 docs = ["sphinx>=7", "sphinx-rtd-theme", "myst-parser"]
-dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido>=1.0", "plotly>=6.1.1", "pint>=0.24", "mesa>=3.0"]
-all = ["kaleido>=1.0", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24", "mlcroissant>=1.0", "datasets>=2.18",
+dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido>=1.0,!=1.5.1", "plotly>=6.1.1", "pint>=0.24", "mesa>=3.0"]
+all = ["kaleido>=1.0,!=1.5.1", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24", "mlcroissant>=1.0", "datasets>=2.18",
        "mesa>=3.0"]
 
 [project.urls]

@@ -185,11 +185,21 @@ def run_checks(output_dir: str = "experiments_output", plots: bool = False) -> L
         if plots and _version("kaleido") is not None and _version("plotly") is not None:
             try:
                 import plotly.graph_objects as go
-                go.Figure(go.Scatter(y=[1, 3, 2])).write_image(os.path.join(tmp, "probe.png"))
-                checks.append(Check("static plot export", OK, "PNG written"))
+                from .visualization import _write_static
+                failed: list = []
+                fig = go.Figure(go.Scatter(y=[1, 3, 2]))
+                if not _write_static(fig, os.path.join(tmp, "probe.png"), "png", failed):
+                    raise RuntimeError(failed[0])
+                if _version("kaleido") == "1.5.1":
+                    checks.append(Check("static plot export", WARN, "PNG written, but kaleido 1.5.1 fails "
+                                        "now and then ('kaleido_scopes is not defined')",
+                                        'pip install "kaleido>=1.0,!=1.5.1"'))
+                else:
+                    checks.append(Check("static plot export", OK, "PNG written"))
             except Exception as e:
                 checks.append(Check("static plot export", WARN, f"{type(e).__name__}: {e}",
-                                    "install Chrome, or run: plotly_get_chrome"))
+                                    "install Chrome (or run: plotly_get_chrome); kaleido 1.5.1 has a "
+                                    "known race, upgrade or downgrade it"))
     return checks
 
 

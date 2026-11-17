@@ -124,7 +124,7 @@ def series_operators():
         if limit is not None:
             ax.axhline(limit, color=ORANGE, lw=1.2, ls=(0, (4, 2)))
             ax.text(9.9, limit - 0.15, "limit", color=INK2, fontsize=8, ha="right", va="top")
-        ax.set_title(title, fontsize=9.5)
+        ax.set_title(title, fontsize=9.5, pad=10)
     axes[0, 0].text(6.6, 1.0, "grey: exact\nblue: observed", color=INK2, fontsize=8)
     fig.suptitle("The measurement model: the same exact series, observed six ways", x=0.01, ha="left",
                  fontweight="bold", fontsize=11)
@@ -143,14 +143,14 @@ def field_operators():
         exact += 0.85 * np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * r ** 2))
     panels = [
         ("Exact field", []),
-        ("Point-spread blur (sigma 2 px)", [{"type": "psf_blur", "sigma": 2.0}]),
-        ("Camera: photon and read noise, 8 bit", [{"type": "detector", "scale": 60, "read_noise": 4, "bits": 8}]),
-        ("Vignetting and misregistration", [{"type": "vignetting", "strength": 0.45},
-                                           {"type": "shift", "dx": 6.5, "dy": -4.0}]),
+        ("Blur, sigma 2 px", [{"type": "psf_blur", "sigma": 2.0}]),
+        ("Photon + read noise, 8 bit", [{"type": "detector", "scale": 60, "read_noise": 4, "bits": 8}]),
+        ("Vignetting + shift", [{"type": "vignetting", "strength": 0.45},
+                                {"type": "shift", "dx": 6.5, "dy": -4.0}]),
         ("Binned 4 x 4", [{"type": "bin", "factor": 4}]),
         ("Dead and hot pixels", [{"type": "missing", "rate": 0.02}, {"type": "outliers", "rate": 0.01, "scale": 8}]),
     ]
-    fig = Figure(figsize=(8.2, 5.9))
+    fig = Figure(figsize=(8.2, 6.3))
     axes = fig.subplots(2, 3)
     cmap = SEQUENTIAL.copy()
     cmap.set_bad("#e34948")
@@ -159,7 +159,7 @@ def field_operators():
         data = exact if not ops else apply_observation(results, {"targets": ["u"], "operators": ops},
                                                        np.random.default_rng(3))[0]["u_observed"]["data"]
         ax.imshow(np.ma.masked_invalid(data), cmap=cmap, vmin=0, vmax=1.1, interpolation="nearest")
-        ax.set_title(title, fontsize=9.5)
+        ax.set_title(title, fontsize=9.5, pad=10)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.grid(False)
@@ -167,7 +167,7 @@ def field_operators():
             side.set_visible(False)
     fig.suptitle("Fields are observed like a camera sees them (dead pixels in red)", x=0.01, ha="left",
                  fontweight="bold", fontsize=11)
-    fig.tight_layout()
+    fig.tight_layout(h_pad=2.2, w_pad=1.2)  # room between a panel's title and the image above it
     save(fig, "field_operators.png")
 
 
@@ -209,11 +209,11 @@ def agent_based():
     fig = Figure(figsize=(10.5, 3.6))
     gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1.5])
     groups = ListedColormap([SURFACE, BLUE, ORANGE])
-    for i, (sim, title) in enumerate(((seg0, "Schelling: start"), (seg, "after 40 steps (homophily 0.45)"))):
+    for i, (sim, title) in enumerate(((seg0, "Schelling, start"), (seg, "After 40 steps"))):
         ax = fig.add_subplot(gs[0, i])
         ax.imshow(sim.results["grid"]["data"] + 1, cmap=groups, vmin=0, vmax=2, interpolation="nearest")
         share = sim.results["segregation"]["data"][-1]
-        ax.set_title(f"{title}\nsimilar neighbours {share:.0%}", fontsize=9.5)
+        ax.set_title(f"{title}: {share:.0%} similar", fontsize=9.5, pad=10)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.grid(False)
@@ -229,10 +229,11 @@ def agent_based():
     ax.set_ylim(0, 1)
     ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
     ax.set_xlabel("step")
-    ax.set_title("Epidemic with a randomised trial: share infected", fontsize=9.5)
+    ax.set_title("Epidemic with a randomised trial: share infected", fontsize=9.5, pad=10)
     fig.suptitle("Agent-based models with Mesa, each with a planted effect", x=0.01, ha="left",
                  fontweight="bold", fontsize=11)
-    fig.text(0.01, -0.02, "Schelling grids: blue majority, orange minority, white empty.", color=INK2, fontsize=8.5)
+    fig.text(0.01, -0.02, "Schelling grids (homophily 0.45): blue majority, orange minority, white empty; "
+             "'similar' is the average share of like neighbours.", color=INK2, fontsize=8.5)
     fig.tight_layout()
     save(fig, "agent_based.png")
 
@@ -272,7 +273,7 @@ def simulation_study():
     for name in methods:  # direct labels on the third row, where the estimators are far apart
         part = row[row["method"] == name]
         b, m = float(part["bias"].iloc[0]), float(part["bias_mcse"].iloc[0])
-        ax.annotate(name, (b - 1.96 * m, 2 + offsets[name]), xytext=(-6, 0), textcoords="offset points",
+        ax.annotate(name, (b - 1.96 * m, 2 + offsets[name]), xytext=(-10, 0), textcoords="offset points",
                     va="center", ha="right", fontsize=8, color=INK)
     ax.text(0.0, -0.62, " no bias", color=INK2, fontsize=8, va="bottom")
     save(fig, "simulation_study.png")

@@ -27,6 +27,10 @@ Second release candidate, and the first on PyPI. Breaking: the import package is
 - `scidatasim.diagnostics.approximator_baseline` and `polynomial_formula`: a polynomial fitted to each run's observations, submitted as the formula answer. If it passes, the score rewards curve fitting, not the law (a scorer loophole). Example 11 reports it under the old and the current rule.
 - `scidatasim.experiments.law_discovery.logic`: `fit_law`, `law_function`, `achievable_tolerance`; `scidatasim.expressions.compile_expression` (parse once, evaluate many times).
 
+### Fixed
+- **Static plot export no longer fails with kaleido 1.5.1.** That release (12 November) sometimes runs a figure before its page script has loaded (`ReferenceError: kaleido_scopes is not defined`), which failed SVG tests on the Ubuntu and Windows runners. The extras now exclude it (`kaleido>=1.0,!=1.5.1`), each static export is retried once, and a failure no longer stops the remaining plots: the PNGs and HTML are written and one error names the files that failed (logged in the run record, as before). `sds doctor` warns when kaleido 1.5.1 is installed.
+- README figures: panel titles no longer touch or overrun the images (field operators, Schelling grids), and the direct labels in the simulation-study figure keep clear of their intervals.
+
 ## 0.7.0rc1 (2026-11-09)
 
 Release candidate for 0.7.0, the first release since the 0.1.0 prototype.
