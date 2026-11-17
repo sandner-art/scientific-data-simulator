@@ -6,7 +6,7 @@ import re
 from importlib import metadata
 from typing import Dict, Iterable, Optional
 
-DISTRIBUTION_NAME = "scientific-data-simulator"
+DISTRIBUTION_NAME = "scidatasim"
 
 # Used when the package itself is not installed (e.g. running from a checkout).
 _FALLBACK_PACKAGES = ("numpy", "scipy", "pandas", "pyyaml", "python-dotenv", "pydantic",

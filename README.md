@@ -87,7 +87,7 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
 
   ![A polynomial fitted to the data matches it but diverges beyond the data, where the formula is also scored; the fitted law passes](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/scorer_loophole.png)
 * **Leak audit** (`scidatasim.audit`). Before publishing, attack your own export: it tries seed replay, config-hash lookup, tolerance inversion, answer lookup in public files and exposure of hidden arrays, using the private runs as the answer key, and reports what would leak. `audit_environment` does the same for interactive environments.
-* **Agent-based models with Mesa** (`scidatasim.adapters.mesa`, example 15). Any [Mesa](https://mesa.readthedocs.io) model runs under the simulator's seeds, roles, observation operators, bundles, designs, audits and simulation studies, without being rewritten. A pack of three Mesa models with a planted effect covers social science (Schelling segregation), epidemiology and causal inference (an epidemic with a randomised trial inside it) and economics (wealth exchange with saving). `pip install "scientific-data-simulator[mesa]"`.
+* **Agent-based models with Mesa** (`scidatasim.adapters.mesa`, example 15). Any [Mesa](https://mesa.readthedocs.io) model runs under the simulator's seeds, roles, observation operators, bundles, designs, audits and simulation studies, without being rewritten. A pack of three Mesa models with a planted effect covers social science (Schelling segregation), epidemiology and causal inference (an epidemic with a randomised trial inside it) and economics (wealth exchange with saving). `pip install "scidatasim[mesa]"`.
 
   ![Schelling segregation before and after 40 steps, and the share infected in the treated and control arms of an epidemic trial](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/agent_based.png)
 * **Simulation studies** (`scidatasim.ademp`, example 14). Compare statistical methods on data with a known truth, in the ADEMP structure (aims, data-generating mechanisms, estimands, methods, performance measures): bias, empirical SE, MSE, coverage, model-SE error and rejection rate, each with its Monte Carlo standard error; methods see only the observations; every repetition's seed is recorded.
@@ -130,6 +130,13 @@ By hand, on any system:
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e ".[standard]"       # or: pip install -e .   /   ".[dev]"
+sds doctor
+```
+
+From PyPI, without a checkout (release candidates need `--pre`):
+
+```bash
+pip install --pre "scidatasim[standard]"     # the browser UI: pip install --pre scidatasim-ui
 sds doctor
 ```
 
@@ -393,7 +400,7 @@ scidatasim/       engine.py, base.py, config.py, schema.py, rng.py, observation.
                   experiments/ (bundled reference models, one package per model; social/ uses Mesa)
 examples/         runnable examples, each with an example.yaml manifest (sds examples list)
 scripts/          install, update and start-ui scripts for Windows (cmd, PowerShell), Linux and macOS
-ui/               the browser UI: a separate package (scientific-data-simulator-ui), sds ui
+ui/               the browser UI: a separate package (scidatasim-ui), sds ui
 tests/            pytest suite, incl. test_verification.py (numerical verification)
 docs/             Sphinx sources; images/ holds the README figures
 tools/            make_readme_figures.py (regenerates docs/images), ci_failures.py (CI summary)

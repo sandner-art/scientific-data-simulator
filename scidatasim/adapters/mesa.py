@@ -22,7 +22,7 @@ take it, else as ``seed``), drawn from the run's model stream, so a run is repro
 recorded seed. Reporters must give numbers; snapshots give arrays. The parameters are the ground
 truth; outputs are latent (exact) values, to be observed through ``observation`` operators.
 Mesa models from elsewhere are labelled ``unverified``: no verification tests are registered for
-them here. Mesa 3.0 or newer is needed (``pip install "scientific-data-simulator[mesa]"``).
+them here. Mesa 3.0 or newer is needed (``pip install "scidatasim[mesa]"``).
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _mesa():
     try:
         import mesa
     except ImportError as e:  # pragma: no cover - exercised only without the extra
-        raise ImportError('Mesa models need Mesa 3: pip install "scientific-data-simulator[mesa]"') from e
+        raise ImportError('Mesa models need Mesa 3: pip install "scidatasim[mesa]"') from e
     major = int(str(mesa.__version__).split(".")[0])
     if major < 3:
         raise ImportError(f"Mesa {mesa.__version__} is too old: the adapter needs Mesa 3 or newer")

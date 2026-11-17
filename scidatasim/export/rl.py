@@ -64,7 +64,7 @@ from .tasks import collect_bundle_tasks
 DEFAULT_SIMULATOR_SOURCE = "git+https://github.com/sandner-art/scientific-data-simulator.git"
 OPENENV_REQUIREMENT = "openenv>=0.12"
 VERIFIERS_REQUIREMENT = "verifiers>=0.4.1"
-SIMULATOR_DISTRIBUTION = "scientific-data-simulator"
+SIMULATOR_DISTRIBUTION = "scidatasim"
 
 SpecLike = Union[ExperimentTaskSpec, Dict[str, Any], str, "os.PathLike[str]"]
 

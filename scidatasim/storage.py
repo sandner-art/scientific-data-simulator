@@ -70,7 +70,7 @@ def resolve_storage_config(storage: Optional[Dict[str, Any]]) -> Dict[str, str]:
         try:
             import h5py  # noqa: F401
         except ImportError:
-            raise ImportError("storage.format 'hdf5' needs h5py: pip install 'scientific-data-simulator[hdf5]'") from None
+            raise ImportError("storage.format 'hdf5' needs h5py: pip install 'scidatasim[hdf5]'") from None
     return {"format": fmt, "dataframes": dfs}
 
 

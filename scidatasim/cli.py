@@ -7,7 +7,7 @@
     sds examples run NAME [--quick] [--set name=value ...] [--output DIR] [--timeout S]
     sds examples check [--run-quick] [--only NAME ...]   validate manifests (and run quick modes)
     sds run CONFIG.yaml [--output DIR]   run one experiment configuration
-    sds ui [--port N] [--runs-dir DIR]    start the UI (the separate scientific-data-simulator-ui package)
+    sds ui [--port N] [--runs-dir DIR]    start the UI (the separate scidatasim-ui package)
 """
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ def _cmd_check(args) -> int:
             absent = missing_extras(found[name])
             if absent:  # not a failure: the example needs an optional part that is not installed
                 print(f"[skip] {name} (needs the extra(s) {', '.join(absent)}: "
-                      f"pip install \"scientific-data-simulator[{','.join(absent)}]\")")
+                      f"pip install \"scidatasim[{','.join(absent)}]\")")
                 continue
             with tempfile.TemporaryDirectory() as tmp:
                 run = run_example(found[name], quick=True, output_dir=tmp, timeout=args.timeout)

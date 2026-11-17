@@ -17,7 +17,7 @@ conserved) and known results (no moves with homophily 0; nobody treated is infec
 the wealth distribution's Gini against the Gamma law of Patriarca, Chakraborti and Kaski).
 
 ```bash
-pip install "scientific-data-simulator[mesa]"       # Mesa 3.0 or newer
+pip install "scidatasim[mesa]"       # Mesa 3.0 or newer
 python -m examples.example_15_agent_based.run_experiment           # about 45 s
 python -m examples.example_15_agent_based.run_experiment --quick   # about 12 s
 ```

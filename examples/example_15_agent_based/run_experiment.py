@@ -20,7 +20,7 @@ removes most of that.
     python -m examples.example_15_agent_based.run_experiment           # about 45 s
     python -m examples.example_15_agent_based.run_experiment --quick   # about 12 s
 
-Needs Mesa: pip install "scientific-data-simulator[mesa]".
+Needs Mesa: pip install "scidatasim[mesa]".
 """
 import argparse
 import json

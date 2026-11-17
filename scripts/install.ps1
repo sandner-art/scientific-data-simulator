@@ -65,6 +65,8 @@ if (-not (Test-Path ".venv")) {
 $extras = if ($Setup -eq "core") { "" } elseif ($Setup -eq "ui") { "[standard]" } else { "[$Setup]" }
 Write-Host "Installing profile '$Setup' ..."
 & $venvPython -m pip install --upgrade pip | Out-Null
+# the PyPI names were scientific-data-simulator(-ui) before 0.7.0rc2; drop them so one install remains
+& $venvPython -m pip uninstall -y -qq scientific-data-simulator scientific-data-simulator-ui
 & $venvPython -m pip install -e ".$extras"
 if ($LASTEXITCODE -ne 0) { Write-Host "pip install failed." -ForegroundColor Red; exit 1 }
 if ($Setup -eq "ui") {

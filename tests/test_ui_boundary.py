@@ -40,7 +40,7 @@ def test_versions_move_together():
     with open(os.path.join(ROOT, "ui", "sds_ui", "__init__.py"), encoding="utf-8") as f:
         assert f'__version__ = "{root}"' in f.read()
     with open(os.path.join(ROOT, "ui", "pyproject.toml"), encoding="utf-8") as f:
-        assert f'"scientific-data-simulator>={root}"' in f.read()
+        assert f'"scidatasim>={root}"' in f.read()
 
 
 def test_sds_ui_routing_and_missing_ui(monkeypatch, capsys):

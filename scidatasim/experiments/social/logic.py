@@ -5,7 +5,7 @@ Each wraps a model of :mod:`scidatasim.experiments.social.models` through
 :class:`scidatasim.adapters.mesa.MesaExperiment`. The planted effect is a parameter of the config
 (``homophily``, ``effect``, ``saving``); designs vary it, bundles ask for it back, and simulation
 studies (:mod:`scidatasim.ademp`) compare estimators of it. Needs ``pip install
-"scientific-data-simulator[mesa]"``.
+"scidatasim[mesa]"``.
 
     experiment_type: scidatasim.experiments.social.logic.EpidemicTrialExperiment
     n_steps: 120

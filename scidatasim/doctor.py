@@ -67,7 +67,7 @@ def install_hint(extra: str = "") -> str:
     editable from a checkout, or from PyPI."""
     if _from_checkout():
         return f'pip install -e ".[{extra}]"' if extra else "pip install -e ."
-    return f'pip install "scientific-data-simulator[{extra}]"' if extra else "pip install --force-reinstall scientific-data-simulator"
+    return f'pip install "scidatasim[{extra}]"' if extra else "pip install --force-reinstall scidatasim"
 
 
 def _version(module: str) -> Optional[str]:

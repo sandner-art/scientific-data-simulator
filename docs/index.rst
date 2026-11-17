@@ -320,7 +320,7 @@ clustered by run.
 Physical Units
 ==============
 
-With ``pip install "scientific-data-simulator[units]"`` (pint), a model can
+With ``pip install "scidatasim[units]"`` (pint), a model can
 declare the units it computes in::
 
     class OscillatorExperiment(ExperimentLogic):
@@ -596,7 +596,7 @@ Agent-Based Models (Mesa)
 
 :class:`scidatasim.adapters.mesa.MesaExperiment` runs any `Mesa
 <https://mesa.readthedocs.io>`_ model (Mesa 3.0 or newer, ``pip install
-"scientific-data-simulator[mesa]"``) as an experiment: the run's seed reaches the
+"scidatasim[mesa]"``) as an experiment: the run's seed reaches the
 model, reporters become latent time series against ``step``, snapshots become
 arrays or fields, and the model parameters are the ground truth.
 

@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scientific-data-simulator"
+name = "scidatasim"
 version = "0.7.0rc2"
 description = "Reproducible, provenance-first generation of simulated scientific reference data."
 readme = "README.md"

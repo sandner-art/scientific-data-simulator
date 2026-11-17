@@ -75,6 +75,8 @@ fi
 
 echo "Installing profile '$PROFILE' ..."
 .venv/bin/python -m pip install --upgrade pip >/dev/null
+# the PyPI names were scientific-data-simulator(-ui) before 0.7.0rc2; drop them so one install remains
+.venv/bin/python -m pip uninstall -y -qq scientific-data-simulator scientific-data-simulator-ui || true
 .venv/bin/python -m pip install -e ".$EXTRAS"
 if [ "$PROFILE" = "ui" ]; then
   .venv/bin/python -m pip install -e ./ui

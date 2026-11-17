@@ -10,7 +10,7 @@ def _find_version() -> str:
     try:
         with open(pyproject, encoding="utf-8") as f:
             text = f.read()
-        if 'name = "scientific-data-simulator"' in text:
+        if 'name = "scidatasim"' in text:
             match = _re.search(r'^version\s*=\s*"([^"]+)"', text, flags=_re.M)
             if match:
                 return match.group(1)
@@ -19,7 +19,7 @@ def _find_version() -> str:
     try:
         from importlib.metadata import PackageNotFoundError, version
         try:
-            return version("scientific-data-simulator")
+            return version("scidatasim")
         except PackageNotFoundError:
             return "unknown"
     except ImportError:  # pragma: no cover

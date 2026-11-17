@@ -151,7 +151,7 @@ def _require_pyarrow():
         import pyarrow.parquet as pq
     except ImportError:
         raise ImportError("export_huggingface writes Parquet and needs pyarrow: "
-                          "pip install 'scientific-data-simulator[parquet]'") from None
+                          "pip install 'scidatasim[parquet]'") from None
     return pa, pq
 
 

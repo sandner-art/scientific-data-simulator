@@ -25,7 +25,7 @@ def _plotly():
     except ImportError:
         if not _PLOTLY_MISSING_LOGGED:
             logger.info("plotly is not installed: interactive HTML plots are skipped "
-                        "(pip install 'scientific-data-simulator[standard]')")
+                        "(pip install 'scidatasim[standard]')")
             _PLOTLY_MISSING_LOGGED = True
         return None
     return px, go

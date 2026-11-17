@@ -33,7 +33,7 @@ lists every version; versions 0.2–0.6 were development steps, not separate rel
    - set the version (no `.dev0`; a release candidate is e.g. `0.7.0rc2`) in `pyproject.toml`,
      `CITATION.cff` (`version`, `date-released`), `docs/conf.py` and the README's citation line
      (also its year), and the same version in `ui/pyproject.toml` (also its
-     `scientific-data-simulator>=` floor) and `ui/sds_ui/__init__.py`; the tests check they agree;
+     `scidatasim>=` floor) and `ui/sds_ui/__init__.py`; the tests check they agree;
    - date the changelog section;
    - run `pytest`, `pytest ui/tests` and `sds examples check --run-quick`.
 2. Open a pull request into `main`. CI must pass on all three systems, including the
@@ -50,8 +50,9 @@ lists every version; versions 0.2–0.6 were development steps, not separate rel
 
 ## PyPI
 
-`.github/workflows/publish.yml` builds both packages (`scientific-data-simulator` and
-`scientific-data-simulator-ui`), checks them with `twine check --strict`, installs the two wheels in
+`.github/workflows/publish.yml` builds both packages (`scidatasim` and
+`scidatasim-ui`; the repository keeps its
+longer name), checks them with `twine check --strict`, installs the two wheels in
 a clean environment and runs `sds doctor`, then uploads them with *trusted publishing*: GitHub
 proves to PyPI which workflow is uploading, so no token is stored anywhere.
 
@@ -60,9 +61,11 @@ One-time setup:
 1. Create accounts on [pypi.org](https://pypi.org) and [test.pypi.org](https://test.pypi.org)
    (two-factor authentication is required).
 2. On each site, under *Account* > *Publishing*, add a **pending publisher** for each of the two
-   project names: owner `sandner-art`, repository `scientific-data-simulator`, workflow
-   `publish.yml`, environment `pypi` (on test.pypi.org: `testpypi`). The first upload then creates
-   the project.
+   project names, `scidatasim` and `scidatasim-ui`: owner `sandner-art`, repository
+   `scientific-data-simulator`, workflow `publish.yml`, environment `pypi` (on test.pypi.org:
+   `testpypi`). The project name must be the `name` in `pyproject.toml` (`ui/pyproject.toml`),
+   or the upload is refused. The first upload then creates the project; until then a pending
+   publisher does not reserve the name.
 3. In the GitHub repository, *Settings* > *Environments*: create `pypi` and `testpypi`. Give `pypi`
    a required reviewer (yourself), so nothing reaches PyPI without your click.
 
@@ -73,7 +76,7 @@ Each release:
 
    ```bash
    pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
-       "scientific-data-simulator==X.Y.Z"
+       "scidatasim==X.Y.Z"
    ```
 
 2. **Publish.** Publishing the GitHub release (step 4 above) runs the workflow again and, after

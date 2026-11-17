@@ -148,9 +148,9 @@ def test_openenv_manifest_and_pyproject(tmp_path):
     assert project["project"]["requires-python"] == ">=3.10"
     deps = project["project"]["dependencies"]
     assert any(d.startswith("openenv") for d in deps)
-    assert "scientific-data-simulator" in deps
+    assert "scidatasim" in deps
     assert project["project"]["scripts"]["server"] == "lv_env.server.app:main"
-    assert project["tool"]["uv"]["sources"]["scientific-data-simulator"]["git"].startswith("https://github.com/")
+    assert project["tool"]["uv"]["sources"]["scidatasim"]["git"].startswith("https://github.com/")
     assert "spec.json" in project["tool"]["setuptools"]["package-data"]["lv_env"]
 
 
@@ -166,12 +166,12 @@ def test_openenv_simulator_source(tmp_path, source):
         requirements = f.read()
     if source is None:
         assert sources == {}
-        assert "scientific-data-simulator\n" in requirements
+        assert "scidatasim\n" in requirements
     elif source == ROOT:
-        assert sources["scientific-data-simulator"] == {"path": ROOT, "editable": True}
+        assert sources["scidatasim"] == {"path": ROOT, "editable": True}
         assert f"-e {ROOT}" in requirements
     else:
-        assert sources["scientific-data-simulator"] == {"git": "https://example.org/sds.git", "rev": "v1.2"}
+        assert sources["scidatasim"] == {"git": "https://example.org/sds.git", "rev": "v1.2"}
 
 
 def test_openenv_spec_json_drives_experiment_env(tmp_path):
@@ -249,7 +249,7 @@ def test_verifiers_package_layout(bundle_runs, tmp_path):
     assert project["project"]["name"] == "lv-qa"
     assert project["project"]["requires-python"] == ">=3.11"
     deps = project["project"]["dependencies"]
-    assert any(d.startswith("verifiers") for d in deps) and "scientific-data-simulator" in deps
+    assert any(d.startswith("verifiers") for d in deps) and "scidatasim" in deps
 
 
 def test_verifiers_export_options_and_errors(bundle_runs, tmp_path):

@@ -1,5 +1,5 @@
 # scidatasim/units.py
-"""Physical units (optional; needs ``pint``: ``pip install "scientific-data-simulator[units]"``).
+"""Physical units (optional; needs ``pint``: ``pip install "scidatasim[units]"``).
 
 Two services:
 
@@ -65,7 +65,7 @@ def registry():
     try:
         import pint
     except ImportError as e:
-        raise ImportError("Physical units need 'pint': pip install 'scientific-data-simulator[units]'") from e
+        raise ImportError("Physical units need 'pint': pip install 'scidatasim[units]'") from e
     ureg = pint.UnitRegistry()
     for definition in _DEFINITIONS:
         ureg.define(definition)
@@ -156,7 +156,7 @@ def convert_parameters(config: Dict[str, Any], parameter_units: Dict[str, str]) 
                 pass
         if not available():
             raise ImportError(f"Parameter '{key}' is given with units ({value!r}); "
-                              "install pint: pip install 'scientific-data-simulator[units]'")
+                              "install pint: pip install 'scidatasim[units]'")
         split = _split_quantity(value)
         if split is None:
             continue  # a plain string option, not a quantity

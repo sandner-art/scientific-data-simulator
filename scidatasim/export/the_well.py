@@ -94,7 +94,7 @@ def _require_h5py():
     try:
         import h5py
     except ImportError:
-        raise ImportError("The Well export needs h5py: pip install 'scientific-data-simulator[hdf5]'") from None
+        raise ImportError("The Well export needs h5py: pip install 'scidatasim[hdf5]'") from None
     return h5py
 
 
