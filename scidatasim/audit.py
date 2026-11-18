@@ -32,6 +32,12 @@ Attacks (``Finding.attack``):
     public numbers or text, e.g. an exact (noise-free) table next to a figure question.
     Answers on the public coordinate grid, or equal to a number their own question states,
     are not counted.
+``answer_near_match``
+    A numeric answer lies within ``rel_tol`` of a public number without being a copy (equal to
+    float64 round-off, as float32, or printed to 4 digits). Among many noisy public numbers this
+    happens by chance, so the finding gives the count expected by chance and its severity
+    follows the Poisson probability: high (the release fails) only when chance cannot explain
+    it, e.g. several answers recomputed with a slight change.
 ``latent_exposure``
     Most values of a hidden output (role ``latent``, ``parameter`` or ``label``) appear among
     the public numbers: the noise-free ground truth is effectively published.
@@ -498,6 +504,37 @@ def _printed(printed: List[Tuple[float, int]], value: float) -> bool:
     return False
 
 
+#: Half-width (relative) of the window used to estimate how densely public numbers lie around an answer.
+_DENSITY_WINDOW = 1e-3
+
+
+def _chance_matches(sorted_numbers: np.ndarray, value: float, rel_tol: float) -> float:
+    """Expected number of public numbers within ``rel_tol`` of ``value`` by chance.
+
+    Public numbers within ``_DENSITY_WINDOW`` of the value, scaled to the width of the match
+    window: a few hundred noisy observations put one within 1e-6 of a given answer with a
+    probability of the order of 1e-3.
+    """
+    if sorted_numbers.size == 0 or value == 0:
+        return 0.0
+    w = _DENSITY_WINDOW * abs(value)
+    count = np.searchsorted(sorted_numbers, value + w, side="right") - np.searchsorted(sorted_numbers, value - w)
+    return float(count) * rel_tol / _DENSITY_WINDOW
+
+
+def _poisson_tail(k: int, mean: float) -> float:
+    """P(X >= k) for X ~ Poisson(mean)."""
+    if k <= 0:
+        return 1.0
+    if mean <= 0:
+        return 0.0
+    term = total = math.exp(-mean)
+    for j in range(1, k):
+        term *= mean / j
+        total += term
+    return max(0.0, 1.0 - total)
+
+
 def _stated_in_question(question: Any, value: float) -> bool:
     """``value`` is a number its own question states, exactly or to the digits printed there.
 
@@ -646,6 +683,7 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
     # answer lookup ---------------------------------------------------------
     printed = sorted(pub.printed)
     lookups, total = [], 0
+    near, expected_near = [], 0.0  # within rel_tol of a public number, but not a copy
     for t in priv.tasks:
         a = t.get("answer")
         if t["answer_type"] == "choice":
@@ -659,6 +697,10 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
             total += 1
             if _copied(numbers, float(a)) or _printed(printed, float(a)):
                 lookups.append(t)
+            else:
+                expected_near += _chance_matches(numbers, float(a), rel_tol)
+                if _contains(numbers, float(a), rel_tol):
+                    near.append(t)
         elif isinstance(a, str) and len(a.strip()) >= 4:
             total += 1
             if a.strip() in alltext or re.sub(r"\s+", "", a) in compact:
@@ -669,6 +711,16 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
         report.findings.append(Finding(
             "answer_lookup", "high", f"{len(lookups)}/{total} non-trivial answers appear verbatim in public files "
             f"(templates: {', '.join(templates)}), e.g. {lookups[0]['id']}", None, len(lookups)))
+
+    if near:
+        p_chance = _poisson_tail(len(near), expected_near)
+        severity = "high" if p_chance < 1e-6 else "medium" if p_chance < 0.01 else "info"
+        report.findings.append(Finding(
+            "answer_near_match", severity,
+            f"{len(near)} non-trivial answer(s) lie within {rel_tol:g} of a public number without being a copy "
+            f"(templates: {', '.join(sorted({str(t.get('template')) for t in near}))}), e.g. {near[0]['id']}; "
+            f"{expected_near:.2g} expected by chance from how densely public numbers lie around the answers "
+            f"(p = {p_chance:.2g}). Check that no public value is a recomputed answer.", None, len(near)))
 
     # latent exposure -------------------------------------------------------
     if check_arrays:

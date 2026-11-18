@@ -374,6 +374,9 @@ runs as the answer key and reports what it recovers:
   numbers or text (e.g. an exact table next to a figure question); values on
   the public coordinate grid, and answers equal to a number their own question
   states (such as the x it asks about), are not counted;
+* ``answer_near_match`` - answers within ``rel_tol`` of a public number that are
+  not copies; reported with the count expected by chance, and high severity only
+  when chance cannot explain it;
 * ``latent_exposure`` - hidden (noise-free) arrays found among public numbers
   (arrays quoted in the public questions, such as given coordinates, are exempt;
   ``ignore=[...]`` exempts others);

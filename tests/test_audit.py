@@ -222,6 +222,17 @@ def test_a_coincidence_is_not_a_copy(design, tmp_path):
         np.save(pub / "values.npy", values)
         exposed = audit_export(str(pub), design).exposure["answer_lookup"]["exposed"]
         assert (exposed >= 1) is leaked, (values.dtype, values[0] / answer - 1)
+    # a near match is reported with its chance expectation: one does not fail the release, several do
+    np.save(pub / "values.npy", np.array([answer * (1 + 5e-7)]))
+    report = audit_export(str(pub), design)
+    near = report.by_attack("answer_near_match")
+    assert report.ok and len(near) == 1 and near[0].severity != "high" and "expected by chance" in near[0].detail
+    several = [float(t["answer"]) * (1 + 5e-7) for t in tasks]
+    assert len(several) >= 3
+    np.save(pub / "values.npy", np.array(several))
+    report = audit_export(str(pub), design)
+    assert not report.ok and report.by_attack("answer_near_match")[0].severity == "high"
+    (pub / "values.npy").unlink()
     # a tiny answer (an extrapolated power law reached 1e-73) is no float32 copy of the zeros in a release
     from scidatasim.audit import _copied
     assert not _copied(np.array([0.0, 1.0]), 1.0175237848443631e-73)
