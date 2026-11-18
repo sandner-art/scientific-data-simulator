@@ -79,7 +79,8 @@ def run_episodes(env, agent: Callable[[Dict[str, Any], EpisodeLog], Dict[str, An
     for seed in seeds:
         obs = env.reset(seed=seed)
         log = EpisodeLog(seed=seed, task=obs, target=env.spec.target, target_type=env.spec.target_type,
-                         domain=env.domain, tolerance=float(env.spec.tolerance), budget=int(env.spec.budget))
+                         domain=env.domain, tolerance=env.formula_tolerance() if env.spec.target_type == "expression"
+                         else float(env.spec.tolerance), budget=int(env.spec.budget))
         limit = max_steps if max_steps is not None else int(env.spec.budget) + 3
         for _ in range(limit):
             action = agent(obs, log)
@@ -87,6 +88,8 @@ def run_episodes(env, agent: Callable[[Dict[str, Any], EpisodeLog], Dict[str, An
             log.steps.append({"action": action, "observation": out["observation"], "reward": out["reward"],
                               "info": out.get("info", {})})
             obs = out["observation"]
+            if "tolerance" in out.get("info", {}):
+                log.tolerance = float(out["info"]["tolerance"])  # tolerance: auto, set at the answer
             if out["done"]:
                 break
         log.truth = env.truth

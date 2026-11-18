@@ -491,7 +491,11 @@ observations, and answers. A numeric target is correct within ``tolerance``
 interface follows Gymnasium (``reset(seed)``, ``step(action)``, ``state``), and
 episodes are reproducible from their seed. With ``target_type: expression``
 the target is a label output (e.g. ``law_expression``) answered with a formula
-and scored on ``domain``. See ``examples/example_9_discovery_env`` and
+and scored on ``domain``; ``tolerance: auto`` sets its tolerance from the agent's
+own measurements: the error a least-squares fit of the true mechanism reaches
+from them in 90 % of noise replicates (the model's ``achievable_error``), at
+least 2 %. A fixed tolerance fails even the right law once the noise is heavy.
+See ``examples/example_9_discovery_env`` and
 ``examples/example_10_law_discovery``.
 
 .. _checker:

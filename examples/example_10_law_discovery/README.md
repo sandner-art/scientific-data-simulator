@@ -60,7 +60,9 @@ noise-set tolerance on the scored range.
 
 `--env N` plays the interactive version (`env.yaml`): an agent chooses the measurement range
 within [0.5, 5] (up to three experiments), then answers with a formula, which is scored on
-[0.5, 7.25] within 2 %. When the scored range lay inside the measurable one, a polynomial fitted
+[0.5, 7.25] (`tolerance: auto`: within the larger of 2 % and the error a fit of the true law
+reaches from the agent's own measurements; at this example's 40 dB that is 2 %, under heavier
+noise it grows, so the right law still passes). When the scored range lay inside the measurable one, a polynomial fitted
 to three full-range experiments passed 95 % of episodes; now it passes about 25 %, all of them
 power laws. The baseline's mean reward is printed.
 

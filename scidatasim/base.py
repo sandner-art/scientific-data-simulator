@@ -46,6 +46,14 @@ class ExperimentLogic(ABC):
     # quantities that must stay constant (energy, Lotka-Volterra V, ...); the
     # model checker (scidatasim.checker) measures their drift.
 
+    def achievable_error(self, x, y_observed, domain, rng) -> Optional[float]:
+        """Optional: the relative RMS error (on ``domain``) of the mechanism's own output that a
+        solver who identified the mechanism reaches from these noisy measurements, in most noise
+        replicates. Environments with ``tolerance: auto`` set their formula tolerance from it.
+        ``None``: no estimate (the environment uses its floor).
+        """
+        return None
+
     def mechanism_graph(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Optional causal/interaction graph of the mechanism, in node-link form::
 

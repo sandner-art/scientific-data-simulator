@@ -22,7 +22,9 @@ Specification (YAML or dict)::
     target: prey_growth_rate    # what must be reported (a hidden parameter, or with
                                 # target_type: expression a formula label such as law_expression)
     budget: 5                   # number of experiments
-    tolerance: 0.05             # relative tolerance for numeric targets
+    tolerance: 0.05             # relative tolerance for numeric targets; for formula targets also
+                                # "auto": the error a fit of the true mechanism reaches from the
+                                # agent's own measurements (90 % of noise replicates), at least 2 %
     max_points: 60              # observed series are thinned to at most this many points
     description: "Estimate the prey growth rate of an ecosystem."
 
@@ -48,6 +50,9 @@ from .engine import simulate
 from .rng import derive_seeds, new_seed, validate_seed
 from .utils import Role
 
+#: Smallest formula tolerance with ``tolerance: auto`` (the fixed value used before).
+AUTO_TOLERANCE_FLOOR = 0.02
+
 
 @dataclass
 class ExperimentTaskSpec:
@@ -56,7 +61,7 @@ class ExperimentTaskSpec:
     controls: Dict[str, Any]
     target: str
     budget: int = 5
-    tolerance: float = 0.05
+    tolerance: Union[float, str] = 0.05  # or "auto" for expression targets
     max_points: int = 60
     description: str = ""
     measured: Optional[List[str]] = None  # default: all outputs with role "observation"
@@ -96,8 +101,12 @@ class ExperimentTaskSpec:
             _check_range(f"controls.{name}", bounds, allow_choices=True)
         if int(self.budget) < 1:
             raise ValueError("spec.budget must be >= 1")
-        if not self.tolerance > 0:
-            raise ValueError("spec.tolerance must be > 0")
+        if self.tolerance == "auto":
+            if self.target_type != "expression":
+                raise ValueError("spec.tolerance 'auto' needs target_type: expression")
+        elif isinstance(self.tolerance, bool) or not isinstance(self.tolerance, (int, float)) \
+                or not self.tolerance > 0:
+            raise ValueError("spec.tolerance must be a number > 0 (or 'auto' for expression targets)")
 
     def target_is_categorical(self) -> bool:
         return self.target_type == "auto" and isinstance(self.hidden[self.target], dict)
@@ -155,7 +164,7 @@ class ExperimentEnv:
                 self._truth[name] = float(rng.uniform(float(prior[0]), float(prior[1])))
         self._experiment_seeds = derive_seeds(self._episode_seed, int(self.spec.budget) + 1)
         self._history, self._done, self._steps = [], False, 0
-        self._target_truth, self._domain = None, None
+        self._target_truth, self._domain, self._reference = None, None, None
         if self.spec.target_type == "expression":
             # the target is a label of the mechanism (e.g. the law): read it from a noise-free run
             config = apply_overrides(self.spec.base_config, self._truth)
@@ -166,6 +175,7 @@ class ExperimentEnv:
             if self.spec.target not in sim.results:
                 raise ValueError(f"target '{self.spec.target}' is not an output of the model")
             self._target_truth = str(sim.results[self.spec.target]["data"])
+            self._reference = sim.logic  # the noise-free run: knows the true mechanism (achievable_error)
             if self.spec.domain:
                 self._domain = [float(v) for v in self.spec.domain]
             else:
@@ -217,9 +227,12 @@ class ExperimentEnv:
     def _task_observation(self) -> Dict[str, Any]:
         spec = self.spec
         if spec.target_type == "expression":
+            within = (f"within {spec.tolerance:.0%} relative RMS" if spec.tolerance != "auto" else
+                      f"within the larger of {AUTO_TOLERANCE_FLOOR:.0%} relative RMS and the error a least-squares "
+                      "fit of the true law reaches from your measurements (in 90 % of replicates of their noise)")
             goal = (f"Find a formula for the hidden law ('{spec.target}') that reproduces the noise-free "
-                    f"relation on [{self._domain[0]:.4g}, {self._domain[1]:.4g}] within "
-                    f"{spec.tolerance:.0%} relative RMS. Answer with a formula in x, e.g. 2.5*x**1.3.")
+                    f"relation on [{self._domain[0]:.4g}, {self._domain[1]:.4g}] {within}. "
+                    "Answer with a formula in x, e.g. 2.5*x**1.3.")
         elif spec.target_is_categorical():
             goal = (f"Determine which of {spec.hidden[spec.target]['choices']} the hidden "
                     f"'{spec.target}' is. Answer with one of these strings.")
@@ -293,7 +306,15 @@ class ExperimentEnv:
             else:
                 entry["values"] = _round(float(values))
             data[name] = entry
-        self._history.append({"inputs": dict(inputs), "seed": config["seed"]})
+        entry = {"inputs": dict(inputs), "seed": config["seed"]}
+        if self.spec.tolerance == "auto":
+            # the series the agent received (thinned, rounded): the auto tolerance is set from them
+            series = next((d for name, d in data.items() if isinstance(d.get("values"), list)
+                           and isinstance(d.get(sim.results[name]["descriptor"].x_axis or ""), list)), None)
+            if series is not None:
+                x_name = next(k for k in series if k not in ("values", "units"))
+                entry["xy"] = (list(series[x_name]), list(series["values"]))
+        self._history.append(entry)
         return self._result({"experiment": index + 1, "inputs": dict(inputs), "measurements": data,
                              "budget_left": int(self.spec.budget) - len(self._history)}, None, False)
 
@@ -305,8 +326,9 @@ class ExperimentEnv:
                 error = compare(str(value), self._target_truth, tuple(self._domain))["relative_rms"]
             except ExpressionError as e:
                 error, value = float("inf"), f"{value} (invalid: {e})"
-            correct = error <= float(self.spec.tolerance)
-            info = {"truth": self.truth, "relative_rms_error": error, "correct": correct}
+            tolerance = self.formula_tolerance()
+            correct = error <= tolerance
+            info = {"truth": self.truth, "relative_rms_error": error, "tolerance": tolerance, "correct": correct}
             return self._result({"answer": value, "correct": correct}, 1.0 if correct else 0.0, True, info)
         truth = self._truth[self.spec.target]
         if self.spec.target_is_categorical():
@@ -321,6 +343,26 @@ class ExperimentEnv:
             correct = rel_error <= float(self.spec.tolerance)
             info = {"truth": self.truth, "estimate": estimate, "relative_error": rel_error, "correct": correct}
         return self._result({"answer": value, "correct": correct}, 1.0 if correct else 0.0, True, info)
+
+    def formula_tolerance(self) -> float:
+        """The tolerance an expression answer is scored with now: the spec's number, or with
+        ``tolerance: auto`` the larger of ``AUTO_TOLERANCE_FLOOR`` and the error a fit of the true
+        mechanism reaches from the agent's measurements so far (the model's ``achievable_error``)."""
+        if self.spec.tolerance != "auto":
+            return float(self.spec.tolerance)
+        pairs = [h["xy"] for h in self._history if h.get("xy")]
+        hook = getattr(self._reference, "achievable_error", None)
+        if not pairs or hook is None:
+            return AUTO_TOLERANCE_FLOOR
+        def column(values):
+            return np.asarray([np.nan if v is None else v for v in values], float)
+        x = np.concatenate([column(p[0]) for p in pairs])
+        y = np.concatenate([column(p[1]) for p in pairs])
+        rng = np.random.default_rng([int(self._episode_seed) % 2 ** 63, len(pairs)])
+        achieved = hook(x, y, tuple(self._domain), rng)
+        if achieved is None or not np.isfinite(achieved):
+            return AUTO_TOLERANCE_FLOOR
+        return max(AUTO_TOLERANCE_FLOOR, float(achieved))
 
     def _result(self, observation, reward, done, info=None) -> Dict[str, Any]:
         observation = dict(observation)

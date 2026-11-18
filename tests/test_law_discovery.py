@@ -316,3 +316,55 @@ def test_quality_card_splits_formula_accuracy_by_reachability():
     assert "0.00 without polynomial-reachable items" in card_markdown(card)
     assert accuracy_by(tasks, {"a": True, "b": False}, "polynomial_reachable") == {
         "False": {"n": 1, "accuracy": 0.0}, "True": {"n": 1, "accuracy": 1.0}}
+
+
+def _auto_env(snr_db):
+    with open(os.path.join(ROOT, "examples", "example_10_law_discovery", "env.yaml")) as f:
+        spec = yaml_load(f)
+    spec["tolerance"] = "auto"
+    spec["base_config"]["observation"]["operators"][0]["snr_db"] = snr_db
+    return ExperimentEnv(spec)
+
+
+def test_environment_auto_tolerance_follows_the_noise():
+    """tolerance: auto sets the formula tolerance from the agent's own measurements: the 2 % floor
+    under light noise, more under heavy noise, where a fixed 2 % fails even the right law."""
+    from examples.example_10_law_discovery.run_experiment import fit_best_law
+    from scidatasim.envs import AUTO_TOLERANCE_FLOOR
+    from scidatasim.expressions import compare
+    for snr_db, heavy in ((40, False), (15, True)):
+        env = _auto_env(snr_db)
+        tolerances, fixed_pass, auto_pass = [], [], []
+        for seed in range(6):
+            obs = env.reset(seed=seed)
+            assert "the larger of 2% relative RMS" in obs["task"]
+            assert env.formula_tolerance() == AUTO_TOLERANCE_FLOOR  # no measurements yet
+            xs, ys = [], []
+            for _ in range(3):
+                m = env.step({"type": "experiment", "inputs": {"x_min": 0.5, "x_max": 5.0}})["observation"]
+                xs += m["measurements"]["y_observed"]["x"]
+                ys += m["measurements"]["y_observed"]["values"]
+            assert "xy" not in str(env.state)  # the stored measurements stay private
+            _, formula = fit_best_law(np.array(xs, float), np.array(ys, float))
+            error = compare(formula or "0", env.truth["law_expression"], tuple(env.domain))["relative_rms"]
+            out = env.step({"type": "answer", "value": formula or "0"})
+            tolerances.append(out["info"]["tolerance"])
+            fixed_pass.append(error <= AUTO_TOLERANCE_FLOOR)
+            auto_pass.append(out["info"]["correct"])
+            assert out["info"]["correct"] == (error <= out["info"]["tolerance"])
+        if heavy:
+            assert np.median(tolerances) > AUTO_TOLERANCE_FLOOR and sum(auto_pass) > sum(fixed_pass)
+        else:
+            assert max(tolerances) == pytest.approx(AUTO_TOLERANCE_FLOOR) and auto_pass == fixed_pass
+
+
+def test_auto_tolerance_needs_an_expression_target():
+    from scidatasim.envs import ExperimentTaskSpec
+    with open(os.path.join(ROOT, "examples", "example_9_discovery_env", "env.yaml")) as f:
+        spec = yaml_load(f)
+    spec["tolerance"] = "auto"
+    with pytest.raises(ValueError, match="auto"):
+        ExperimentTaskSpec.from_dict(spec)
+    spec["tolerance"] = "loose"
+    with pytest.raises(ValueError, match="number"):
+        ExperimentTaskSpec.from_dict(spec)

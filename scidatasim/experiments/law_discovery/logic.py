@@ -267,6 +267,11 @@ class HiddenLawExperiment(ExperimentLogic):
         return state
 
     # ------------------------------------------------------------------ results
+    def achievable_error(self, x, y_observed, domain, rng):
+        """The error a least-squares fit of the true law reaches from these measurements in
+        ``TOLERANCE_QUANTILE`` of replicates of their noise (see :func:`achievable_tolerance`)."""
+        return achievable_tolerance(self.family, self.values, x, y_observed, tuple(domain), rng, floor=0.0)
+
     def expression(self) -> str:
         return law_expression(self.family, self.values)
 

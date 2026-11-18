@@ -910,7 +910,9 @@ def export_openenv(spec: SpecLike, output_dir: str, name: str = "sds_experiment_
     if task.target_is_categorical():
         target_rule = "one of " + ", ".join(map(str, task.hidden[task.target]["choices"]))
     else:
-        target_rule = f"correct within {float(task.tolerance):.0%} relative error"
+        target_rule = (f"correct within {float(task.tolerance):.0%} relative error" if task.tolerance != "auto" else
+                       "a formula within the error a fit of the true law reaches from the agent's measurements "
+                       "(at least 2 %)")
     top_vendor = sorted({p.split("/")[0] for p in vendored})
     vendor_tree = ("├── vendor/              # Model code (" + ", ".join(top_vendor) + "), copied at export\n"
                    if vendored else "")
