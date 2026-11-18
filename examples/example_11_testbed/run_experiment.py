@@ -236,7 +236,14 @@ def main():
     lab = loophole["labelled_reachable"]
     without = "" if lab["law_fitter_without"] is None else f"; the law fitter scores {lab['law_fitter_without']:.2f} on the rest"
     md += ["", f"{lab['n']} of {lab['of']} formula questions carry the private label `polynomial_reachable` "
-               f"(a fitted polynomial passes them; mostly power laws with exponents near 1 or 2){without}.", ""]
+               f"(a fitted polynomial passes them; mostly power laws with exponents near 1 or 2){without}."]
+    extrapolations = [t for t in tasks if t["template"] == "extrapolation"]
+    if extrapolations:
+        n_zero = sum(bool(t.get("zero_reachable")) for t in extrapolations)
+        report["zero_reachable"] = {"n": n_zero, "of": len(extrapolations)}
+        md += [f"{n_zero} of {len(extrapolations)} extrapolation questions carry the private label `zero_reachable`: "
+               "the answer 0 passes them (laws decayed below the tolerance floor at the asked x)."]
+    md += [""]
 
     # -- 3. leak audit with canary ---------------------------------------------------
     from scidatasim.export.huggingface import export_huggingface

@@ -2,6 +2,11 @@
 
 Versions 0.2–0.6 were development steps; they were first released together in 0.7.0.
 
+## Unreleased
+
+### Added
+- **`zero_reachable`, a private label on law-discovery extrapolation questions** that the answer 0 passes: the law has decayed below the tolerance floor (1 % of the largest observed |y|) at the asked x. About a third of extrapolation questions in quick builds (Gaussian peak, inverse square, exponential decay, some damped oscillations). Like `polynomial_reachable` it stays out of public files; `quality_card` reports the share and a solver's accuracy without those items (`REACHABILITY_LABELS` in `scidatasim.bundle`), and examples 10, 11 and 13 report extrapolation accuracy with and without them. The question itself is unchanged until the scoring study is done.
+
 ## 0.7.0rc2 (2026-11-17)
 
 Second release candidate, and the first on PyPI. Breaking: the import package is now `scidatasim`, and pip installs it as `scidatasim` and `scidatasim-ui` (see Changed).

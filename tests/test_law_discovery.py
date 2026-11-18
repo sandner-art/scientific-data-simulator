@@ -368,3 +368,29 @@ def test_auto_tolerance_needs_an_expression_target():
     spec["tolerance"] = "loose"
     with pytest.raises(ValueError, match="number"):
         ExperimentTaskSpec.from_dict(spec)
+
+
+def test_zero_reachable_label_marks_extrapolations_the_answer_0_passes():
+    """Laws that have decayed below the tolerance floor at the asked x pass with 0: the private
+    label marks them, so reports can leave them out; growing laws never carry it."""
+    from scidatasim.bundle import public_question
+    from scidatasim.diagnostics import card_markdown, quality_card
+    labels = {}
+    for law in ("gaussian_peak", "power_law"):
+        labels[law] = []
+        for seed in range(6):
+            _, _, _, sim = _formula_item(law, snr_db=40, seed=seed)
+            items = sim.logic.questions(sim.results, np.random.default_rng(seed))
+            item = next(i for i in items if i["template"] == "extrapolation")
+            assert item["zero_reachable"] == check_answer(item, 0.0)
+            assert "zero_reachable" not in public_question(item)
+            labels[law].append(item["zero_reachable"])
+    assert all(labels["gaussian_peak"]) and not any(labels["power_law"])
+    tasks = [{"id": f"t{i}", "template": "extrapolation", "answer_type": "number", "answer": a,
+              "tolerance": tol, "zero_reachable": z, "experiment_id": "r", "fidelity": "reference"}
+             for i, (a, tol, z) in enumerate([(1e-9, 0.1, True), (5.0, 0.25, False), (7.0, 0.35, False)])]
+    card = quality_card(tasks, solver=lambda t: 0.0)
+    entry = card["templates"]["extrapolation"]
+    assert entry["zero_reachable"] == pytest.approx(1 / 3)
+    assert entry["solver_accuracy_by_label"]["zero_reachable"] == {"False": 0.0, "True": 1.0}
+    assert "the answer 0 passes 0.33" in card_markdown(card) and "without zero-reachable items" in card_markdown(card)

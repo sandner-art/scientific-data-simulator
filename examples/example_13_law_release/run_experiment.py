@@ -104,8 +104,9 @@ def classical_answers(tasks, obs):
 
 
 def score_answers(tasks, answers):
-    """Accuracy per template (a missing answer is wrong) and the formula score split by the
-    private ``polynomial_reachable`` label."""
+    """Accuracy per template (a missing answer is wrong), the formula score without the items
+    the private ``polynomial_reachable`` label marks, and the extrapolation score without those
+    ``zero_reachable`` marks (the answer 0 passes them)."""
     hits = {t["id"]: bool(t["id"] in answers and score(t, answers[t["id"]])) for t in tasks}
     out = {"n": len(tasks), "answered": sum(t["id"] in answers for t in tasks),
            "accuracy": sum(hits.values()) / max(1, len(tasks)), "templates": {}}
@@ -116,18 +117,25 @@ def score_answers(tasks, answers):
     if formula:
         split = accuracy_by(formula, hits, "polynomial_reachable")
         out["law_formula_without_polynomial_reachable"] = split.get("False", {}).get("accuracy")
+    extrapolation = [t for t in tasks if t["template"] == "extrapolation"]
+    if extrapolation:
+        split = accuracy_by(extrapolation, hits, "zero_reachable")
+        out["extrapolation_without_zero_reachable"] = split.get("False", {}).get("accuracy")
     return out
 
 
 def results_table(rows):
     """Markdown rows: name -> score_answers() result."""
-    head = ["| solver | " + " | ".join(TEMPLATES) + " | formula without polynomial-reachable items |",
-            "|---|" + "---|" * (len(TEMPLATES) + 1)]
+    head = ["| solver | " + " | ".join(TEMPLATES) + " | formula without polynomial-reachable items | "
+            "extrapolation without zero-reachable items |",
+            "|---|" + "---|" * (len(TEMPLATES) + 2)]
     lines = []
     for name, r in rows.items():
         cells = [f"{r['templates'][t]['accuracy']:.2f}" if t in r["templates"] else "" for t in TEMPLATES]
         rest = r.get("law_formula_without_polynomial_reachable")
-        lines.append(f"| {name} | " + " | ".join(cells) + f" | {'' if rest is None else f'{rest:.2f}'} |")
+        rest_x = r.get("extrapolation_without_zero_reachable")
+        lines.append(f"| {name} | " + " | ".join(cells) + f" | {'' if rest is None else f'{rest:.2f}'} | "
+                     f"{'' if rest_x is None else f'{rest_x:.2f}'} |")
     return head + lines
 
 
@@ -175,6 +183,8 @@ def build(args):
     card = quality_card(tasks)
     reachable = sum(bool(t.get("polynomial_reachable")) for t in tasks if t["template"] == "law_formula")
     n_formula = sum(t["template"] == "law_formula" for t in tasks)
+    zero = sum(bool(t.get("zero_reachable")) for t in tasks if t["template"] == "extrapolation")
+    n_extrapolation = sum(t["template"] == "extrapolation" for t in tasks)
 
     lines = ["", "## Baselines", "",
              "Accuracy of reference solvers that see only the measurements (higher is better):", "",
@@ -186,9 +196,11 @@ def build(args):
              "- Answering without the data (majority answer, median, from the other questions): "
              + ", ".join(f"{t} {b['accuracy']:.2f}" for t, b in sorted(blind.items())) + ".",
              *[f"- One constant answer, chosen on the other questions, passes {b['constant_accuracy']:.2f} of "
-               f"{t} questions ({b['constant']:.3g}): laws that have decayed to almost 0 beyond the data pass with "
-               "a value near 0, because the tolerance is at least 1 % of the largest observed |y|."
-               for t, b in sorted(blind.items()) if b.get("constant_accuracy", 0) >= 0.05], "",
+               f"{t} questions ({b['constant']:.3g})."
+               for t, b in sorted(blind.items()) if b.get("constant_accuracy", 0) >= 0.05],
+             f"- The answer 0 passes {zero} of {n_extrapolation} extrapolation questions: those laws have decayed "
+             "to almost 0 at the asked x, and the tolerance is at least 1 % of the largest observed |y|. A private "
+             "label marks them; the last column leaves them out. The question design is under study.", "",
              "Answers are withheld. To score predictions, send them to the maintainers or use the scoring "
              "mode of example 13 in the Scientific Data Simulator repository with the private key.", ""]
     readme = os.path.join(public, "README.md")
@@ -217,7 +229,8 @@ def build(args):
               "runs": len(obs), "questions": len(tasks), "canary": canary, "audit_ok": audit.ok,
               "public_files": n_files, "sha256sums": sha256(sums), "twin": bool(twin_dir),
               "baselines": rows, "polynomial_formula_accuracy": poly.get("accuracy"),
-              "polynomial_reachable": {"n": reachable, "of": n_formula}}
+              "polynomial_reachable": {"n": reachable, "of": n_formula},
+              "zero_reachable": {"n": zero, "of": n_extrapolation}}
     with open(os.path.join(private, "release.json"), "w", encoding="utf-8") as f:
         json.dump(record, f, indent=2, default=str)
     with open(os.path.join(private, "REPORT.md"), "w", encoding="utf-8") as f:

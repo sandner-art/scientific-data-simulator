@@ -54,8 +54,10 @@ python -m examples.example_13_law_release.run_experiment --output_dir release \
 ```
 
 `mymodels.client:ask` is any function `prompt -> text`. Scores go to `private/scores/`, per
-question type and for formulas also without the items a fitted polynomial passes
-(`polynomial_reachable`).
+question type, for formulas also without the items a fitted polynomial passes
+(`polynomial_reachable`), and for extrapolations also without the items the answer 0 passes
+(`zero_reachable`: laws that have decayed below the tolerance floor at the asked x; about a third
+of them in quick builds).
 
 ## Baselines in a trial build
 

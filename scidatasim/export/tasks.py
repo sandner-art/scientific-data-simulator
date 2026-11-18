@@ -20,7 +20,7 @@ import json
 import os
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
-from ..bundle import PRIVATE_QUESTION_KEYS, check_answer
+from ..bundle import PRIVATE_QUESTION_KEYS, REACHABILITY_LABELS, check_answer
 
 PRIVATE_KEYS = PRIVATE_QUESTION_KEYS  # answer, the (answer-derived) tolerance, answer-hinting labels
 
@@ -119,7 +119,7 @@ def collect_bundle_tasks(paths: Union[str, Sequence[str]], relative_to: Optional
                 "fidelity": manifest.get("fidelity"),
                 "figure_variant": ((manifest.get("figure") or {}).get("style") or {}).get("variant"),
                 "answer": item["answer"],
-                "polynomial_reachable": item.get("polynomial_reachable"),
+                **{label: item.get(label) for label in REACHABILITY_LABELS},
             })
     return tasks
 

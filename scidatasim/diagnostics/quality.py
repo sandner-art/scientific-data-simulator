@@ -42,7 +42,7 @@ def _chi2_uniform_p(counts: Sequence[int], n_sim: int = 20000, seed: int = 0) ->
 def quality_card(tasks: Sequence[Mapping[str, Any]], solver: Optional[Callable[[Mapping[str, Any]], Any]] = None
                  ) -> Dict[str, Any]:
     """Quality measures per template and overall (``tasks`` must carry answers)."""
-    from ..bundle import check_answer
+    from ..bundle import REACHABILITY_LABELS, check_answer
     groups: Dict[str, list] = {}
     for t in tasks:
         groups.setdefault(str(t.get("template")), []).append(t)
@@ -81,9 +81,13 @@ def quality_card(tasks: Sequence[Mapping[str, Any]], solver: Optional[Callable[[
             entry["range"] = [float(values.min()), float(values.max())]
         else:
             entry["distinct_ratio"] = len({str(a) for a in answers}) / len(answers)
-        labelled = [t for t in group if t.get("polynomial_reachable") is not None]
-        if labelled:  # formula questions a fitted polynomial passes (a scorer loophole)
-            entry["polynomial_reachable"] = sum(bool(t["polynomial_reachable"]) for t in labelled) / len(labelled)
+        labels = {}  # questions a trivial answer passes (a fitted polynomial, the answer 0)
+        for label in REACHABILITY_LABELS:
+            labelled_by = [t for t in group if t.get(label) is not None]
+            if labelled_by:
+                labels[label] = labelled_by
+                entry[label] = sum(bool(t[label]) for t in labelled_by) / len(labelled_by)
+        labelled = labels.get("polynomial_reachable", [])
         if solver is not None:
             hit = {}
             for t in group:
@@ -95,6 +99,9 @@ def quality_card(tasks: Sequence[Mapping[str, Any]], solver: Optional[Callable[[
             if labelled:
                 entry["solver_accuracy_by_reachable"] = {
                     k: v["accuracy"] for k, v in accuracy_by(labelled, hit, "polynomial_reachable").items()}
+            entry["solver_accuracy_by_label"] = {
+                label: {k: v["accuracy"] for k, v in accuracy_by(labelled_by, hit, label).items()}
+                for label, labelled_by in labels.items()}
         card["templates"][template] = entry
     return card
 
@@ -128,12 +135,13 @@ def card_markdown(card: Mapping[str, Any]) -> str:
             balance = "no finite answers"
         pos = e.get("position_p")
         solver = e.get("solver_accuracy")
-        if "polynomial_reachable" in e:
-            balance += f"; polynomial passes {e['polynomial_reachable']:.2f}"
-        split = e.get("solver_accuracy_by_reachable") or {}
+        for label, what in (("polynomial_reachable", "polynomial"), ("zero_reachable", "the answer 0")):
+            if label in e:
+                balance += f"; {what} passes {e[label]:.2f}"
         solver_text = "" if solver is None else f"{solver:.2f}"
-        if solver is not None and "False" in split:
-            solver_text += f" ({split['False']:.2f} without polynomial-reachable items)"
+        for label, split in (e.get("solver_accuracy_by_label") or {}).items():
+            if solver is not None and "False" in split:
+                solver_text += f" ({split['False']:.2f} without {label.replace('_', '-')} items)"
         lines.append(f"| {template} | {e['n']} | {e['answer_type']} | {balance} | "
                      f"{'' if pos is None else f'{pos:.3f}'} | {e['duplicates']} | {solver_text} |")
     return "\n".join(lines)

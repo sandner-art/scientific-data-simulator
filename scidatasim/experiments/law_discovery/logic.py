@@ -339,12 +339,15 @@ class HiddenLawExperiment(ExperimentLogic):
         items.append(formula_item)
         y_star = float(evaluate(self.expression(), x=x_star))
         if np.isfinite(y_star):
-            items.append(dict(template="extrapolation",
-                              question=f"Predict y at x = {format_number(x_star, 4)} (outside the observed range).",
-                              answer=y_star, answer_type="number",
-                              tolerance=max(0.05 * abs(y_star), 0.01 * _finite_max_abs(results["y"]["data"])),
-                              tolerance_rule="5 % of the true value (at least 1 % of the largest observed |y|)",
-                              answerable_from="inference"))
+            extrapolation = dict(template="extrapolation",
+                                 question=f"Predict y at x = {format_number(x_star, 4)} (outside the observed range).",
+                                 answer=y_star, answer_type="number",
+                                 tolerance=max(0.05 * abs(y_star), 0.01 * _finite_max_abs(results["y"]["data"])),
+                                 tolerance_rule="5 % of the true value (at least 1 % of the largest observed |y|)",
+                                 answerable_from="inference")
+            # private: the answer 0 passes (the law has decayed below the tolerance floor at x_star)
+            extrapolation["zero_reachable"] = bool(abs(y_star) <= extrapolation["tolerance"])
+            items.append(extrapolation)
         for name, value in (self.values.items() if self.parameter_questions else ()):
             if name in LAWS[self.family]["structural"] and not self.counterfactual:
                 continue  # textbook constants are not informative questions
