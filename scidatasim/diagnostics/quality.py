@@ -135,7 +135,8 @@ def card_markdown(card: Mapping[str, Any]) -> str:
             balance = "no finite answers"
         pos = e.get("position_p")
         solver = e.get("solver_accuracy")
-        for label, what in (("polynomial_reachable", "polynomial"), ("zero_reachable", "the answer 0")):
+        for label, what in (("polynomial_reachable", "polynomial"), ("zero_reachable", "the answer 0"),
+                            ("naive_reachable", "a naive extrapolation")):
             if label in e:
                 balance += f"; {what} passes {e[label]:.2f}"
         solver_text = "" if solver is None else f"{solver:.2f}"

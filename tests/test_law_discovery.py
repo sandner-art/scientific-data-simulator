@@ -370,22 +370,31 @@ def test_auto_tolerance_needs_an_expression_target():
         ExperimentTaskSpec.from_dict(spec)
 
 
-def test_zero_reachable_label_marks_extrapolations_the_answer_0_passes():
-    """Laws that have decayed below the tolerance floor at the asked x pass with 0: the private
-    label marks them, so reports can leave them out; growing laws never carry it."""
+def test_extrapolation_scoring_and_its_private_labels():
+    """The 0.7.0rc2 rule (legacy) let 0 pass every decayed Gaussian peak; the noise-set tolerance at
+    half the range beyond the data does not. Plateaus pass with the last observed value under any
+    rule: naive_reachable marks them. Both labels stay private."""
     from scidatasim.bundle import public_question
     from scidatasim.diagnostics import card_markdown, quality_card
-    labels = {}
-    for law in ("gaussian_peak", "power_law"):
-        labels[law] = []
-        for seed in range(6):
-            _, _, _, sim = _formula_item(law, snr_db=40, seed=seed)
-            items = sim.logic.questions(sim.results, np.random.default_rng(seed))
-            item = next(i for i in items if i["template"] == "extrapolation")
-            assert item["zero_reachable"] == check_answer(item, 0.0)
-            assert "zero_reachable" not in public_question(item)
-            labels[law].append(item["zero_reachable"])
-    assert all(labels["gaussian_peak"]) and not any(labels["power_law"])
+
+    def extrapolation(law, seed, **extra):
+        _, _, _, sim = _formula_item(law, snr_db=40, seed=seed, **extra)
+        items = sim.logic.questions(sim.results, np.random.default_rng(seed))
+        return next(i for i in items if i["template"] == "extrapolation")
+
+    legacy = [extrapolation("gaussian_peak", s, extrapolation_tolerance="legacy", extrapolation_distance=0.25)
+              for s in range(6)]
+    current = [extrapolation("gaussian_peak", s) for s in range(6)]
+    assert all(i["zero_reachable"] for i in legacy) and sum(i["zero_reachable"] for i in current) <= 2
+    assert "x = 9.875" in legacy[0]["question"] and "x = 11.75" in current[0]["question"]
+    for item in legacy + current:
+        assert item["zero_reachable"] == check_answer(item, 0.0)
+        assert not {"zero_reachable", "naive_reachable"} & set(public_question(item))
+    plateaus = [extrapolation("logistic", s) for s in range(6)]
+    assert sum(i["naive_reachable"] for i in plateaus) >= 4
+    assert not any(extrapolation("power_law", s)["zero_reachable"] for s in range(6))
+    with pytest.raises(ValueError, match="extrapolation_tolerance"):
+        _formula_item("logistic", extrapolation_tolerance="loose")
     tasks = [{"id": f"t{i}", "template": "extrapolation", "answer_type": "number", "answer": a,
               "tolerance": tol, "zero_reachable": z, "experiment_id": "r", "fidelity": "reference"}
              for i, (a, tol, z) in enumerate([(1e-9, 0.1, True), (5.0, 0.25, False), (7.0, 0.35, False)])]

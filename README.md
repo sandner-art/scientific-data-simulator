@@ -325,12 +325,14 @@ The numbers in the changelog and in the verification notes come from three scrip
 |---|---|---|
 | `tools/check_formula_scoring.py` | A BIC polynomial against the right law on the law-discovery formula question, under the rc1 rule (data range, 1 %) and the current one; 9 families x textbook/counterfactual x 3 noise levels x 40 draws | 4 min |
 | `tools/check_env_tolerance.py` | The same in the interactive environment, fixed 2 % against `tolerance: auto`, at 40, 30, 20 and 15 dB | 3 min |
+| `tools/study_extrapolation_scoring.py` | How to score the extrapolation question: blind and naive answers (0, best constant, last value, a line through the tail), a polynomial, the law fit and a fit of the true family, under four scoring rules and three distances beyond the data; which items discriminate | 30 min |
 | `tools/check_audit_calibration.py` | The leak audit: false alarms on clean releases, and planted leaks of each kind caught (copies, float32, printed, recomputed, and two known blind spots). Builds quick releases of example 13 with fixed seeds; `--reuse` audits them again under another version | 20 min for 100 releases |
 
 Results at 0.7.0rc2:
 
 - **Formula scoring (2,160 runs).** A polynomial passes 62 %, 61 % and 0 % of formula questions (noise-free, 40 dB, 20 dB) under the rc1 rule, and 5 %, 3 % and 9 % now; the right law passes 99 % at 40 dB and 81 % at 20 dB (9 % under the rc1 rule). Power laws remain within a polynomial's reach (29-69 %), so their items carry the `polynomial_reachable` label.
 - **Environment (40 episodes per level).** At 40 and 30 dB `auto` stays at 2 % and changes nothing. At 15 dB the right law passes 78 % instead of 30 %, and a polynomial 22 % instead of 0 %: under that noise the data no longer separate them on the scored range.
+- **Extrapolation question (2,160 runs).** Under the 0.7.0rc2 rule the answer 0 passed 34 % of the questions and the last observed value 57 %; only 17 % of items passed with a fit of the true law and failed every blind and naive answer. The rule since (half the range beyond the data, within 5 % or what a fit of the true law reaches there under the run's noise) gives 60 %; 0 passes 5 %. Plateaus (logistic, Hill, Michaelis-Menten, Arrhenius) still pass with the last observed value: a private `naive_reachable` label marks them.
 - **Leak audit (221 quick releases).** The rule before 0.7.0rc2 refused 3 clean releases (1.4 %): two noisy observations within 1e-6 of an answer by chance, and one answer equal to its question's own x at 4 digits. Now none is refused; the two chance matches appear as medium-severity notes. Every planted copy is still caught (exact, round-off, float32, printed with 4 or more digits). Three answers recomputed with an error of 1e-9 to 1e-6 still refuse the release; a single one is a medium note, because one match that close cannot be told from chance.
 
 ## Writing a model

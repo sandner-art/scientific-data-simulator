@@ -82,11 +82,13 @@ PRIVATE = "private"
 #: ``tolerance_rule`` instead.
 #: Never shown to a system under test: the answer, the (answer-derived) numeric tolerance, and
 #: labels that hint at the answer (``REACHABILITY_LABELS``).
-#: Private labels of questions a trivial answer passes: ``polynomial_reachable`` (law-discovery
-#: formula questions a fitted polynomial passes), ``zero_reachable`` (numeric questions the answer 0
-#: passes, e.g. extrapolations of laws that have decayed to almost 0). They hint at the answer, so
-#: they stay private; reports give accuracy with and without the labelled items.
-REACHABILITY_LABELS = ("polynomial_reachable", "zero_reachable")
+#: Private labels of questions an answer that ignores the mechanism passes: ``polynomial_reachable``
+#: (law-discovery formula questions a fitted polynomial passes), ``zero_reachable`` (numeric
+#: questions the answer 0 passes, e.g. extrapolations of laws that have decayed to almost 0),
+#: ``naive_reachable`` (extrapolations the last observed value or a line through the tail passes,
+#: e.g. plateaus). They hint at the answer, so they stay private; reports give accuracy with and
+#: without the labelled items. Labelling, not dropping: which items are missing would hint too.
+REACHABILITY_LABELS = ("polynomial_reachable", "zero_reachable", "naive_reachable")
 PRIVATE_QUESTION_KEYS = ("answer", "tolerance") + REACHABILITY_LABELS
 
 

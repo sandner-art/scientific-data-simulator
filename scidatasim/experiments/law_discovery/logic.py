@@ -31,9 +31,18 @@ partly within its reach: each formula question carries a private ``polynomial_re
 and reports give accuracy with and without those items. The tolerance is "auto" by default: the larger of 1 % and the error that a
 least-squares fit of the true family reaches in 90 % of replicates of the run's own noise
 (residuals resampled). A fixed 1 % cannot be met at 20 dB even with the right law.
+
+The extrapolation question asks for y half the data range beyond the data
+(``extrapolation_distance``), within the larger of 5 % of the true value and the error a fit of
+the true family reaches at that x under the run's noise (``extrapolation_tolerance: auto``). The
+0.7.0rc2 rule (a quarter of the range; at least 1 % of the largest observed |y|; ``legacy``) let
+the answer 0 pass a third of the questions and the last observed value 57 %
+(``tools/study_extrapolation_scoring.py``). Private labels mark the items that still pass without
+the law: ``zero_reachable`` and ``naive_reachable`` (plateaus change little beyond the data).
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -44,8 +53,12 @@ from scidatasim.utils import DataDescriptor, DataType
 
 #: Default x range, shared by all families: a family-specific range would identify the family.
 DEFAULT_DOMAIN = (0.5, 8.0)
-#: The extrapolation question asks for y this fraction of the x range beyond the data.
-EXTRAPOLATION = 0.25
+#: The extrapolation question asks for y this fraction of the x range beyond the data (config
+#: ``extrapolation_distance``). 0.5 is where the formula's scored range ends; 0.7.0rc2 used 0.25,
+#: where the last observed value passed 57 % of the questions (tools/study_extrapolation_scoring.py).
+EXTRAPOLATION = 0.5
+#: The extrapolation tolerance never goes below this share of |y*|.
+EXTRAPOLATION_FLOOR = 0.05
 #: The formula question is scored on the data range and this fraction of it beyond. Inside the
 #: data range alone a polynomial fitted to the data passes for five of the nine families; at 0.5
 #: only power laws remain within reach (their exponents are often close to 1 or 2).
@@ -169,6 +182,54 @@ def achievable_tolerance(family: str, values: Dict[str, float], x, y_observed, d
     return max(floor, achieved) if np.isfinite(achieved) else floor
 
 
+def achievable_point_error(family: str, values: Dict[str, float], x, y_observed, x_star: float,
+                           rng: np.random.Generator, replicates: int = TOLERANCE_REPLICATES,
+                           quantile: float = TOLERANCE_QUANTILE) -> float:
+    """|y(x_star)| error that a least-squares fit of the *true* family reaches at ``x_star`` in
+    ``quantile`` of noise replicates (the run's residuals resampled onto the true curve, as in
+    :func:`achievable_tolerance`). 0 without noise. An extrapolation tolerance below it would fail a
+    solver that found the law; one tied to the data's scale instead lets 0 pass laws that have
+    decayed (a third of the questions in 0.7.0rc2)."""
+    names, f = law_function(family)
+    truth = [values[n] for n in names]
+    x, y_observed = np.asarray(x, float), np.asarray(y_observed, float)
+    ok = np.isfinite(x) & np.isfinite(y_observed)
+    x, y_observed = x[ok], y_observed[ok]
+    clean = f(x, *truth)
+    residuals = y_observed - clean
+    residuals = residuals[np.isfinite(residuals)]
+    if residuals.size == 0 or not np.any(residuals):
+        return 0.0
+    target = float(f(np.array([float(x_star)]), *truth)[0])
+    start = dict(zip(names, truth))
+    errors = []
+    for _ in range(int(replicates)):
+        fitted = fit_law(family, x, clean + rng.choice(residuals, size=x.size, replace=True), start)
+        guess = float(f(np.array([float(x_star)]), *[fitted[n] for n in names])[0]) if fitted else np.inf
+        errors.append(abs(guess - target) if np.isfinite(guess) else np.inf)
+    achieved = float(np.quantile(errors, quantile))
+    return achieved if np.isfinite(achieved) else 0.0
+
+
+def naive_reachable(item: Dict[str, Any], x, y) -> bool:
+    """Whether an extrapolation question ``item`` passes with an answer that ignores the law: the
+    last observed value (mean of the last three points) or a straight line through the last
+    quarter of the data. Private (it hints at the family: plateaus and near-linear laws), so
+    reports give accuracy with and without these items."""
+    from scidatasim.bundle import check_answer
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    ok = np.isfinite(x) & np.isfinite(y)
+    x, y = x[ok], y[ok]
+    if x.size < 3:
+        return False
+    x_star = float(re.findall(r"x = ([-+0-9.e]+)", item["question"])[0])
+    order = np.argsort(x)
+    last = float(np.mean(y[order[-3:]]))
+    tail = x >= x.min() + 0.75 * (x.max() - x.min())
+    line = (float(np.polyval(np.polyfit(x[tail], y[tail], 1), x_star)) if tail.sum() >= 2 else last)
+    return bool(check_answer(item, last) or check_answer(item, line))
+
+
 def polynomial_reachable(item: Dict[str, Any], results) -> bool:
     """Whether a polynomial fitted to the run's observations (degree by BIC) passes the formula
     question ``item``. Stored with the question as a *private* label (it hints at the family):
@@ -213,6 +274,12 @@ class HiddenLawExperiment(ExperimentLogic):
         # the family and formula questions of the same run; off unless asked for.
         self.parameter_questions = bool(config.get("parameter_questions", False))
         self.formula_tolerance = config.get("formula_tolerance", "auto")
+        self.extrapolation_distance = float(config.get("extrapolation_distance", EXTRAPOLATION))
+        if not self.extrapolation_distance > 0:
+            raise ValueError("extrapolation_distance must be > 0 (a share of the x range beyond the data)")
+        self.extrapolation_tolerance = config.get("extrapolation_tolerance", "auto")
+        if self.extrapolation_tolerance not in ("auto", "legacy"):
+            raise ValueError("extrapolation_tolerance must be 'auto' or 'legacy'")
         if self.formula_tolerance != "auto" and not (isinstance(self.formula_tolerance, (int, float))
                                                      and self.formula_tolerance > 0):
             raise ValueError("formula_tolerance must be 'auto' or a positive number")
@@ -314,7 +381,7 @@ class HiddenLawExperiment(ExperimentLogic):
                                                             + ", ".join(picks) + ".",
                           answer=self.family, answer_type="choice", choices=picks, tolerance=None,
                           tolerance_rule="exact", answerable_from="inference"))
-        x_star = hi + EXTRAPOLATION * (hi - lo)
+        x_star = hi + self.extrapolation_distance * (hi - lo)
         # Scored beyond the data: inside the data range a flexible curve (a polynomial) can pass
         # without the law. The tolerance is what the true law achieves under this run's noise.
         x_end = hi + FORMULA_EXTENSION * (hi - lo)
@@ -339,14 +406,28 @@ class HiddenLawExperiment(ExperimentLogic):
         items.append(formula_item)
         y_star = float(evaluate(self.expression(), x=x_star))
         if np.isfinite(y_star):
+            observed = _observed_series(results)
+            if self.extrapolation_tolerance == "legacy":  # 0.7.0rc2
+                tolerance = max(0.05 * abs(y_star), 0.01 * _finite_max_abs(results["y"]["data"]))
+                rule = "5 % of the true value (at least 1 % of the largest observed |y|)"
+            else:
+                miss = (0.0 if observed is None else achievable_point_error(
+                    self.family, self.values, observed[0], observed[1], x_star,
+                    np.random.default_rng(int(rng.integers(2 ** 63)))))
+                tolerance = max(EXTRAPOLATION_FLOOR * abs(y_star), miss)
+                rule = (f"{EXTRAPOLATION_FLOOR:.0%} of the true value, or the error a least-squares fit of the true "
+                        f"law reaches at this x in {TOLERANCE_QUANTILE:.0%} of replicates of this run's noise, "
+                        "whichever is larger")
             extrapolation = dict(template="extrapolation",
                                  question=f"Predict y at x = {format_number(x_star, 4)} (outside the observed range).",
-                                 answer=y_star, answer_type="number",
-                                 tolerance=max(0.05 * abs(y_star), 0.01 * _finite_max_abs(results["y"]["data"])),
-                                 tolerance_rule="5 % of the true value (at least 1 % of the largest observed |y|)",
+                                 answer=y_star, answer_type="number", tolerance=tolerance, tolerance_rule=rule,
                                  answerable_from="inference")
-            # private: the answer 0 passes (the law has decayed below the tolerance floor at x_star)
-            extrapolation["zero_reachable"] = bool(abs(y_star) <= extrapolation["tolerance"])
+            # private labels: answers that ignore the law pass. 0 (the law has decayed below the
+            # tolerance), or the last observed value / a line through the last quarter of the data
+            # (the law changes little beyond the data, e.g. a plateau)
+            extrapolation["zero_reachable"] = bool(abs(y_star) <= tolerance)
+            extrapolation["naive_reachable"] = naive_reachable(
+                extrapolation, *(observed if observed is not None else (results["x"]["data"], results["y"]["data"])))
             items.append(extrapolation)
         for name, value in (self.values.items() if self.parameter_questions else ()):
             if name in LAWS[self.family]["structural"] and not self.counterfactual:

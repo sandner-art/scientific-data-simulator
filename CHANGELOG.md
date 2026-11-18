@@ -4,6 +4,9 @@ Versions 0.2–0.6 were development steps; they were first released together in 
 
 ## Unreleased
 
+### Changed
+- **The law-discovery extrapolation question, redesigned after a study** (`tools/study_extrapolation_scoring.py`, 2,160 runs, 4 rules, 3 distances). The point lies half the data range beyond the data (was a quarter; `extrapolation_distance`), and the tolerance is the larger of 5 % of the true value and the error a fit of the true family reaches at that x in 90 % of replicates of the run's noise (`extrapolation_tolerance: auto`; was at least 1 % of the largest observed |y|, kept as `legacy`). Items that separate a fit of the true law from every blind and naive answer: 17 % before, 60 % now; the answer 0 passes 5 % instead of 34 %, and the right law still passes 97 %. A tolerance relative to the true value alone was rejected: the right law then fails most Gaussian tails (41 % pass). Plateaus still pass with the last observed value under any rule: a new private label, `naive_reachable`, marks the items the last value or a line through the tail passes, and example 13 reports extrapolation accuracy without zero- and naive-reachable items. Items are labelled, not dropped: which items are missing would hint at the family.
+
 ### Added
 - **`zero_reachable`, a private label on law-discovery extrapolation questions** that the answer 0 passes: the law has decayed below the tolerance floor (1 % of the largest observed |y|) at the asked x. About a third of extrapolation questions in quick builds (Gaussian peak, inverse square, exponential decay, some damped oscillations). Like `polynomial_reachable` it stays out of public files; `quality_card` reports the share and a solver's accuracy without those items (`REACHABILITY_LABELS` in `scidatasim.bundle`), and examples 10, 11 and 13 report extrapolation accuracy with and without them. The question itself is unchanged until the scoring study is done.
 

@@ -36,7 +36,9 @@ them 56–78 % of the time (example 11 measures this).
   Power laws stay partly within a polynomial's reach (exponents near 1 or 2), so each formula
   question carries a private label `polynomial_reachable`, and the baseline's formula score is
   also printed without those items;
-* **extrapolation**: the value of y a quarter of the range beyond the data.
+* **extrapolation**: the value of y half the range beyond the data, within 5 % or what a fit of the
+  true law reaches there under the run's noise. Private labels mark the items that pass without the
+  law (`zero_reachable`, `naive_reachable`: plateaus barely change beyond the data).
 
 ## Run
 

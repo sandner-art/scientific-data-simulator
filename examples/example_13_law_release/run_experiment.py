@@ -106,7 +106,8 @@ def classical_answers(tasks, obs):
 def score_answers(tasks, answers):
     """Accuracy per template (a missing answer is wrong), the formula score without the items
     the private ``polynomial_reachable`` label marks, and the extrapolation score without those
-    ``zero_reachable`` marks (the answer 0 passes them)."""
+    ``zero_reachable`` or ``naive_reachable`` mark (0, the last observed value or a line through the
+    tail passes them)."""
     hits = {t["id"]: bool(t["id"] in answers and score(t, answers[t["id"]])) for t in tasks}
     out = {"n": len(tasks), "answered": sum(t["id"] in answers for t in tasks),
            "accuracy": sum(hits.values()) / max(1, len(tasks)), "templates": {}}
@@ -117,23 +118,24 @@ def score_answers(tasks, answers):
     if formula:
         split = accuracy_by(formula, hits, "polynomial_reachable")
         out["law_formula_without_polynomial_reachable"] = split.get("False", {}).get("accuracy")
-    extrapolation = [t for t in tasks if t["template"] == "extrapolation"]
+    extrapolation = [dict(t, discriminating=not (t.get("zero_reachable") or t.get("naive_reachable")))
+                     for t in tasks if t["template"] == "extrapolation"]
     if extrapolation:
-        split = accuracy_by(extrapolation, hits, "zero_reachable")
-        out["extrapolation_without_zero_reachable"] = split.get("False", {}).get("accuracy")
+        split = accuracy_by(extrapolation, hits, "discriminating")
+        out["extrapolation_without_zero_or_naive_reachable"] = split.get("True", {}).get("accuracy")
     return out
 
 
 def results_table(rows):
     """Markdown rows: name -> score_answers() result."""
     head = ["| solver | " + " | ".join(TEMPLATES) + " | formula without polynomial-reachable items | "
-            "extrapolation without zero-reachable items |",
+            "extrapolation without zero- or naive-reachable items |",
             "|---|" + "---|" * (len(TEMPLATES) + 2)]
     lines = []
     for name, r in rows.items():
         cells = [f"{r['templates'][t]['accuracy']:.2f}" if t in r["templates"] else "" for t in TEMPLATES]
         rest = r.get("law_formula_without_polynomial_reachable")
-        rest_x = r.get("extrapolation_without_zero_reachable")
+        rest_x = r.get("extrapolation_without_zero_or_naive_reachable")
         lines.append(f"| {name} | " + " | ".join(cells) + f" | {'' if rest is None else f'{rest:.2f}'} | "
                      f"{'' if rest_x is None else f'{rest_x:.2f}'} |")
     return head + lines
@@ -184,6 +186,7 @@ def build(args):
     reachable = sum(bool(t.get("polynomial_reachable")) for t in tasks if t["template"] == "law_formula")
     n_formula = sum(t["template"] == "law_formula" for t in tasks)
     zero = sum(bool(t.get("zero_reachable")) for t in tasks if t["template"] == "extrapolation")
+    naive = sum(bool(t.get("naive_reachable")) for t in tasks if t["template"] == "extrapolation")
     n_extrapolation = sum(t["template"] == "extrapolation" for t in tasks)
 
     lines = ["", "## Baselines", "",
@@ -192,15 +195,17 @@ def build(args):
              f"- A polynomial fitted to the measurements and submitted as the formula passes "
              f"{poly.get('accuracy', 0):.2f} of formula questions ({reachable} of {n_formula}). Formulas are "
              "scored on the data range and half of it beyond, so curve fitting alone rarely passes; power laws "
-             "with exponents near 1 or 2 are the exception, and the last column leaves those items out.",
+             "with exponents near 1 or 2 are the exception; the column \"formula without polynomial-reachable items\" "
+             "leaves those items out.",
              "- Answering without the data (majority answer, median, from the other questions): "
              + ", ".join(f"{t} {b['accuracy']:.2f}" for t, b in sorted(blind.items())) + ".",
              *[f"- One constant answer, chosen on the other questions, passes {b['constant_accuracy']:.2f} of "
                f"{t} questions ({b['constant']:.3g})."
                for t, b in sorted(blind.items()) if b.get("constant_accuracy", 0) >= 0.05],
-             f"- The answer 0 passes {zero} of {n_extrapolation} extrapolation questions: those laws have decayed "
-             "to almost 0 at the asked x, and the tolerance is at least 1 % of the largest observed |y|. A private "
-             "label marks them; the last column leaves them out. The question design is under study.", "",
+             f"- Of {n_extrapolation} extrapolation questions, {naive} pass with the last observed value or a line "
+             f"through the last quarter of the data (laws that barely change beyond it, such as plateaus) and "
+             f"{zero} with the answer 0 (laws that have decayed below the tolerance). Private labels mark them; "
+             "the last column leaves them out.", "",
              "Answers are withheld. To score predictions, send them to the maintainers or use the scoring "
              "mode of example 13 in the Scientific Data Simulator repository with the private key.", ""]
     readme = os.path.join(public, "README.md")
@@ -230,7 +235,8 @@ def build(args):
               "public_files": n_files, "sha256sums": sha256(sums), "twin": bool(twin_dir),
               "baselines": rows, "polynomial_formula_accuracy": poly.get("accuracy"),
               "polynomial_reachable": {"n": reachable, "of": n_formula},
-              "zero_reachable": {"n": zero, "of": n_extrapolation}}
+              "zero_reachable": {"n": zero, "of": n_extrapolation},
+              "naive_reachable": {"n": naive, "of": n_extrapolation}}
     with open(os.path.join(private, "release.json"), "w", encoding="utf-8") as f:
         json.dump(record, f, indent=2, default=str)
     with open(os.path.join(private, "REPORT.md"), "w", encoding="utf-8") as f:
