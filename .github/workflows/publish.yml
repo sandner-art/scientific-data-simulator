@@ -78,3 +78,7 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # files already on PyPI are skipped, so "Re-run failed jobs" can finish a partly
+          # uploaded release (the first release creates scidatasim-ui in a second run, RELEASING.md)
+          skip-existing: true

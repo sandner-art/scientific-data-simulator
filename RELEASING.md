@@ -60,14 +60,19 @@ One-time setup:
 
 1. Create accounts on [pypi.org](https://pypi.org) and [test.pypi.org](https://test.pypi.org)
    (two-factor authentication is required).
-2. On each site, under *Account* > *Publishing*, add a **pending publisher** for each of the two
-   project names, `scidatasim` and `scidatasim-ui`: owner `sandner-art`, repository
-   `scientific-data-simulator`, workflow `publish.yml`, environment `pypi` (on test.pypi.org:
-   `testpypi`). The project name must be the `name` in `pyproject.toml` (`ui/pyproject.toml`),
-   or the upload is refused. The first upload then creates the project; until then a pending
-   publisher does not reserve the name.
-3. In the GitHub repository, *Settings* > *Environments*: create `pypi` and `testpypi`. Give `pypi`
+2. In the GitHub repository, *Settings* > *Environments*: create `pypi` and `testpypi`. Give `pypi`
    a required reviewer (yourself), so nothing reaches PyPI without your click.
+3. On each site, under *Account* > *Publishing*, add a **pending publisher** for `scidatasim`:
+   owner `sandner-art`, repository `scientific-data-simulator`, workflow `publish.yml`,
+   environment `pypi` (on test.pypi.org: `testpypi`). The project name must be the `name` in
+   `pyproject.toml` (`ui/pyproject.toml` for the UI), or the upload is refused. A pending
+   publisher does not reserve the name; the first upload creates the project.
+4. PyPI takes only one pending publisher per owner, repository, workflow and environment, so
+   `scidatasim-ui` is added after `scidatasim` exists. The first upload to each site therefore
+   takes two runs: the first run creates `scidatasim` and fails on `scidatasim-ui`; then add the
+   pending publisher for `scidatasim-ui` (same details) and use *Re-run failed jobs*. Both
+   upload jobs skip files that are already there, so the re-run uploads only the UI. From then on
+   one run publishes both.
 
 Each release:
 
