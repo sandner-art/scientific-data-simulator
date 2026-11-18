@@ -184,7 +184,11 @@ def build(args):
              "scored on the data range and half of it beyond, so curve fitting alone rarely passes; power laws "
              "with exponents near 1 or 2 are the exception, and the last column leaves those items out.",
              "- Answering without the data (majority answer, median, from the other questions): "
-             + ", ".join(f"{t} {b['accuracy']:.2f}" for t, b in sorted(blind.items())) + ".", "",
+             + ", ".join(f"{t} {b['accuracy']:.2f}" for t, b in sorted(blind.items())) + ".",
+             *[f"- One constant answer, chosen on the other questions, passes {b['constant_accuracy']:.2f} of "
+               f"{t} questions ({b['constant']:.3g}): laws that have decayed to almost 0 beyond the data pass with "
+               "a value near 0, because the tolerance is at least 1 % of the largest observed |y|."
+               for t, b in sorted(blind.items()) if b.get("constant_accuracy", 0) >= 0.05], "",
              "Answers are withheld. To score predictions, send them to the maintainers or use the scoring "
              "mode of example 13 in the Scientific Data Simulator repository with the private key.", ""]
     readme = os.path.join(public, "README.md")

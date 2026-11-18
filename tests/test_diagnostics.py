@@ -360,3 +360,20 @@ def test_textbook_flag_when_scoring_extends_beyond_the_measurements():
     diagnoses = [diagnose_episode(log, law_alternatives(log)) for log in run_episodes(env, agent, seeds=range(6))]
     applicable = [d for d in diagnoses if "matches_textbook" in d["flags"]]
     assert applicable and all(d["flags"]["matches_textbook"] for d in applicable if not d["correct"])
+
+
+def test_constant_baseline_finds_a_tolerance_floor():
+    """Values that decay to almost 0, scored within max(5 %, a floor tied to the observed scale):
+    the answer 0 passes most of them, which the median of the other answers misses."""
+    rng = np.random.default_rng(0)
+    tasks = []
+    for i in range(60):
+        decayed = i % 5 < 2  # 40 %: the median comes from the others
+        answer = float(rng.uniform(1e-4, 1e-2)) if decayed else float(rng.uniform(5, 15))
+        tasks.append({"id": f"t{i}", "template": "extrapolation", "answer_type": "number", "answer": answer,
+                      "tolerance": max(0.05 * answer, 0.05)})
+    b = blind_baseline(tasks)["extrapolation"]
+    assert b["accuracy"] < 0.2 and b["constant_accuracy"] > 0.35 and abs(b["constant"]) < 0.05
+    spread = [dict(t, answer=float(v), tolerance=0.05 * float(v))
+              for t, v in zip(tasks, np.geomspace(1, 1000, len(tasks)))]
+    assert blind_baseline(spread)["extrapolation"]["constant_accuracy"] < 0.1

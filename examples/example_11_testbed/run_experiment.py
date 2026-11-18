@@ -195,9 +195,10 @@ def main():
         b, s = blind[template], shortcuts.get(template, {})
         md.append(f"| {template} | {b['accuracy']:.2f}"
                   + (f" (position {b['position_accuracy']:.2f})" if "position_accuracy" in b else "")
+                  + (f" (constant {b['constant_accuracy']:.2f})" if "constant_accuracy" in b else "")
                   + f" | {b.get('chance', float('nan')):.2f} | {s.get('accuracy', float('nan')):.2f} | "
                   + f"{s.get('p_value', float('nan')):.3f} |")
-    degenerate = sorted(t for t, b in blind.items() if b["accuracy"] >= 0.5)
+    degenerate = sorted(t for t, b in blind.items() if max(b["accuracy"], b.get("constant_accuracy", 0)) >= 0.5)
     md += ["", "Templates answerable at >= 50 % without the data: " + (", ".join(degenerate) or "none") + ".", ""]
     report["degenerate_templates"] = degenerate
 

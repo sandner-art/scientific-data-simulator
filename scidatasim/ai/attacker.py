@@ -241,11 +241,12 @@ def llm_attack(client: Any, public_dir: str, private, batch_size: int = 20, max_
         hits = sum(score(t, answers[t["id"]]) >= 1.0 for t in group if t["id"] in answers)
         n = len(group)
         b = blind[template]
-        null_rate = max(b["accuracy"], b.get("position_accuracy", 0.0), b.get("chance", 0.0), 0.5 / n)
+        blind_best = max(b["accuracy"], b.get("position_accuracy", 0.0), b.get("constant_accuracy", 0.0))
+        null_rate = max(blind_best, b.get("chance", 0.0), 0.5 / n)
         p = binomial_p_greater(int(hits), n, null_rate)
         p_adj = min(1.0, p * n_templates)
         report.templates[template] = {"n": n, "hits": int(hits), "accuracy": hits / n,
-                                      "blind_accuracy": max(b["accuracy"], b.get("position_accuracy", 0.0)),
+                                      "blind_accuracy": blind_best,
                                       "chance": b.get("chance"), "null_rate": null_rate, "p_value": p_adj,
                                       "significant": bool(hits / n > null_rate and p_adj < alpha)}
     return report

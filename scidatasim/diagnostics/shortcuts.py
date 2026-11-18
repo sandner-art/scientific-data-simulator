@@ -9,7 +9,8 @@ the caption or the size of the figure file. In simulated causal benchmarks the c
 sorting by variance "discovers" the graph.
 
 * :func:`blind_baseline` answers every question from the *other* questions' answers alone
-  (leave-one-out): majority choice, majority position, median number, most common formula.
+  (leave-one-out): majority choice, majority position, median number, best constant number, most
+  common formula.
 * :func:`feature_shortcuts` answers from public per-run features with a leave-one-out
   nearest-neighbour predictor, and tests with a permutation test whether the features carry
   information about the answers beyond the blind baseline.
@@ -28,7 +29,7 @@ from __future__ import annotations
 import numbers
 import os
 from collections import Counter
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -83,12 +84,39 @@ def _chance(task: Mapping[str, Any]) -> Optional[float]:
     return None
 
 
+def _constant_baseline(group: Sequence[Mapping[str, Any]], n_candidates: int = 101) -> Tuple[float, Optional[float]]:
+    """Leave-one-out accuracy of the best constant answer, and the constant best on all items.
+
+    Candidates are 0 and quantiles of the answers. For each item, the constant that is correct
+    most often on the *other* items is tried on it. This finds templates whose tolerances let one
+    number pass many questions: extrapolations of laws that have decayed to almost 0 pass with 0
+    when the tolerance has a floor tied to the observed scale.
+    """
+    values = np.array([float(t["answer"]) for t in group if isinstance(t["answer"], numbers.Real)
+                       and not isinstance(t["answer"], bool) and np.isfinite(float(t["answer"]))])
+    if values.size < 2:
+        return 0.0, None
+    candidates = np.unique(np.concatenate([[0.0], np.quantile(values, np.linspace(0, 1, n_candidates))]))
+    if group[0]["answer_type"] == "integer":
+        candidates = np.unique(np.round(candidates))
+    hits = np.array([[_check(t, int(c) if t["answer_type"] == "integer" else float(c)) for t in group]
+                     for c in candidates], dtype=float)  # candidates x items
+    totals = hits.sum(axis=1)
+    loo = 0
+    for i in range(len(group)):
+        best = int(np.argmax(totals - hits[:, i]))  # chosen without item i
+        loo += hits[best, i]
+    return float(loo / len(group)), float(candidates[int(np.argmax(totals))])
+
+
 def blind_baseline(tasks: Sequence[Mapping[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Leave-one-out accuracy of answering each template from the other answers only.
 
     ``tasks`` must carry answers (private tasks, e.g. from
     :func:`scidatasim.export.tasks.collect_bundle_tasks`). Per template: ``accuracy`` (majority
-    choice / median number / most common text), ``position_accuracy`` (choice questions: the most
+    choice / median number / most common text), for numbers also ``constant_accuracy`` (the best
+    constant answer, chosen on the other items; ``constant``: the one best on all items),
+    ``position_accuracy`` (choice questions: the most
     common correct position), ``chance`` (choice questions: mean 1/len(choices)), and ``p_value``
     of the better blind accuracy against chance (exact binomial, Bonferroni-corrected for the two
     strategies). Leave-one-out majority voting is biased *downwards* on perfectly balanced
@@ -105,6 +133,8 @@ def blind_baseline(tasks: Sequence[Mapping[str, Any]]) -> Dict[str, Dict[str, An
                 pos_hits += _check(task, _blind_guess(task, others, "position"))
         n = len(group)
         entry: Dict[str, Any] = {"n": n, "answer_type": group[0]["answer_type"], "accuracy": hits / n}
+        if entry["answer_type"] in ("number", "integer"):
+            entry["constant_accuracy"], entry["constant"] = _constant_baseline(group)
         chances = [c for c in (_chance(t) for t in group) if c is not None]
         if chances:
             chance = float(np.mean(chances))
