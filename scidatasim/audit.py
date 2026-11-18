@@ -65,6 +65,9 @@ PathLike = Union[str, os.PathLike]
 SEVERITY = ("high", "medium", "info")
 TEXT_SUFFIXES = (".json", ".jsonl", ".csv", ".tsv", ".md", ".txt", ".yaml", ".yml", ".dot", ".py", ".toml",
                  ".html", ".svg")
+#: Containers whose text metadata is scanned (their pixels, samples and pages are not).
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".gif")
+METADATA_SUFFIXES = IMAGE_SUFFIXES + (".wav", ".pdf")
 PRIVATE_FIELDS = {"answer": "high", "answers": "high", "ground_truth": "high",
                   "ground_truth_parameters": "high", "tolerance": "medium"}
 SEED_FIELDS = ("seed", "seeds", "base_seed", "episode_seed", "law_seed")
@@ -127,6 +130,7 @@ class _Public:
     fields: List[Tuple[str, str, str]] = field(default_factory=list)  # (file, key, kind)
     design_point_files: List[str] = field(default_factory=list)
     unreadable: List[Tuple[str, str]] = field(default_factory=list)  # (file, reason)
+    metadata_files: List[str] = field(default_factory=list)  # images, WAV, PDF: metadata only
     files: int = 0
 
     def add_number(self, value: Any) -> None:
@@ -252,6 +256,83 @@ def _walk_json(obj: Any, pub: _Public, path: str, parent_key: str = "") -> None:
         pub.add_text(path, obj)
 
 
+def _image_metadata(path: str) -> Dict[str, Any]:
+    from PIL import ExifTags, Image
+    meta: Dict[str, Any] = {}
+    with Image.open(path) as im:
+        try:
+            im.load()  # PNG text chunks after the image data are read with it
+        except Exception:
+            pass
+        for key, value in im.info.items():
+            if key in ("exif", "icc_profile"):
+                continue  # EXIF is decoded below; the colour profile is not text
+            if isinstance(value, bytes):
+                value = value.decode("utf-8", "ignore")
+            if isinstance(value, (str, int, float)):
+                meta[str(key)] = value
+        exif = im.getexif()
+        entries = list(exif.items())
+        for ifd in (0x8769, 0x8825):  # Exif and GPS sub-directories
+            try:
+                entries += list(exif.get_ifd(ifd).items())
+            except Exception:
+                pass
+        for tag, value in entries:
+            if isinstance(value, bytes):
+                value = value.decode("utf-8", "ignore").strip("\x00")
+            if isinstance(value, (str, int, float)):
+                meta["exif." + str(ExifTags.TAGS.get(tag, tag))] = value
+    return meta
+
+
+def _wav_metadata(path: str) -> Dict[str, Any]:
+    with open(path, "rb") as f:
+        data = f.read()
+    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        raise ValueError("not a RIFF/WAVE file")
+    meta: Dict[str, Any] = {}
+    pos = 12
+    while pos + 8 <= len(data):
+        chunk, size = data[pos:pos + 4], int.from_bytes(data[pos + 4:pos + 8], "little")
+        body = data[pos + 8:pos + 8 + size]
+        if chunk == b"LIST" and body[:4] == b"INFO":
+            sub = 4
+            while sub + 8 <= len(body):
+                sid = body[sub:sub + 4].decode("ascii", "ignore")
+                ssize = int.from_bytes(body[sub + 4:sub + 8], "little")
+                meta["INFO." + sid] = body[sub + 8:sub + 8 + ssize].decode("utf-8", "ignore").strip("\x00")
+                sub += 8 + ssize + (ssize & 1)
+        elif chunk in (b"bext", b"iXML", b"note", b"labl", b"_PMX"):  # text-bearing chunks
+            meta[chunk.decode("ascii", "ignore").strip()] = body.decode("utf-8", "ignore").strip("\x00")
+        pos += 8 + size + (size & 1)
+    return meta
+
+
+_PDF_INFO = re.compile(r"/(Title|Author|Subject|Keywords|Creator|Producer)\s*\(((?:\\.|[^\\)])*)\)")
+
+
+def _pdf_metadata(path: str) -> Dict[str, Any]:
+    with open(path, "rb") as f:
+        raw = f.read().decode("latin-1")
+    meta: Dict[str, Any] = {"pdf." + k: v for k, v in _PDF_INFO.findall(raw)}
+    xmp = re.search(r"<x:xmpmeta.*?</x:xmpmeta>", raw, re.S)
+    if xmp:
+        meta["xmp"] = xmp.group()
+    return meta
+
+
+def _container_metadata(path: str, suffix: str) -> Dict[str, Any]:
+    """Text metadata of an image (PNG text chunks, EXIF, XMP), a WAV file (RIFF INFO and other text
+    chunks) or a PDF (information dictionary, XMP packet). Pixels, samples and page content are
+    not read: an answer drawn into a figure or spoken in a recording is out of scope."""
+    if suffix in IMAGE_SUFFIXES:
+        return _image_metadata(path)
+    if suffix == ".wav":
+        return _wav_metadata(path)
+    return _pdf_metadata(path)
+
+
 def _finite_float(token: str) -> bool:
     try:
         return math.isfinite(float(token))
@@ -328,9 +409,14 @@ def _scan_public(paths) -> _Public:
     pub = _Public()
     for path in _iter_files(paths):
         suffix = os.path.splitext(path)[1].lower()
-        if suffix not in TEXT_SUFFIXES + (".parquet", ".npy", ".npz", ".h5", ".hdf5"):
-            continue  # images and other binary files carry no answers in machine-readable form
+        if suffix not in TEXT_SUFFIXES + METADATA_SUFFIXES + (".parquet", ".npy", ".npz", ".h5", ".hdf5"):
+            continue  # other binary files carry no answers in machine-readable form
         try:
+            if suffix in METADATA_SUFFIXES:
+                _walk_json(_container_metadata(path, suffix), pub, path)
+                pub.metadata_files.append(path)
+                pub.files += 1
+                continue
             if suffix == ".parquet":
                 _read_table(path, pub, pd.read_parquet(path))
             elif suffix in (".npy", ".npz"):
@@ -595,6 +681,8 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
     significant digits, or (formulas and text) with different spacing - not when transformed
     otherwise. An answer that equals a number its own question states (an input, such as the x
     it asks about) is not counted, so a question that printed its own answer would go unnoticed.
+    Of images, WAV recordings and PDFs only the text metadata is read (PNG text chunks, EXIF, XMP,
+    RIFF INFO, the PDF information dictionary): not pixels, samples or compressed page text.
     """
     pub = _scan_public(public)
     priv = _load_private(private, include_arrays=check_arrays)

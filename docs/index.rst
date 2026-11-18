@@ -385,6 +385,12 @@ runs as the answer key and reports what it recovers:
 * ``unreadable`` / ``nothing_scanned`` - a supported file that cannot be parsed,
   or no file read at all: neither can be cleared, so both fail the audit.
 
+Text, JSON, CSV, Parquet, NumPy and HDF5 files are read in full. Of images (PNG,
+JPEG, TIFF, WebP, GIF), WAV recordings and PDFs only the text metadata is read:
+PNG text chunks, EXIF and XMP; RIFF ``INFO`` and other text chunks; the PDF
+information dictionary and XMP packet. An answer drawn into a figure, spoken in
+a recording or written in compressed PDF page text is not found.
+
 ``python -m scidatasim.audit PUBLIC --private RUNS`` exits with status 1 on a
 high-severity finding. :func:`scidatasim.audit.audit_environment` checks that an
 interactive environment's public observations and state reveal neither the

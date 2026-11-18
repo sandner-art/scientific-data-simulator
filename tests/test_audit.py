@@ -137,7 +137,10 @@ def test_unreadable_or_empty_public_files_fail(design, tmp_path):
     (bad / "deep.json").write_text("[" * 5000 + "]" * 5000)
     assert "unreadable" in _attacks(audit_export(str(bad), design))
     (bad / "deep.json").unlink()
-    (bad / "figure.png").write_bytes(b"\x89PNG")
+    (bad / "figure.png").write_bytes(b"\x89PNG")  # a broken image: its metadata cannot be cleared
+    assert "unreadable" in _attacks(audit_export(str(bad), design))
+    (bad / "figure.png").unlink()
+    (bad / "recording.mp3").write_bytes(b"ID3")  # not a scanned format
     assert "nothing_scanned" in _attacks(audit_export(str(bad), design))
 
 
@@ -249,3 +252,57 @@ def test_an_answer_equal_to_its_own_question_input_is_not_a_leak():
     assert not _stated_in_question(question, 9.8761)  # differs at the 4th digit
     assert not _stated_in_question("Predict y at x = 8 (outside the observed range).", 8.0004)
     assert not _stated_in_question(None, 1.2345)
+
+
+def test_metadata_of_images_audio_and_pdf_is_scanned(design, tmp_path):
+    """Answers and seeds hidden in PNG text chunks, EXIF, WAV INFO chunks and PDF metadata are found;
+    an ordinary matplotlib figure is clean."""
+    import struct
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from PIL import Image
+    from PIL.PngImagePlugin import PngInfo
+    tasks = [t for t in collect_bundle_tasks(design) if t["answer_type"] == "number" and _nontrivial(t["answer"])]
+    answer, seed = float(tasks[0]["answer"]), int(collect_bundle_tasks(design)[0]["seed"])
+    pub = tmp_path / "pub"
+    os.makedirs(pub)
+
+    fig = plt.figure(figsize=(2, 2))
+    plt.plot([0, 1], [0, 1])
+    fig.savefig(pub / "plain.png")
+    plt.close(fig)
+    clean = audit_export(str(pub), design)
+    assert clean.ok and not clean.findings and clean.files_scanned == 1
+
+    info = PngInfo()
+    info.add_text("Comment", f"peak at {answer:.6g}")
+    Image.new("RGB", (4, 4)).save(pub / "chunk.png", pnginfo=info)
+    assert "answer_lookup" in _attacks(audit_export(str(pub), design))
+    (pub / "chunk.png").unlink()
+
+    exif = Image.Exif()
+    exif[0x010E] = f"answer {answer!r}"  # ImageDescription
+    Image.new("RGB", (4, 4)).save(pub / "photo.jpg", exif=exif)
+    assert "answer_lookup" in _attacks(audit_export(str(pub), design))
+    (pub / "photo.jpg").unlink()
+
+    info = PngInfo()
+    info.add_text("seed", str(seed))
+    Image.new("RGB", (4, 4)).save(pub / "seeded.png", pnginfo=info)
+    assert "seed_replay" in _attacks(audit_export(str(pub), design))
+    (pub / "seeded.png").unlink()
+
+    comment = f"value {answer:.6g}".encode() + b"\x00"
+    info_chunk = b"INFO" + b"ICMT" + struct.pack("<I", len(comment)) + comment + b"\x00" * (len(comment) % 2)
+    samples = b"\x00\x00" * 8
+    fmt = struct.pack("<HHIIHH", 1, 1, 8000, 16000, 2, 16)
+    body = (b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"LIST" + struct.pack("<I", len(info_chunk))
+            + info_chunk + b"data" + struct.pack("<I", len(samples)) + samples)
+    (pub / "take.wav").write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body)
+    assert "answer_lookup" in _attacks(audit_export(str(pub), design))
+    (pub / "take.wav").unlink()
+
+    (pub / "figure.pdf").write_bytes(b"%PDF-1.4\n1 0 obj << /Title (Result " + f"{answer!r}".encode()
+                                     + b") /Producer (sds) >> endobj\ntrailer << /Info 1 0 R >>\n%%EOF")
+    assert "answer_lookup" in _attacks(audit_export(str(pub), design))
