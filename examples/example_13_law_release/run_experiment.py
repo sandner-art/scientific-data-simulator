@@ -145,7 +145,7 @@ def build(args):
     replicates = 1 if args.quick else args.replicates
     # Secret seeds: with them anyone could regenerate the runs and their answers.
     suite_seed = secrets.randbits(62) if args.suite_seed is None else args.suite_seed
-    base_seed = secrets.randbits(62)
+    base_seed = secrets.randbits(62) if args.base_seed is None else args.base_seed
 
     base = load_config(os.path.join(EX10, "config.yaml"))
     # Only the law questions: the generic chart read-outs (max, min, final value) are not law
@@ -289,6 +289,9 @@ def main():
     parser.add_argument("--snr-db", type=float, nargs="+", default=[40, 20])
     parser.add_argument("--replicates", type=int, default=3, help="independent laws per design point")
     parser.add_argument("--suite-seed", type=int, default=None, help="fixed suite order (default: secret)")
+    parser.add_argument("--base-seed", type=int, default=None,
+                        help="fixed data seeds, for tests and calibration only: a published release must keep "
+                             "its seeds secret (default: secret)")
     parser.add_argument("--no-twin", action="store_true", help="skip the private fresh twin")
     parser.add_argument("--score", metavar="FILE", help="score predictions (JSON lines id/response)")
     parser.add_argument("--label", help="name for the scored predictions")

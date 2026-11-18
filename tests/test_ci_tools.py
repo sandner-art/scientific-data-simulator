@@ -82,3 +82,39 @@ def test_readme_figures_still_build(tmp_path):
                              "--only", "loophole", "series", "fields"], capture_output=True, text=True, env=env)
     assert result.returncode == 0, result.stderr[-2000:]
     assert {"scorer_loophole.png", "series_operators.png", "field_operators.png"} <= set(os.listdir(tmp_path))
+
+
+def test_check_scripts_run_on_a_small_scale(tmp_path):
+    """The check scripts behind the verification note (tools/check_*.py) keep working."""
+    import check_env_tolerance
+    import check_formula_scoring
+    rows = check_formula_scoring.family_rows(("power_law", 1, 1))
+    assert len(rows) == 6 and {"poly_old", "poly_current"} <= set(rows[0])
+    text = check_formula_scoring.markdown(check_formula_scoring.summarise(rows), len(rows), 1, 1, "test")
+    assert "| 40 dB |" in text and "power_law" in text
+    episodes = check_env_tolerance.play(40, 1)
+    assert episodes[0]["tolerance"] >= check_env_tolerance.FIXED
+    assert "| 40 dB |" in check_env_tolerance.markdown({"40": check_env_tolerance.summarise(episodes)}, "test")
+
+
+def test_audit_calibration_plants_and_catches(tmp_path):
+    """tools/check_audit_calibration.py plants each leak kind; the audit catches the ones it is meant to."""
+    import numpy as np
+    import pandas as pd
+    import check_audit_calibration as cal
+    from scidatasim.audit import audit_export
+    from scidatasim.doe import run_design
+    base = {"experiment_type": "scidatasim.experiments.oscillator.logic.OscillatorExperiment", "n_steps": 60,
+            "dt": 0.05, "mass": 1.0, "damping": 0.3, "initial_position": 1.0, "initial_velocity": 0.0,
+            "generate_plots": False, "bundle": True}
+    design = run_design(base, pd.DataFrame({"stiffness": [2.0, 6.0]}), output_dir=str(tmp_path / "d"),
+                        base_seed=3).output_dir
+    values = cal.answers(design, 2, np.random.default_rng(0))
+    assert len(values) == 2
+    for kind, spec in cal.LEAKS.items():
+        folder = tmp_path / kind.replace(" ", "_").replace(",", "")
+        os.makedirs(folder)
+        cal.plant(str(folder), kind, values)
+        report = audit_export(str(folder), design, check_arrays=False)
+        flagged = any(f.attack in cal.FLAG_ATTACKS for f in report.findings)
+        assert flagged == spec["meant"], kind

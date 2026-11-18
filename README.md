@@ -86,7 +86,7 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
 * **Law discovery** (`scidatasim.experiments.law_discovery`). Hidden laws y = f(x) from nine families (power law, inverse power, exponential decay, logistic, Michaelis–Menten, Hill, damped oscillation, Gaussian peak, Arrhenius), each with a textbook or a *counterfactual* setting of its structural constants (e.g. an inverse-*2.3* law). Formula answers are scored by evaluating them on the data range and half of it beyond (`scidatasim.expressions`: a safe parser with no `eval`), so any equivalent form counts but a polynomial that only reproduces the observed curve does not; the tolerance follows the run's noise. A suite design, a classical curve-fitting baseline and an interactive formula-discovery environment come with it (example 10). Example 13 builds a frozen release of the suite to publish and cite.
 
   ![A polynomial fitted to the data matches it but diverges beyond the data, where the formula is also scored; the fitted law passes](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/scorer_loophole.png)
-* **Leak audit** (`scidatasim.audit`). Before publishing, attack your own export: it tries seed replay, config-hash lookup, tolerance inversion, answer lookup in public files and exposure of hidden arrays, using the private runs as the answer key, and reports what would leak. `audit_environment` does the same for interactive environments.
+* **Leak audit** (`scidatasim.audit`). Before publishing, attack your own export: it tries seed replay, config-hash lookup, tolerance inversion, answer lookup in public files and exposure of hidden arrays, using the private runs as the answer key, and reports what would leak. Near matches are reported with the count expected by chance, so coincidences among many noisy numbers do not refuse a release (`tools/check_audit_calibration.py` measures false alarms and leaks caught). `audit_environment` does the same for interactive environments.
 * **Agent-based models with Mesa** (`scidatasim.adapters.mesa`, example 15). Any [Mesa](https://mesa.readthedocs.io) model runs under the simulator's seeds, roles, observation operators, bundles, designs, audits and simulation studies, without being rewritten. A pack of three Mesa models with a planted effect covers social science (Schelling segregation), epidemiology and causal inference (an epidemic with a randomised trial inside it) and economics (wealth exchange with saving). `pip install "scidatasim[mesa]"`.
 
   ![Schelling segregation before and after 40 steps, and the share infected in the treated and control arms of an epidemic trial](https://raw.githubusercontent.com/sandner-art/scientific-data-simulator/main/docs/images/agent_based.png)
@@ -317,6 +317,22 @@ if draft.accepted:
 
 `my_llm_function(prompt) -> text` wraps any provider SDK; the simulator itself depends on none. Generated code is scanned before it runs, then checked in a separate process with a time limit. Rejected drafts cannot be saved.
 
+## Reproducing the checks
+
+The numbers in the changelog and in the verification notes come from three scripts in `tools/`. Run them from the repository root; each writes a JSON file and a Markdown table to `experiments_output/<name>/`. To compare two versions (before and after a fix), run the same script in two checkouts.
+
+| Script | What it measures | Time (2 cores) |
+|---|---|---|
+| `tools/check_formula_scoring.py` | A BIC polynomial against the right law on the law-discovery formula question, under the rc1 rule (data range, 1 %) and the current one; 9 families x textbook/counterfactual x 3 noise levels x 40 draws | 4 min |
+| `tools/check_env_tolerance.py` | The same in the interactive environment, fixed 2 % against `tolerance: auto`, at 40, 30, 20 and 15 dB | 3 min |
+| `tools/check_audit_calibration.py` | The leak audit: false alarms on clean releases, and planted leaks of each kind caught (copies, float32, printed, recomputed, and two known blind spots). Builds quick releases of example 13 with fixed seeds; `--reuse` audits them again under another version | 20 min for 100 releases |
+
+Results at 0.7.0rc2:
+
+- **Formula scoring (2,160 runs).** A polynomial passes 62 %, 61 % and 0 % of formula questions (noise-free, 40 dB, 20 dB) under the rc1 rule, and 5 %, 3 % and 9 % now; the right law passes 99 % at 40 dB and 81 % at 20 dB (9 % under the rc1 rule). Power laws remain within a polynomial's reach (29-69 %), so their items carry the `polynomial_reachable` label.
+- **Environment (40 episodes per level).** At 40 and 30 dB `auto` stays at 2 % and changes nothing. At 15 dB the right law passes 78 % instead of 30 %, and a polynomial 22 % instead of 0 %: under that noise the data no longer separate them on the scored range.
+- **Leak audit (221 quick releases).** The rule before 0.7.0rc2 refused 3 clean releases (1.4 %): two noisy observations within 1e-6 of an answer by chance, and one answer equal to its question's own x at 4 digits. Now none is refused; the two chance matches appear as medium-severity notes. Every planted copy is still caught (exact, round-off, float32, printed with 4 or more digits). Three answers recomputed with an error of 1e-9 to 1e-6 still refuse the release; a single one is a medium note, because one match that close cannot be told from chance.
+
 ## Writing a model
 
 ```python
@@ -403,7 +419,8 @@ scripts/          install, update and start-ui scripts for Windows (cmd, PowerSh
 ui/               the browser UI: a separate package (scidatasim-ui), sds ui
 tests/            pytest suite, incl. test_verification.py (numerical verification)
 docs/             Sphinx sources; images/ holds the README figures
-tools/            make_readme_figures.py (regenerates docs/images), ci_failures.py (CI summary)
+tools/            make_readme_figures.py (regenerates docs/images), ci_failures.py (CI summary),
+                  check_*.py (the checks behind the verification notes; see Reproducing the checks)
 ```
 
 ## Citation
