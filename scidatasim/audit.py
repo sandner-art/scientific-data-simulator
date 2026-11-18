@@ -30,6 +30,8 @@ Attacks (``Finding.attack``):
 ``answer_lookup``
     A non-trivial numeric answer, or an expression/text answer, appears verbatim among the
     public numbers or text, e.g. an exact (noise-free) table next to a figure question.
+    Answers on the public coordinate grid, or equal to a number their own question states,
+    are not counted.
 ``latent_exposure``
     Most values of a hidden output (role ``latent``, ``parameter`` or ``label``) appear among
     the public numbers: the noise-free ground truth is effectively published.
@@ -461,6 +463,27 @@ def _contains(sorted_numbers: np.ndarray, value: float, rel_tol: float) -> bool:
     return i < sorted_numbers.size and sorted_numbers[i] <= value + tol
 
 
+#: Relative distance within which a public float64 counts as the same number (round-off of a copy).
+_COPY_TOL = 1e-12
+
+
+def _copied(sorted_numbers: np.ndarray, value: float) -> bool:
+    """A public number that is ``value`` stored again: as float64 (to round-off) or as float32.
+
+    Not a looser tolerance: a release of a few hundred noisy observations puts one of them within
+    1e-6 of some hidden answer by chance in roughly one release in a hundred, and such a coincidence
+    tells an attacker nothing. Answers printed with fewer digits are found by ``_printed``.
+    """
+    if _contains(sorted_numbers, value, _COPY_TOL):
+        return True
+    single = float(np.float32(value))
+    if (sorted_numbers.size == 0 or not math.isfinite(single) or single == 0.0
+            or abs(single - value) > abs(value) * 2.0 ** -23):
+        return False  # float32 cannot hold this value (it would underflow to 0 and match every zero)
+    i = np.searchsorted(sorted_numbers, single)
+    return i < sorted_numbers.size and sorted_numbers[i] == single
+
+
 def _printed(printed: List[Tuple[float, int]], value: float) -> bool:
     """``value`` printed to the digits of a public number (``13.7094`` for 13.70937...)."""
     if not printed or not math.isfinite(value) or value == 0:
@@ -473,6 +496,29 @@ def _printed(printed: List[Tuple[float, int]], value: float) -> bool:
         if float(f"{value:.{digits - 1}e}") == number:
             return True
     return False
+
+
+def _stated_in_question(question: Any, value: float) -> bool:
+    """``value`` is a number its own question states, exactly or to the digits printed there.
+
+    A question has to state its inputs (the x of "Predict y at x = 9.875"), so an answer that
+    agrees with one is not a leak of hidden data: it happens when a logistic curve with plateau
+    K = 9.87505 is asked for its value at x = 9.875.
+    """
+    if not question:
+        return False
+    stated = []
+    for m in _NUMBER.finditer(str(question)):
+        try:
+            number = float(m.group())
+        except (ValueError, OverflowError):
+            continue
+        if number == value:
+            return True
+        digits = _printed_digits(m.group())
+        if digits >= 4 and math.isfinite(number):
+            stated.append((number, digits))
+    return _printed(sorted(stated), value)
 
 
 def _short(path: Optional[str], root: Optional[str]) -> Optional[str]:
@@ -496,7 +542,11 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
             other text). A supported file that cannot be read is a high-severity finding: it cannot
             be cleared.
         private: Run directory, design directory, or a list of either (the source of the export).
-        rel_tol: Relative tolerance for a public number to count as a copy of a hidden value.
+        rel_tol: Relative tolerance for a public number to count as a copy of a value of a hidden
+            array (``latent_exposure``) or of a design-grid value. Answers count as copied only
+            when stored again exactly (to float64 round-off, or as float32) or printed to at least
+            4 significant digits, so a noisy public value that lands near an answer by chance is
+            not a finding.
         latent_fraction: Fraction of a hidden array's values that must appear publicly to report
             ``latent_exposure``.
         check_arrays: Load hidden arrays for ``latent_exposure`` (slower on big designs).
@@ -504,8 +554,10 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
             Hidden arrays whose values are quoted in the public questions are left out anyway.
 
     Known blind spots: seeds below 100000 are only recognised under seed-named fields, not in
-    free text; answers are found when copied exactly, printed to at least 4 significant digits,
-    or (formulas and text) with different spacing - not when transformed otherwise.
+    free text; answers are found when copied exactly (float64 or float32), printed to at least 4
+    significant digits, or (formulas and text) with different spacing - not when transformed
+    otherwise. An answer that equals a number its own question states (an input, such as the x
+    it asks about) is not counted, so a question that printed its own answer would go unnoticed.
     """
     pub = _scan_public(public)
     priv = _load_private(private, include_arrays=check_arrays)
@@ -602,8 +654,10 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
             if not _nontrivial(float(a)) or _contains(priv.grids.get(t["experiment_id"], np.empty(0)),
                                                       float(a), rel_tol):
                 continue
+            if _stated_in_question(t.get("question"), float(a)):
+                continue  # the question states this number itself (an input), so it is public by design
             total += 1
-            if _contains(numbers, float(a), rel_tol) or _printed(printed, float(a)):
+            if _copied(numbers, float(a)) or _printed(printed, float(a)):
                 lookups.append(t)
         elif isinstance(a, str) and len(a.strip()) >= 4:
             total += 1

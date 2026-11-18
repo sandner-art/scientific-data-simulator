@@ -372,7 +372,8 @@ runs as the answer key and reports what it recovers:
   answer;
 * ``answer_lookup`` - non-trivial answers that appear verbatim among public
   numbers or text (e.g. an exact table next to a figure question); values on
-  the public coordinate grid are not counted;
+  the public coordinate grid, and answers equal to a number their own question
+  states (such as the x it asks about), are not counted;
 * ``latent_exposure`` - hidden (noise-free) arrays found among public numbers
   (arrays quoted in the public questions, such as given coordinates, are exempt;
   ``ignore=[...]`` exempts others);

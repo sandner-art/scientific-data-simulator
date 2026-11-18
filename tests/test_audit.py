@@ -203,3 +203,38 @@ def test_design_point_and_huggingface_hiding(tmp_path):
     leaky = tmp_path / "leaky.json"
     leaky.write_text(json.dumps([{"experiment_id": e, "design_point": i} for i, e in enumerate(runs["experiment_id"])]))
     assert any(f.attack == "design_point" for f in audit_export(str(leaky), design.output_dir).findings)
+
+
+def test_a_coincidence_is_not_a_copy(design, tmp_path):
+    """A public number within 1e-6 of an answer by chance is not a leak; the answer stored as
+    float64 or float32 is. (Example 13 could refuse a release: among ~900 noisy
+    observations one sometimes landed within 1e-6 of a hidden answer.)"""
+    import numpy as np
+    tasks = [t for t in collect_bundle_tasks(design) if t["answer_type"] == "number" and _nontrivial(t["answer"])]
+    answer = float(tasks[0]["answer"])
+    pub = tmp_path / "pub"
+    os.makedirs(pub)
+    for values, leaked in ((np.array([answer * (1 + 5e-7)]), False),
+                           (np.array([answer * (1 - 3e-7)], dtype=np.float32), False),
+                           (np.array([answer]), True),
+                           (np.array([answer * (1 + 1e-15)]), True),
+                           (np.array([answer], dtype=np.float32), True)):
+        np.save(pub / "values.npy", values)
+        exposed = audit_export(str(pub), design).exposure["answer_lookup"]["exposed"]
+        assert (exposed >= 1) is leaked, (values.dtype, values[0] / answer - 1)
+    # a tiny answer (an extrapolated power law reached 1e-73) is no float32 copy of the zeros in a release
+    from scidatasim.audit import _copied
+    assert not _copied(np.array([0.0, 1.0]), 1.0175237848443631e-73)
+    assert _copied(np.array([1.0175237848443631e-73]), 1.0175237848443631e-73)
+
+
+def test_an_answer_equal_to_its_own_question_input_is_not_a_leak():
+    """A logistic plateau K = 9.87505 asked at x = 9.875: the question must state its x, so the
+    printed 9.875 is no leak (example 13 refused such a release now and then)."""
+    from scidatasim.audit import _stated_in_question
+    question = "Predict y at x = 9.875 (outside the observed range)."
+    assert _stated_in_question(question, 9.875049617678867)
+    assert _stated_in_question(question, 9.875)
+    assert not _stated_in_question(question, 9.8761)  # differs at the 4th digit
+    assert not _stated_in_question("Predict y at x = 8 (outside the observed range).", 8.0004)
+    assert not _stated_in_question(None, 1.2345)
