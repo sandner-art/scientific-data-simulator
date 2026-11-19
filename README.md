@@ -330,6 +330,8 @@ The numbers in the changelog and in the verification notes come from three scrip
 | `tools/check_audit_calibration.py` | The leak audit: false alarms on clean releases, and planted leaks of each kind caught (copies, float32, printed, recomputed, and two known blind spots). Builds quick releases of example 13 with fixed seeds; `--reuse` audits them again under another version | 20 min for 100 releases |
 | `tools/check_astrometry_detection.py` | Astrometric binaries: false alarms of the detection baseline on single stars against the nominal FAP; detection, period recovery and AGIS weights by non-centrality; the parallax question by period; the private labels | 15 min |
 | `tools/preregister_gaia_dr4.py` | Builds the Gaia DR4 pre-registration record (selection, method, simulated predictions, hypotheses, file hashes); `--verify` checks a record against the checkout | 40 min |
+| `tools/gaia_dr4_fetch.py` | Fetches the pre-registered Gaia DR4 sample (selection, auxiliary rows, epoch astrometry) with a manifest of SHA-256 sums; needs astroquery | depends on the archive |
+| `tools/gaia_dr4_analyze.py` | Runs the pre-registered analysis (H1–H5, E1–E4) on the fetched data and writes a report | about an hour on 8 cores |
 
 Results at 0.7.0rc2:
 
