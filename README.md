@@ -333,6 +333,7 @@ The numbers in the changelog and in the verification notes come from three scrip
 | `tools/check_astrometry_detection.py` | Astrometric binaries: false alarms of the detection baseline on single stars against the nominal FAP; detection, period recovery and AGIS weights by non-centrality; the parallax question by period; the private labels | 15 min |
 | `tools/preregister_gaia_dr4.py` | Builds the Gaia DR4 pre-registration record (selection, method, simulated predictions, hypotheses, file hashes); `--verify` checks a record against the checkout | 40 min |
 | `tools/check_transit_detection.py` | Transits: false alarms of detrend + BLS + SNR > 7.1 on quiet and spotted stars; detection, period and depth by expected SNR; the private labels | 15 min |
+| `tools/check_bump_hunt.py` | Resonances: calibration of the bump hunt's global p-value, local p-values (look-elsewhere), a trigger turn-on modelled and not, detection by Asimov Z | 3 min |
 | `tools/gaia_dr4_fetch.py` | Fetches the pre-registered Gaia DR4 sample (selection, auxiliary rows, epoch astrometry) with a manifest of SHA-256 sums; needs astroquery | depends on the archive |
 | `tools/gaia_dr4_analyze.py` | Runs the pre-registered analysis (H1–H5, E1–E4) on the fetched data and writes a report | about an hour on 8 cores |
 
