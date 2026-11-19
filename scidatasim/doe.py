@@ -29,7 +29,7 @@ from .rng import derive_seeds, new_seed, validate_seed
 
 logger = logging.getLogger(__name__)
 
-DESIGN_TYPES = ("full_factorial", "lhs", "sobol", "halton", "random")
+DESIGN_TYPES = ("full_factorial", "one_at_a_time", "morris", "lhs", "sobol", "halton", "random")
 
 
 # ---------------------------------------------------------------------------- design tables
@@ -72,8 +72,14 @@ def create_doe_table(param_ranges: Dict[str, Any], design_type: str = 'full_fact
 
     Args:
         param_ranges: For ``full_factorial``: name -> list of levels.
-            For ``lhs``, ``sobol``, ``halton`` and ``random``: name -> ``[low, high]``
-            or ``{"low", "high", "scale": "linear"|"log", "integer": bool}``.
+            For ``one_at_a_time``: name -> list of levels (the first is the baseline) or
+            ``{"levels": [...], "baseline": value}``; one baseline row, then each other level of each
+            parameter with the rest at baseline (column ``varied``).
+            For ``morris``, ``lhs``, ``sobol``, ``halton`` and ``random``: name -> ``[low, high]``
+            or ``{"low", "high", "scale": "linear"|"log", "integer": bool}``. ``morris``: elementary-
+            effects screening, ``n_samples`` trajectories of k + 1 points on a 4-level grid, each
+            step changing one parameter (columns ``trajectory``, ``step``, ``varied``); analyse with
+            :func:`elementary_effects`.
         design_type: One of :data:`DESIGN_TYPES`.
         n_samples: Number of rows for sampled designs (powers of two are
             recommended for ``sobol``).
@@ -84,6 +90,8 @@ def create_doe_table(param_ranges: Dict[str, Any], design_type: str = 'full_fact
         raise ValueError("param_ranges cannot be empty for DOE table creation.")
     if design_type == 'full_factorial':
         return pd.DataFrame(generate_parameter_combinations(param_ranges))
+    if design_type == "one_at_a_time":
+        return _one_at_a_time(param_ranges)
     if design_type not in DESIGN_TYPES:
         raise ValueError(f"Unsupported design_type: {design_type}. Use one of {DESIGN_TYPES}.")
     if not n_samples or n_samples < 1:
@@ -95,6 +103,8 @@ def create_doe_table(param_ranges: Dict[str, Any], design_type: str = 'full_fact
     bounds = [_parse_bounds(n, param_ranges[n]) for n in names]
     d = len(names)
     rng = np.random.default_rng(seed)
+    if design_type == "morris":
+        return _morris(names, bounds, n_samples, rng)
     if design_type == "lhs":
         unit = qmc.LatinHypercube(d=d, seed=rng).random(n_samples)
     elif design_type == "sobol":
@@ -115,6 +125,76 @@ def create_doe_table(param_ranges: Dict[str, Any], design_type: str = 'full_fact
             values = low + u * (high - low)
         columns[name] = values
     return pd.DataFrame(columns)
+
+
+def _one_at_a_time(param_ranges: Dict[str, Any]) -> pd.DataFrame:
+    levels, base = {}, {}
+    for name, spec in param_ranges.items():
+        if isinstance(spec, Mapping):
+            lv, b = list(spec["levels"]), spec.get("baseline", spec["levels"][0])
+        else:
+            lv, b = list(spec), list(spec)[0]
+        if b not in lv:
+            lv = [b] + lv
+        levels[name], base[name] = lv, b
+    rows = [{**base, "varied": "baseline"}]
+    for name, lv in levels.items():
+        rows += [{**base, name: v, "varied": name} for v in lv if v != base[name]]
+    return pd.DataFrame(rows)
+
+
+def _morris(names, bounds, n_trajectories, rng, p_levels: int = 4) -> pd.DataFrame:
+    """Morris (1991) trajectories on a p-level grid in the unit cube, mapped to the bounds."""
+    k = len(names)
+    delta = p_levels / (2.0 * (p_levels - 1))
+    grid = np.arange(p_levels // 2) / (p_levels - 1)  # starting levels from which +delta stays inside
+    rows = []
+    for r in range(n_trajectories):
+        x = rng.choice(grid, size=k)
+        signs = np.where(rng.random(k) < 0.5, 1.0, -1.0)
+        x = np.where(signs < 0, x + delta, x)  # start high where the step goes down
+        order = rng.permutation(k)
+        points, varied = [x.copy()], ["start"]
+        for j in order:
+            x = x.copy()
+            x[j] += signs[j] * delta
+            points.append(x)
+            varied.append(names[j])
+        for step, (u, v) in enumerate(zip(points, varied)):
+            row = {"trajectory": r, "step": step, "varied": v}
+            for j, (name, (low, high, scale, integer)) in enumerate(zip(names, bounds)):
+                if integer:
+                    val = int(round(low + u[j] * (high - low)))
+                elif scale == "log":
+                    val = float(np.exp(np.log(low) + u[j] * (np.log(high) - np.log(low))))
+                else:
+                    val = float(low + u[j] * (high - low))
+                row[name] = min(max(val, low), high)
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def elementary_effects(table: pd.DataFrame, response: str, params: Optional[Sequence[str]] = None) -> pd.DataFrame:
+    """Morris screening from a ``morris`` design with a ``response`` column: per parameter the mean
+    absolute elementary effect mu* (importance), the mean mu and the standard deviation sigma
+    (non-linearity or interactions), with effects per unit of the parameter's range."""
+    params = [p for p in (params or table.columns) if p not in ("trajectory", "step", "varied", response)
+              and pd.api.types.is_numeric_dtype(table[p])]
+    effects: Dict[str, List[float]] = {p: [] for p in params}
+    for _, traj in table.sort_values(["trajectory", "step"]).groupby("trajectory"):
+        traj = traj.reset_index(drop=True)
+        for i in range(1, len(traj)):
+            name = traj.loc[i, "varied"]
+            if name not in effects:
+                continue
+            span = float(table[name].max() - table[name].min()) or 1.0
+            dx = (traj.loc[i, name] - traj.loc[i - 1, name]) / span
+            if dx != 0:
+                effects[name].append(float((traj.loc[i, response] - traj.loc[i - 1, response]) / dx))
+    out = [{"parameter": p, "mu_star": float(np.mean(np.abs(e))) if e else np.nan,
+            "mu": float(np.mean(e)) if e else np.nan, "sigma": float(np.std(e, ddof=1)) if len(e) > 1 else np.nan,
+            "n": len(e)} for p, e in effects.items()]
+    return pd.DataFrame(out).sort_values("mu_star", ascending=False).reset_index(drop=True)
 
 
 def add_replicates_and_seeds(doe_table: pd.DataFrame, replicates: int = 1,
@@ -201,7 +281,7 @@ def cross_styles(doe_table: pd.DataFrame, styles: Mapping[str, Mapping[str, Any]
     return table
 
 
-_DESIGN_META_COLUMNS = ("design_point", "replicate", "seed")
+_DESIGN_META_COLUMNS = ("design_point", "replicate", "seed", "varied", "trajectory", "step")  # not config keys
 
 
 def _row_overrides(row: Mapping[str, Any]) -> Dict[str, Any]:

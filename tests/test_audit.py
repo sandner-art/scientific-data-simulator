@@ -306,3 +306,43 @@ def test_metadata_of_images_audio_and_pdf_is_scanned(design, tmp_path):
     (pub / "figure.pdf").write_bytes(b"%PDF-1.4\n1 0 obj << /Title (Result " + f"{answer!r}".encode()
                                      + b") /Producer (sds) >> endobj\ntrailer << /Info 1 0 R >>\n%%EOF")
     assert "answer_lookup" in _attacks(audit_export(str(pub), design))
+
+
+def test_generic_answer_key_and_hidden_arrays(tmp_path):
+    """A release made elsewhere (a 3-D asset library): public meshes and metadata, a CSV answer key,
+    hidden ground-truth arrays."""
+    import json as _json
+
+    import numpy as _np
+
+    from scidatasim.audit import audit_export, load_answer_key
+    pub = tmp_path / "public"
+    pub.mkdir()
+    verts = _np.array([[0.123456, 1.234567, 2.345678], [3.456789, 4.567891, 5.678912], [6.789123, 7.891234, 8.912345],
+                       [9.123457, 0.234568, 1.345679], [2.456781, 3.567892, 4.678913]])
+    (pub / "mesh.obj").write_text("".join(f"v {a} {b} {c}\n" for a, b, c in verts) + "f 1 2 3\n")
+    (pub / "scene.gltf").write_text(_json.dumps({"asset": {"version": "2.0"}, "nodes": [{"name": "rock",
+                                                 "extras": {"area_m2": 17.3825}}]}))
+    (pub / "card.md").write_text("A rock with a fracture.\n")
+    key = tmp_path / "answers.csv"
+    key.write_text("id,question,answer,group\nq1,Surface area in m2?,17.3825,rock\nq2,Material?,basalt rock,rock\n"
+                   "q3,Volume in m3?,4.81273,rock\n")
+    _np.save(tmp_path / "true_vertices.npy", verts)
+    tasks = load_answer_key(str(key))
+    assert [t["answer_type"] for t in tasks] == ["number", "text", "number"] and tasks[0]["answer"] == 17.3825
+    report = audit_export(str(pub), [str(key), str(tmp_path / "true_vertices.npy")])
+    kinds = {f.attack for f in report.findings}
+    assert "answer_lookup" in kinds and "latent_exposure" in kinds
+    assert report.exposure["answer_lookup"] == {"exposed": 1, "total": 3}
+    (pub / "scene.gltf").write_text(_json.dumps({"nodes": [{"name": "rock", "extras": {"answer": "basalt rock"}}]}))
+    report = audit_export(str(pub), [str(key)])
+    assert any("answer" in f.detail for f in report.findings if f.severity == "high")
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    (clean / "card.md").write_text("A rock.\n")
+    assert audit_export(str(clean), [str(key)]).ok
+    yaml_key = tmp_path / "key.json"
+    yaml_key.write_text(_json.dumps({"q9": 3.14159}))
+    assert load_answer_key(str(yaml_key))[0] == {"id": "q9", "experiment_id": "key.json", "question": "",
+                                                 "answer": 3.14159, "answer_type": "number",
+                                                 "template": "answer_key", "tolerance_rule": None}

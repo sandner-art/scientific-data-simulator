@@ -64,7 +64,7 @@ PathLike = Union[str, os.PathLike]
 
 SEVERITY = ("high", "medium", "info")
 TEXT_SUFFIXES = (".json", ".jsonl", ".csv", ".tsv", ".md", ".txt", ".yaml", ".yml", ".dot", ".py", ".toml",
-                 ".html", ".svg")
+                 ".html", ".svg", ".obj", ".mtl", ".gltf")  # 3-D: Wavefront OBJ/MTL, glTF (JSON)
 #: Containers whose text metadata is scanned (their pixels, samples and pages are not).
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".gif")
 METADATA_SUFFIXES = IMAGE_SUFFIXES + (".wav", ".pdf")
@@ -447,7 +447,7 @@ def _scan_public(paths) -> _Public:
                         if _is_seed_key(low):
                             for v in frame[col].dropna():
                                 pub.add_seed(v, path)
-            elif suffix in (".json", ".jsonl"):
+            elif suffix in (".json", ".jsonl", ".gltf"):
                 with open(path, encoding="utf-8", errors="replace") as f:
                     text = f.read()
                 pub.text.append((path, text))
@@ -494,19 +494,82 @@ class _Private:
     design_columns: List[str] = field(default_factory=list)  # parameter columns of design tables
 
 
+KEY_FORMATS = (".csv", ".tsv", ".json", ".jsonl", ".parquet", ".yaml", ".yml")
+ARRAY_FORMATS = (".npy", ".npz")
+
+
+def load_answer_key(path: PathLike) -> List[Dict[str, Any]]:
+    """An answer key from any release - not only the simulator's: a table (CSV/TSV/Parquet) or a
+    list of records (JSON, JSONL, YAML) with an ``answer`` column and optionally ``id``,
+    ``question``, ``group`` (an item's release unit, e.g. a mesh), ``template``, ``answer_type``
+    (``number``, ``choice``, ``text``; inferred when missing) and ``tolerance_rule``."""
+    path = os.fspath(path)
+    low = path.lower()
+    if low.endswith((".json", ".yaml", ".yml")):
+        with open(path, encoding="utf-8") as f:
+            if low.endswith(".json"):
+                rows = json.load(f)
+            else:
+                import yaml
+                rows = yaml.safe_load(f)
+        rows = rows.get("items", rows.get("answers", rows)) if isinstance(rows, dict) else rows
+        if isinstance(rows, dict):  # {id: answer}
+            rows = [{"id": k, "answer": v} for k, v in rows.items()]
+    else:
+        from .ingest import read_table
+        rows = read_table(path, fmt="jsonl" if low.endswith(".jsonl") else None).frame.to_dict("records")
+    tasks = []
+    for i, row in enumerate(rows):
+        if "answer" not in row:
+            raise KeyError(f"{path}: item {i} has no 'answer'")
+        a = row["answer"]
+        if isinstance(a, str):
+            try:
+                a = float(a) if a.strip() and re.fullmatch(r"[-+]?[\d.]+(e[-+]?\d+)?", a.strip(), re.I) else a
+            except ValueError:
+                pass
+        kind = row.get("answer_type") or ("number" if isinstance(a, (int, float)) and not isinstance(a, bool)
+                                           else "text")
+        tasks.append({"id": str(row.get("id", f"{os.path.basename(path)}:{i}")),
+                      "experiment_id": str(row.get("group", os.path.basename(path))),
+                      "question": row.get("question", ""), "answer": a, "answer_type": kind,
+                      "template": row.get("template", row.get("group", "answer_key")),
+                      "tolerance_rule": row.get("tolerance_rule")})
+    return tasks
+
+
 def _load_private(private, include_arrays: bool = True) -> _Private:
     from .export.tasks import _run_dirs, collect_bundle_tasks
     from .persistence import load_experiment_record
     from .utils import GROUND_TRUTH_ROLES, Role
     priv = _Private()
-    for source in ([private] if isinstance(private, (str, os.PathLike)) else list(private)):
+    sources = [private] if isinstance(private, (str, os.PathLike)) else list(private)
+    keys = [s for s in sources if os.path.isfile(s) and os.fspath(s).lower().endswith(KEY_FORMATS)]
+    arrays = [s for s in sources if os.path.isfile(s) and os.fspath(s).lower().endswith(ARRAY_FORMATS)]
+    for key in keys:
+        priv.tasks += load_answer_key(key)
+    for path in arrays:  # hidden ground truth of any release: arrays that must not be published
+        if not include_arrays:
+            continue
+        if os.fspath(path).lower().endswith(".npy"):
+            items = {os.path.splitext(os.path.basename(path))[0]: np.load(path, allow_pickle=False)}
+        else:
+            with np.load(path, allow_pickle=False) as z:
+                items = {k: z[k] for k in z.files}
+        for name, values in items.items():
+            if np.issubdtype(values.dtype, np.number) and values.size >= 5:
+                priv.hidden_arrays.append((os.path.basename(os.fspath(path)), name, np.ravel(values).astype(float)))
+    sources = [s for s in sources if s not in keys and s not in arrays]
+    if not sources:
+        return priv
+    for source in sources:
         design_csv = os.path.join(os.fspath(source), "design.csv")
         if os.path.exists(design_csv):
             import pandas as pd
             priv.design_columns += [c for c in pd.read_csv(design_csv, nrows=0).columns
-                                    if c not in ("design_point", "replicate", "seed")]
-    run_dirs = _run_dirs(private)
-    priv.tasks = collect_bundle_tasks(run_dirs)
+                                    if c not in ("design_point", "replicate", "seed", "varied", "trajectory", "step")]
+    run_dirs = _run_dirs(sources)
+    priv.tasks += collect_bundle_tasks(run_dirs)
     for run_dir in run_dirs:
         with open(os.path.join(run_dir, "experiment_record.json"), encoding="utf-8") as f:
             rec = json.load(f)
@@ -664,7 +727,10 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
             are read: JSON, JSONL, CSV, Parquet, ``.npy``/``.npz``, HDF5 (needs h5py), Markdown and
             other text). A supported file that cannot be read is a high-severity finding: it cannot
             be cleared.
-        private: Run directory, design directory, or a list of either (the source of the export).
+        private: Run directory, design directory, or a list of either (the source of the export);
+            for releases made elsewhere, an answer key (CSV/TSV/Parquet/JSON/JSONL/YAML with an
+            ``answer`` column, see :func:`load_answer_key`) and ``.npy``/``.npz`` files of hidden
+            arrays, alone or mixed with runs.
         rel_tol: Relative tolerance for a public number to count as a copy of a value of a hidden
             array (``latent_exposure``) or of a design-grid value. Answers count as copied only
             when stored again exactly (to float64 round-off, or as float32) or printed to at least
@@ -897,7 +963,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     import argparse
     parser = argparse.ArgumentParser(prog="python -m scidatasim.audit", description=__doc__.split("\n")[0])
     parser.add_argument("public", nargs="+", help="public folder(s)/file(s)")
-    parser.add_argument("--private", required=True, action="append", help="run or design directory (repeatable)")
+    parser.add_argument("--private", required=True, action="append",
+                        help="run or design directory, answer key (CSV/JSON/...) or hidden arrays (.npy/.npz); "
+                             "repeatable")
     parser.add_argument("--json", action="store_true", help="print the report as JSON")
     args = parser.parse_args(argv)
     report = audit_export(args.public, args.private)

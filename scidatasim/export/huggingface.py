@@ -179,7 +179,7 @@ def _design_info(design_dir: str) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, 
             manifest = json.load(f)
     table = pd.read_csv(results_path)
     columns = manifest.get("design_columns") or list(pd.read_csv(os.path.join(design_dir, "design.csv"), nrows=0).columns)
-    params = [c for c in columns if c not in ("design_point", "replicate", "seed")]
+    params = [c for c in columns if c not in ("design_point", "replicate", "seed", "varied", "trajectory", "step")]
     rows = {}
     for row in table.to_dict("records"):
         eid = row.get("experiment_id")

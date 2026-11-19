@@ -127,7 +127,7 @@ def make_twin(design_dir: str, output_dir: str, base_seed: Optional[int] = None,
         base = apply_overrides(base, dict(overrides))
     base.pop("seed", None)
     table = pd.read_csv(os.path.join(design_dir, "design.csv"))
-    params = table[[c for c in table.columns if c not in ("design_point", "replicate", "seed")]]
+    params = table[[c for c in table.columns if c not in ("design_point", "replicate", "seed", "varied", "trajectory", "step")]]
     params = params.iloc[table.index[table["replicate"] == 0]].reset_index(drop=True) \
         if "replicate" in table.columns else params
     # a table built with add_replicates_and_seeds() carries its replicates; the manifest says 1

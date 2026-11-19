@@ -107,7 +107,7 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
 * Multi-variable and dynamical (ODE) law discovery; symbolic-regression baselines (e.g. PySR) as optional comparisons.
 * 3-D solids beyond the tetrahedron; dihedral angles.
 * Adapters: Exponax (PDE), FMPy (FMI models), MLflow/DVC tracking; ingest adapters for external simulators (GalSim, multislice codes).
-* Generic inputs for the leak audit (any answer key) and the fallacy flags (any labelling log); metadata scanning of image and audio files.
+* Generic input for the fallacy flags (any labelling log).
 
 ## Installation
 
