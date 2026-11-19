@@ -89,7 +89,11 @@ PRIVATE = "private"
 #: e.g. plateaus). They hint at the answer, so they stay private; reports give accuracy with and
 #: without the labelled items. Labelling, not dropping: which items are missing would hint too.
 REACHABILITY_LABELS = ("polynomial_reachable", "zero_reachable", "naive_reachable")
-PRIVATE_QUESTION_KEYS = ("answer", "tolerance") + REACHABILITY_LABELS
+#: Private labels of questions the data cannot settle: ``signal_undetectable`` (astrometric
+#: companions whose orbit a search at the stated false-alarm probability finds in fewer than half
+#: of noise replicates, so a "yes" cannot be read from the data). They hint at the answer too.
+DETECTABILITY_LABELS = ("signal_undetectable",)
+PRIVATE_QUESTION_KEYS = ("answer", "tolerance") + REACHABILITY_LABELS + DETECTABILITY_LABELS
 
 
 def public_question(item: Dict[str, Any]) -> Dict[str, Any]:

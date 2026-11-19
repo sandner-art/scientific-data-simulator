@@ -16,6 +16,7 @@ This directory contains the core implementations of different scientific models 
 | `pendulum`                       | Nonlinear pendulum (DOP853); `approximation: small_angle` is an `audit` model with a documented period error.                            |
 | `heat`                           | 1-D/2-D periodic heat equation: spectral exact solution or FTCS (`audit`, unstable above its limit). Exports to The Well HDF5.            |
 | `law_discovery`                  | Hidden laws y = f(x) from nine families, textbook or counterfactual, with formula questions (law-discovery benchmarks).                  |
+| `astrometry`                     | Gaia-like along-scan epoch astrometry of single stars and astrometric binaries (Thiele–Innes orbits), a detection baseline, and Gaia DR4 `epoch_astrometry` tables (read; simulated sources written in the same layout). |
 | `geometry`                       | Exact geometry with diagrams: triangles (`logic.py`), polygons (`polygons.py`), n-simplices in 2–6 dimensions (`simplex.py`).            |
 
 `predator_prey` supports `integrator: rk4`, `dt`, Holling type II predation and logistic prey (see its README). The default forward-Euler configuration is a deliberately simple teaching/audit model.
