@@ -160,6 +160,13 @@ def along_scan(t_years, theta, f_al, astrometry: Dict[str, float], orbit: Option
     return w
 
 
+def inject_orbit(ep: "Epochs", w: np.ndarray, orbit: Orbit) -> np.ndarray:
+    """Real (or simulated) along-scan positions with an orbit added: the injection step of an
+    injection-recovery test on measured epoch astrometry. The noise stays the measured one."""
+    oa, od = orbit.offsets(ep.t)
+    return np.asarray(w, float) + oa * np.sin(ep.theta) + od * np.cos(ep.theta)
+
+
 # ---------------------------------------------------------------------------- sampling
 @dataclass
 class Epochs:

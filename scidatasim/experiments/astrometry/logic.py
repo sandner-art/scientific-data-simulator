@@ -171,15 +171,44 @@ class AstrometricBinaryExperiment(ExperimentLogic):
         p_single = -np.expm1(np.log1p(-self.detection_fap) / n_ind)
         return float(stats.chi2.isf(p_single, 4))
 
+    def noncentrality(self) -> float:
+        """Delta chi2 the noise-free orbit adds over the best five-parameter fit, in units of the
+        total noise (0 without an orbit)."""
+        if self.orbit is None:
+            return 0.0
+        return orbit_noncentrality(self.epochs, self.orbit) * self.sigma_al ** 2 / (
+            self.sigma_al ** 2 + self.excess_noise ** 2)
+
+    def detection_probability(self) -> float:
+        """Probability that the orbit's Delta chi2 at its true period exceeds the detection threshold:
+        non-central chi2 with 4 degrees of freedom. A circular search on an eccentric orbit gets a
+        little less; the check script measures how much."""
+        if self.orbit is None:
+            return 0.0
+        return float(stats.ncx2.sf(self.detection_threshold(), 4, self.noncentrality()))
+
+    def period_ambiguous(self) -> bool:
+        """True if a Keplerian search (``fit.best_keplerian``) on this item's own data ends more than
+        the tolerance away from the true period with a lower chi2 than the true orbit's: the data,
+        not the search, favour a wrong period. Costs about a second per binary."""
+        if self.orbit is None or self._observed is None:
+            return False
+        from .fit import _keplerian_solution, best_keplerian
+        ep = Epochs(self.epochs.t, self.epochs.theta, self.epochs.f_al, self.epochs.sigma)
+        found = best_keplerian(ep, self._observed)
+        if abs(found["orbit"].period - self.orbit.period) <= PERIOD_TOLERANCE * self.orbit.period:
+            return False
+        truth = _keplerian_solution(ep, self._observed, self.orbit.period, self.orbit.eccentricity,
+                                    self.orbit.t_periastron)
+        return bool(found["chi2"] < truth["chi2"])
+
     def signal_undetectable(self) -> bool:
         """True if the orbit is there but a search at the detection FAP finds it in fewer than half
         of noise replicates even at the true period (non-central chi2 with 4 degrees of freedom).
         Such a 'yes' cannot be read from the data; the label is private (it hints at the answer)."""
         if self.orbit is None:
             return False
-        lam = orbit_noncentrality(self.epochs, self.orbit) * self.sigma_al ** 2 / (
-            self.sigma_al ** 2 + self.excess_noise ** 2)
-        return bool(stats.ncx2.sf(self.detection_threshold(), 4, lam) < 0.5)
+        return self.detection_probability() < 0.5
 
     def parallax_error(self) -> float:
         """Standard error of the parallax from a weighted fit of the true model (the five parameters
@@ -208,7 +237,8 @@ class AstrometricBinaryExperiment(ExperimentLogic):
                  answer=float(self.orbit.period) if self.orbit is not None else 0.0, answer_type="number",
                  tolerance=PERIOD_TOLERANCE * float(self.orbit.period) if self.orbit is not None else 0.0,
                  tolerance_rule=f"{PERIOD_TOLERANCE:.0%} of the true period (exactly 0 when there is no orbit)",
-                 answerable_from="inference", signal_undetectable=undetectable),
+                 answerable_from="inference", signal_undetectable=undetectable,
+                 period_ambiguous=False if undetectable else self.period_ambiguous()),
             dict(template="astrometric_parallax", question="Estimate the parallax in mas.",
                  answer=self.astrometry["parallax"], answer_type="number",
                  tolerance=z * self.parallax_error(),

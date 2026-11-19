@@ -327,6 +327,8 @@ The numbers in the changelog and in the verification notes come from three scrip
 | `tools/check_env_tolerance.py` | The same in the interactive environment, fixed 2 % against `tolerance: auto`, at 40, 30, 20 and 15 dB | 3 min |
 | `tools/study_extrapolation_scoring.py` | How to score the extrapolation question: blind and naive answers (0, best constant, last value, a line through the tail), a polynomial, the law fit and a fit of the true family, under four scoring rules and three distances beyond the data; which items discriminate | 30 min |
 | `tools/check_audit_calibration.py` | The leak audit: false alarms on clean releases, and planted leaks of each kind caught (copies, float32, printed, recomputed, and two known blind spots). Builds quick releases of example 13 with fixed seeds; `--reuse` audits them again under another version | 20 min for 100 releases |
+| `tools/check_astrometry_detection.py` | Astrometric binaries: false alarms of the detection baseline on single stars against the nominal FAP; detection, period recovery and AGIS weights by non-centrality; the parallax question by period; the private labels | 15 min |
+| `tools/preregister_gaia_dr4.py` | Builds the Gaia DR4 pre-registration record (selection, method, simulated predictions, hypotheses, file hashes); `--verify` checks a record against the checkout | 40 min |
 
 Results at 0.7.0rc2:
 

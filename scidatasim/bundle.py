@@ -91,8 +91,10 @@ PRIVATE = "private"
 REACHABILITY_LABELS = ("polynomial_reachable", "zero_reachable", "naive_reachable")
 #: Private labels of questions the data cannot settle: ``signal_undetectable`` (astrometric
 #: companions whose orbit a search at the stated false-alarm probability finds in fewer than half
-#: of noise replicates, so a "yes" cannot be read from the data). They hint at the answer too.
-DETECTABILITY_LABELS = ("signal_undetectable",)
+#: of noise replicates, so a "yes" cannot be read from the data) and ``period_ambiguous`` (a
+#: Keplerian search on the item's own data prefers a period outside the tolerance, with a lower
+#: chi2 than the true orbit). They hint at the answer too.
+DETECTABILITY_LABELS = ("signal_undetectable", "period_ambiguous")
 PRIVATE_QUESTION_KEYS = ("answer", "tolerance") + REACHABILITY_LABELS + DETECTABILITY_LABELS
 
 

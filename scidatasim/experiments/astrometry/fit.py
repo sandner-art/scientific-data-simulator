@@ -142,11 +142,43 @@ def fit_keplerian(ep: Epochs, w: np.ndarray, period: float, n_e: int = 8, n_tp: 
                 fit = weighted_lstsq(np.column_stack([five, orbit_design(ep, p, e, tp)]), w, ep.sigma)
                 if best is None or fit.chi2 < best[0].chi2:
                     best = (fit, p, e, tp)
-    fit, p, e, tp = best
+    _, p, e, tp = best
+    return _keplerian_solution(ep, w, p, e, tp)
+
+
+def _keplerian_chi2(ep: Epochs, w: np.ndarray, five: np.ndarray, period: float, e: float, tp: float) -> float:
+    return weighted_lstsq(np.column_stack([five, orbit_design(ep, period, e, tp)]), w, ep.sigma).chi2
+
+
+def polish_keplerian(ep: Epochs, w: np.ndarray, period: float, eccentricity: float, t_periastron: float,
+                     max_e: float = 0.95) -> Dict[str, object]:
+    """Local optimisation (Nelder-Mead) of period, eccentricity and periastron time from a starting
+    point; the Thiele-Innes constants and five parameters stay linear. Returns :func:`fit_keplerian`'s
+    keys for the optimum."""
+    from scipy.optimize import minimize
+    five = five_parameter_design(ep)
+
+    def cost(x):
+        p, e, tp = np.exp(x[0]), x[1], x[2]
+        if not 0.0 <= e < max_e:
+            return np.inf
+        return _keplerian_chi2(ep, w, five, p, e, tp)
+
+    start = np.array([np.log(period), min(max(eccentricity, 0.0), max_e - 1e-3), t_periastron])
+    simplex = np.vstack([start, start + [0.01, 0, 0], start + [0, 0.05, 0], start + [0, 0, 0.05 * period]])
+    if simplex[2, 1] >= max_e:
+        simplex[2, 1] = start[1] - 0.05
+    res = minimize(cost, start, method="Nelder-Mead",
+                   options={"xatol": 1e-6, "fatol": 1e-4, "maxiter": 800, "initial_simplex": simplex})
+    p, e, tp = float(np.exp(res.x[0])), float(res.x[1]), float(res.x[2])
+    return _keplerian_solution(ep, w, p, e, tp)
+
+
+def _keplerian_solution(ep: Epochs, w: np.ndarray, p: float, e: float, tp: float) -> Dict[str, object]:
+    five = five_parameter_design(ep)
+    fit = weighted_lstsq(np.column_stack([five, orbit_design(ep, p, e, tp)]), w, ep.sigma)
     a, b, f, g = (float(v) for v in fit.params[5:])
-    orbit = Orbit(p, e, tp, a, b, f, g)
     a0 = campbell(a, b, f, g)["a0"]
-    # sigma(a0) by linear propagation through the Thiele-Innes -> Campbell map
     grad = np.zeros(4)
     for i in range(4):
         step = np.zeros(4)
@@ -154,24 +186,69 @@ def fit_keplerian(ep: Epochs, w: np.ndarray, period: float, n_e: int = 8, n_tp: 
         grad[i] = (campbell(*(fit.params[5:] + step))["a0"] - campbell(*(fit.params[5:] - step))["a0"]) / (2 * step[i])
     sigma_a0 = float(np.sqrt(max(grad @ fit.cov[5:, 5:] @ grad, 0.0)))
     out: Dict[str, object] = {name: float(v) for name, v in zip(FIVE, fit.params[:5])}
-    out.update(orbit=orbit, chi2=fit.chi2, dof=fit.dof, a0=a0, a0_error=sigma_a0,
+    out["parallax_error"] = float(np.sqrt(fit.cov[2, 2]))
+    out.update(orbit=Orbit(p, e, tp, a, b, f, g), chi2=fit.chi2, dof=fit.dof - 3, a0=a0, a0_error=sigma_a0,
                significance=a0 / sigma_a0 if sigma_a0 > 0 else float("inf"))
     return out
 
 
+def candidate_periods(gram: Dict[str, np.ndarray], n_peaks: int = 3) -> np.ndarray:
+    """Periods worth a Keplerian fit: the ``n_peaks`` highest local maxima of the periodogram and
+    twice each of their periods (an eccentric orbit puts power at harmonics, P/2 above all, so the
+    circular search's highest peak can sit at half the true period). Within 1 % counts as one."""
+    d = gram["dchi2"]
+    peaks = [k for k in range(d.size) if (k == 0 or d[k] >= d[k - 1]) and (k == d.size - 1 or d[k] >= d[k + 1])]
+    peaks = sorted(peaks, key=lambda k: -d[k])
+    out: list = []
+    for k in peaks:
+        if len(out) >= 2 * n_peaks:
+            break
+        for p in (float(gram["period"][k]), 2.0 * float(gram["period"][k])):
+            if all(abs(p / q - 1.0) > 0.01 for q in out):
+                out.append(p)
+    return np.array(out)
+
+
+def best_keplerian(ep: Epochs, w: np.ndarray, gram: Optional[Dict[str, np.ndarray]] = None,
+                   n_peaks: int = 3) -> Dict[str, object]:
+    """The Keplerian search: a grid fit and a local optimisation at each candidate period, the
+    lowest chi2 kept."""
+    gram = orbit_periodogram(ep, w) if gram is None else gram
+    best = None
+    for p in candidate_periods(gram, n_peaks):
+        grid = fit_keplerian(ep, w, p)
+        orb = grid["orbit"]
+        sol = polish_keplerian(ep, w, orb.period, orb.eccentricity, orb.t_periastron)
+        if sol["chi2"] > grid["chi2"]:
+            sol = grid
+        if best is None or sol["chi2"] < best["chi2"]:
+            best = sol
+    return best
+
+
 def detect(ep: Epochs, w: np.ndarray, fap_threshold: float = 1e-3, periods: Optional[Sequence[float]] = None,
-           keplerian: bool = True) -> Dict[str, object]:
-    """The baseline pipeline: five-parameter fit, circular-orbit periodogram, FAP of the highest
-    peak, and (if detected and ``keplerian``) a Keplerian fit at that period."""
+           keplerian: bool = True, n_peaks: int = 3) -> Dict[str, object]:
+    """The baseline pipeline: five-parameter fit, circular-orbit periodogram and the FAP of its
+    highest peak. If detected and ``keplerian``: Keplerian fits (grid, then local optimisation) at
+    the candidate periods of :func:`candidate_periods`, the best by chi2 kept.
+
+    ``period`` is the periodogram's peak; ``period_best`` and ``parallax`` are the final estimates
+    (the Keplerian fit's when an orbit was detected and fitted, otherwise the peak and the
+    five-parameter parallax: an orbit near one year, left unmodelled, biases the parallax)."""
     gram = orbit_periodogram(ep, w, periods)
     k = int(np.argmax(gram["dchi2"]))
     n_ind = independent_frequencies(ep, gram["period"])
     fap = false_alarm_probability(float(gram["dchi2"][k]), n_ind)
+    single = fit_single_star(ep, w)
     out: Dict[str, object] = {"period": float(gram["period"][k]), "dchi2": float(gram["dchi2"][k]),
                               "fap": fap, "n_independent": n_ind, "detected": bool(fap < fap_threshold),
-                              "single_star": fit_single_star(ep, w)}
+                              "single_star": single, "period_best": float(gram["period"][k]),
+                              "parallax": single["parallax"], "parallax_error": single["parallax_error"]}
     if out["detected"] and keplerian:
-        out["keplerian"] = fit_keplerian(ep, w, out["period"])
+        best = best_keplerian(ep, w, gram, n_peaks)
+        out["keplerian"] = best
+        out.update(period_best=best["orbit"].period, parallax=best["parallax"],
+                   parallax_error=best.get("parallax_error", single["parallax_error"]))
     return out
 
 

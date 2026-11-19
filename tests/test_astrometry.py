@@ -10,10 +10,11 @@ import pytest
 from scidatasim.engine import SimulatorEngine, simulate
 from scidatasim.experiments.astrometry.epochs import (NS_PER_YEAR, epoch_table, read_epoch_astrometry,
                                                       source_epochs, summary, tcb_ns_to_years, write_ecsv)
-from scidatasim.experiments.astrometry.fit import (detect, excess_noise, false_alarm_probability,
-                                                   fit_single_star, orbit_noncentrality)
+from scidatasim.experiments.astrometry.fit import (_keplerian_solution, candidate_periods, detect, excess_noise,
+                                                   false_alarm_probability, fit_single_star, orbit_noncentrality,
+                                                   orbit_periodogram)
 from scidatasim.experiments.astrometry.logic import AstrometricBinaryExperiment
-from scidatasim.experiments.astrometry.model import (Orbit, along_scan, campbell, gaia_position,
+from scidatasim.experiments.astrometry.model import (Orbit, along_scan, campbell, gaia_position, inject_orbit,
                                                      kepler_eccentric_anomaly, local_triad, parallax_factor_al,
                                                      photocentre_a0, simulated_epochs, thiele_innes)
 from scidatasim.export.tasks import collect_bundle_tasks
@@ -178,4 +179,37 @@ def test_bundle_hides_answers_and_labels(tmp_path):
     assert tasks["astrometric_companion"]["signal_undetectable"] is True
     with open(os.path.join(run.experiment_dir, "bundle", "questions.json")) as f:
         public = json.load(f)
-    assert not any(k in q for q in public for k in ("answer", "tolerance", "signal_undetectable"))
+    assert not any(k in q for q in public for k in ("answer", "tolerance", "signal_undetectable", "period_ambiguous"))
+    assert tasks["astrometric_period"]["period_ambiguous"] is False
+
+
+def test_injection_and_eccentric_period():
+    """An eccentric orbit injected into single-star data: the circular search's peak may sit at a
+    harmonic, the Keplerian candidates include twice each peak, and the final period is right; the
+    pipeline's parallax comes from the orbit fit."""
+    rng = np.random.default_rng(4)
+    ep = simulated_epochs(rng)
+    base = along_scan(ep.t, ep.theta, ep.f_al, ASTRO) + rng.normal(0, ep.sigma)
+    orbit = Orbit.from_campbell(400.0, 0.8, 30.0, 2.0, 0.6, 2.0, 0.4)
+    w = inject_orbit(ep, base, orbit)
+    assert np.allclose(w - base, along_scan(ep.t, ep.theta, np.zeros(len(ep)), {}, orbit))
+    gram = orbit_periodogram(ep, w)
+    cands = candidate_periods(gram)
+    peak = gram["period"][np.argmax(gram["dchi2"])]
+    assert any(abs(c / (2 * peak) - 1) < 1e-9 for c in cands)
+    found = detect(ep, w)
+    assert found["period_best"] == pytest.approx(400.0, rel=0.02)
+    assert found["parallax"] == pytest.approx(found["keplerian"]["parallax"])
+    assert abs(found["parallax"] - 8.0) < abs(found["single_star"]["parallax"] - 8.0) + 0.05
+    truth = _keplerian_solution(ep, w, 400.0, 0.8, 30.0)
+    assert found["keplerian"]["chi2"] <= truth["chi2"] + 1e-6
+
+
+def test_period_ambiguous_label():
+    strong = AstrometricBinaryExperiment({"seed": 1, "companion": True, "orbit": {"a0": 2.0, "period": 150.0}})
+    strong.initialize({"seed": 1})
+    assert not strong.period_ambiguous()
+    assert strong.detection_probability() > 0.99 and strong.noncentrality() > 100
+    single = AstrometricBinaryExperiment({"seed": 1, "companion": False})
+    single.initialize({"seed": 1})
+    assert not single.period_ambiguous() and single.detection_probability() == 0.0
