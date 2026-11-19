@@ -57,6 +57,21 @@ Fields (2-D images, or stacks such as ``(time, x, y)``; image operators act on t
 * ``{type: vignetting, strength: 0.3, power: 2}`` - brightness falling off towards the corners.
 * ``{type: shift, dx: 0.3, dy: -0.2}`` or ``{type: shift, sd: 0.5}`` - sub-pixel misregistration.
 
+Real noise (injection into real data; series and fields):
+
+* ``{type: real_noise, source: lc.fits, time: TIME, column: PDCSAP_FLUX, quality: QUALITY,
+  normalize: median, combine: multiply}`` - the simulated signal in a real background: a measured
+  series (or image, ``field: true``) with the signal absent or removed. ``align: time`` (the default
+  when ``time`` is given) takes, for each point, the background sample nearest its coordinate after
+  a random shift (``shift`` to fix it; ``max_gap``, default half the cadence, leaves gaps as NaN);
+  ``align: index`` takes consecutive samples from a random ``offset``. Fields take a window of the
+  background image. ``combine: add`` (residuals, default) or ``multiply`` (relative flux ~1);
+  ``scale`` multiplies the background's deviations. The file's path, SHA-256 and the offset or
+  shift go into the run's record (see :mod:`scidatasim.ingest`). Choose the model's time step equal
+  to the background's cadence, so each point gets its own real sample. The offset or shift stays in
+  the private record: published together with the background file, it would let a solver subtract
+  the noise exactly.
+
 ``gaussian``, ``multiplicative``, ``poisson``, ``quantize``, ``outliers``, ``missing`` (MCAR),
 ``calibration``, ``censor``, ``detector`` and ``clip`` work on any shape (dead pixels are
 ``missing``, hot pixels ``outliers``).
@@ -383,6 +398,87 @@ def _clip(x, rng, p):
         {"low": low, "high": high}
 
 
+def _background(p) -> Tuple[np.ndarray, Optional[np.ndarray], Info]:
+    """The real background: inline ``values`` (and ``times``), a field file, or a series file."""
+    if "values" in p:
+        v = np.asarray(p["values"], float)
+        t = None if p.get("times") is None else np.asarray(p["times"], float)
+        return v, t, {"source": "inline", "n": int(v.size)}
+    if "source" not in p:
+        raise ValueError("real_noise needs 'source' (a file) or 'values'")
+    from . import ingest
+    if p.get("field"):
+        f = ingest.read_field(p["source"], fmt=p.get("format"), key=p.get("key"))
+        return np.asarray(f["data"], float), None, {"source": f["provenance"]}
+    s = ingest.read_series(p["source"], value=p.get("column", "value"), time=p.get("time"),
+                           error=p.get("error"), quality=p.get("quality"),
+                           good_quality=p.get("good_quality", (0,)), normalize=p.get("normalize"),
+                           fmt=p.get("format"), key=p.get("key"))
+    info = {"source": s.provenance, "column": s.meta["value"], "n": len(s)}
+    if s.meta.get("flagged") is not None:
+        info["flagged"] = s.meta["flagged"]
+    return s.value, (s.time if p.get("time") else None), info
+
+
+def _real_noise(x, rng, p, ctx):
+    """A simulated signal in real noise: ``x`` combined with a real background (a measured series
+    or image with the signal absent or removed). The noise, its correlations and its gaps (NaN in
+    the background) are the real ones; the truth is still the latent ``x``."""
+    combine = p.get("combine", "add")
+    if combine not in ("add", "multiply"):
+        raise ValueError("real_noise combine must be 'add' or 'multiply'")
+    scale = float(p.get("scale", 1.0))
+    bg, bg_t, info = _background(p)
+    info.update(combine=combine, scale=scale)
+    if x.ndim >= 2:  # a field: a window of the background image with the same shape
+        if bg.ndim != x.ndim or any(b < s for b, s in zip(bg.shape, x.shape)):
+            raise ValueError(f"real_noise: background shape {bg.shape} cannot hold a {x.shape} window")
+        start = p.get("offset")
+        start = [int(rng.integers(0, b - s + 1)) for b, s in zip(bg.shape, x.shape)] if start is None \
+            else [int(o) for o in (start if isinstance(start, (list, tuple)) else [start] * x.ndim)]
+        window = bg[tuple(slice(o, o + s) for o, s in zip(start, x.shape))]
+        info["offset"] = start
+    else:
+        align = p.get("align", "time" if bg_t is not None else "index")
+        info["align"] = align
+        if align == "index":  # consecutive background samples, one per point
+            if bg.size < x.size:
+                raise ValueError(f"real_noise: background has {bg.size} points, the series {x.size}")
+            start = int(p["offset"]) if p.get("offset") is not None else int(rng.integers(0, bg.size - x.size + 1))
+            window = bg[start:start + x.size]
+            info["offset"] = start
+        elif align == "time":  # the background sample nearest each point's coordinate, after a shift
+            coord = ctx.get("coordinate")
+            if coord is None or bg_t is None:
+                raise ValueError("real_noise align 'time' needs the series' coordinate and background times")
+            order = np.argsort(bg_t)
+            bt, bv = bg_t[order], bg[order]
+            cadence = float(np.median(np.diff(bt))) if bt.size > 1 else 1.0
+            span = float(np.max(coord) - np.min(coord))
+            if p.get("shift") is not None:
+                shift = float(p["shift"])
+            else:
+                lo, hi = bt[0] - np.min(coord), bt[-1] - np.min(coord) - span
+                if hi < lo:
+                    raise ValueError(f"real_noise: background spans {bt[-1] - bt[0]:g}, the series {span:g}")
+                shift = float(rng.uniform(lo, hi))
+            target = np.asarray(coord, float) + shift
+            k = np.clip(np.searchsorted(bt, target), 1, bt.size - 1)
+            k = np.where(np.abs(bt[k - 1] - target) <= np.abs(bt[k] - target), k - 1, k)
+            max_gap = float(p.get("max_gap", 0.5 * cadence))
+            window = np.where(np.abs(bt[k] - target) <= max_gap, bv[k], np.nan)
+            info.update(shift=shift, cadence=cadence, max_gap=max_gap)
+        else:
+            raise ValueError("real_noise align must be 'index' or 'time'")
+    window = np.asarray(window, float)
+    if combine == "add":
+        out = x + scale * window
+    else:  # relative flux: the background is ~1, its deviations scaled
+        out = x * (1.0 + scale * (window - 1.0))
+    info["n_gaps"] = int(np.sum(~np.isfinite(window)))
+    return out, info
+
+
 VALUE_OPERATORS: Dict[str, ValueOperator] = {
     "gaussian": _gaussian,
     "multiplicative": _multiplicative,
@@ -406,6 +502,7 @@ CONTEXT_OPERATORS: Dict[str, Callable[..., Tuple[np.ndarray, Info]]] = {
     "ar1": _ar1,
     "drift": _drift,
     "jitter": _jitter,
+    "real_noise": _real_noise,
 }
 #: Operators that only make sense first (they start again from the exact values).
 FIRST_ONLY = {"jitter"}

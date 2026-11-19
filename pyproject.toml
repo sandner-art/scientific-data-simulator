@@ -70,7 +70,10 @@ validate = ["mlcroissant>=1.0", "datasets>=2.18"]
 openenv = ["openenv>=0.12"]
 verifiers = ["verifiers>=0.4.1"]
 docs = ["sphinx>=7", "sphinx-rtd-theme", "myst-parser"]
-dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido>=1.0,!=1.5.1", "plotly>=6.1.1", "pint>=0.24", "mesa>=3.0"]
+# Astronomy data: FITS files (scidatasim.ingest) and the Gaia archive (tools/gaia_dr4_fetch.py).
+astro = ["astropy>=6", "astroquery>=0.4.7"]
+dev = ["pytest>=7", "pyarrow>=12", "h5py>=3.8", "kaleido>=1.0,!=1.5.1", "plotly>=6.1.1", "pint>=0.24", "mesa>=3.0",
+       "astropy>=6"]
 all = ["kaleido>=1.0,!=1.5.1", "plotly>=6.1.1", "pyarrow>=12", "h5py>=3.8", "pint>=0.24", "mlcroissant>=1.0", "datasets>=2.18",
        "mesa>=3.0"]
 

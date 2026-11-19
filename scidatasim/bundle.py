@@ -508,7 +508,8 @@ def _observation_phrase(realized: Optional[Dict[str, Any]]) -> Optional[str]:
              "missing": "missing values", "clip": "clipping", "ar1": "correlated noise",
              "drift": "instrument drift", "calibration": "a calibration error", "censor": "a detection limit",
              "jitter": "timing jitter", "detector": "detector noise", "psf_blur": "blur",
-             "bin": "pixel binning", "vignetting": "vignetting", "shift": "misregistration"}
+             "bin": "pixel binning", "vignetting": "vignetting", "shift": "misregistration",
+             "real_noise": "noise taken from a real measurement"}
     noise = [words.get(op["type"], op["type"]) for op in ops]
     if noise:
         parts.append("with " + ", ".join(noise))

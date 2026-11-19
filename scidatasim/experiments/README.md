@@ -11,6 +11,7 @@ This directory contains the core implementations of different scientific models 
 | `predator_prey`                 | Simulates predator-prey population dynamics using the Lotka-Volterra equations.                                                          |
 | `linear_function`           | Generates data points from linear function.                                                       |
 | `data_analysis`       | Loads data from file, performs basic analysis and visualization.                                                  |
+| `external`            | A measured series from a file (any format `scidatasim.ingest` reads) served as a run's observation, with the file's provenance. |
 | `predator_prey_calibration`      | Extends the `predator_prey` experiment to include loading and plotting of observed data for calibration purposes.                       |
 | `oscillator`                     | Damped / Duffing oscillator in SI units (closed form or DOP853; explicit Euler as an `audit` model).                                      |
 | `pendulum`                       | Nonlinear pendulum (DOP853); `approximation: small_angle` is an `audit` model with a documented period error.                            |
