@@ -213,3 +213,19 @@ def test_period_ambiguous_label():
     single = AstrometricBinaryExperiment({"seed": 1, "companion": False})
     single.initialize({"seed": 1})
     assert not single.period_ambiguous() and single.detection_probability() == 0.0
+
+
+def test_preregistration_hashes_ignore_line_endings(tmp_path):
+    """A Windows checkout (CRLF) and a Linux one (LF) give the same file hashes."""
+    import importlib.util
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location("prereg", os.path.join(root, "tools", "preregister_gaia_dr4.py"))
+    prereg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(prereg)
+    (tmp_path / "lf.py").write_bytes(b"a = 1\nb = 2\n")
+    (tmp_path / "crlf.py").write_bytes(b"a = 1\r\nb = 2\r\n")
+    assert prereg.sha256_file(str(tmp_path / "lf.py")) == prereg.sha256_file(str(tmp_path / "crlf.py"))
+    record = {"schema": prereg.SCHEMA, "x": 1.5}
+    record["record_sha256"] = __import__("hashlib").sha256(prereg.canonical(record)).hexdigest()
+    assert json.loads(json.dumps(record)) == record and prereg.canonical(json.loads(json.dumps(record))) == \
+        prereg.canonical(record)

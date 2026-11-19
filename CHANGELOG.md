@@ -5,6 +5,7 @@ Versions 0.2–0.6 were development steps; they were first released together in 
 ## Unreleased (0.8.0.dev0)
 
 - Development toward 0.8.0. 0.7.0 is archived on Zenodo: version DOI 10.5281/zenodo.24362514, all versions 10.5281/zenodo.24362513; `CITATION.cff` and the README cite it.
+- **Gaia DR4 pre-registration deposited**: 10.5281/zenodo.24370371 (made with 0.7.0, commit b30a7e9; record_sha256 945306f9…). `tools/preregister_gaia_dr4.py` now hashes files as git stores them (CRLF counts as LF): 0.7.0 on Windows hashed the CRLF checkout, so its records failed `--verify` on Linux and macOS; the deposited record was made on Linux and holds the LF hashes, which the new function reproduces on every system.
 
 ## 0.7.0 (2026-11-19)
 

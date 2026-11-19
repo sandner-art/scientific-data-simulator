@@ -18,8 +18,12 @@ Usage, from the repository root (a clean checkout of the commit to register)::
     python tools/preregister_gaia_dr4.py --verify preregistration_gaia_dr4.json
 
 ``--verify`` recomputes the record's hash and compares the method files with the current checkout.
+File hashes are taken with LF line endings, as git stores the files, so they agree on every system.
 Deposit the JSON (Zenodo) and tag the commit before the deadline; the record's own timestamp is not
 evidence, the deposit's is.
+
+The record for Gaia DR4 is deposited: 10.5281/zenodo.24370371 (made with 0.7.0, commit b30a7e9,
+record_sha256 945306f960f9db7723a547cea137398a3a6d102f72f6c0c96c0ba906229215ac).
 """
 from __future__ import annotations
 
@@ -174,11 +178,13 @@ def hypotheses(pred: dict) -> list:
 
 
 def sha256_file(path: str) -> str:
-    h = hashlib.sha256()
+    """SHA-256 of a file as git stores it: CRLF line endings count as LF, so a checkout on Windows
+    (where Git converts to CRLF by default) gives the same hash as one on Linux or macOS. Records
+    made by 0.7.0 on Linux, and the deposited 0.7.0 record (10.5281/zenodo.24370371), hold these
+    values; a record made by 0.7.0 on Windows holds the hashes of the CRLF files."""
     with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+        data = f.read()
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
 def git(*args) -> str:
