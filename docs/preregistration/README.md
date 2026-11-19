@@ -12,3 +12,6 @@ On Windows, clone with `-c core.autocrlf=false`: 0.7.0's script hashed files byt
 
 After the release: `tools/gaia_dr4_fetch.py` fetches the registered sample and
 `tools/gaia_dr4_analyze.py` runs the registered analysis (H1-H5, E1-E4) on it.
+
+`deviations_gaia_dr4.md` logs every change after registration and every choice the analysis
+code fixes that the record left open. Add to it before reading any result.
