@@ -2,9 +2,10 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/sandner-art/scientific-data-simulator/blob/main/LICENSE)
 [![Python Version](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![DOI](https://zenodo.org/badge/949226321.svg)](https://doi.org/10.5281/zenodo.24362513)
 [![tests](https://github.com/sandner-art/scientific-data-simulator/actions/workflows/tests.yml/badge.svg)](https://github.com/sandner-art/scientific-data-simulator/actions/workflows/tests.yml)
 
-| Author: Daniel Sandner | Scientific Data Simulator: A Modular Concept for Reproducible Experiment Design and Synthetic Data Generation
+| Author: Daniel Sandner | Scientific Data Simulator (scidatasim): A Modular Testbed for Synthetic Scientific Data with Open or Hidden Ground Truth
 - part of the **100 Scientific Visions** project (2025-2027)
 
 ## Overview
@@ -431,7 +432,9 @@ tools/            make_readme_figures.py (regenerates docs/images), ci_failures.
 
 If you use Scientific Data Simulator in your research, please cite it:
 
-> Sandner, D. (2026). Scientific Data Simulator (scidatasim): A Modular Testbed for Synthetic Scientific Data with Open or Hidden Ground Truth (Version 0.7.0) [Computer software]. https://github.com/sandner-art/scientific-data-simulator
+> Sandner, D. (2026). Scientific Data Simulator (scidatasim): A Modular Testbed for Synthetic Scientific Data with Open or Hidden Ground Truth (Version 0.7.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24362514
+
+Cite the version you used: each release has its own DOI, listed on the [Zenodo record](https://doi.org/10.5281/zenodo.24362513) (this DOI always resolves to the latest version). Results record the version that produced them.
 
 Full citation metadata is in [`CITATION.cff`](https://github.com/sandner-art/scientific-data-simulator/blob/main/CITATION.cff).
 

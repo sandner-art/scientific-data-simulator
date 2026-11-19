@@ -44,8 +44,11 @@ lists every version; versions 0.2–0.6 were development steps, not separate rel
 4. Tag `vX.Y.Z` on `main` and publish a GitHub release whose notes are that changelog section.
    Zenodo archives it.
 5. Back on the development branch:
-   - add the version DOI to `CITATION.cff` (`identifiers`) and the concept DOI to the README badge;
-   - bump to the next `.dev0` version;
+   - add the version DOI to `CITATION.cff` (`identifiers`) and the README's citation line, and the
+     concept DOI to the README badge;
+   - bump to the next `.dev0` version in `pyproject.toml`, `ui/pyproject.toml` (also its floor),
+     `ui/sds_ui/__init__.py` and `docs/conf.py`. `CITATION.cff` and the README's citation line keep
+     the release just made: they describe the latest version with a DOI (the tests check this);
    - merge `main` back in so the branches do not diverge.
 
 ## PyPI

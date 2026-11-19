@@ -9,7 +9,7 @@ import subprocess
 import sys
 from typing import List, Optional
 
-__version__ = "0.7.0"
+__version__ = "0.8.0.dev0"
 
 AUTHOR = "Daniel Sandner"
 LICENSE = "Apache-2.0"

@@ -2,6 +2,10 @@
 
 Versions 0.2–0.6 were development steps; they were first released together in 0.7.0.
 
+## Unreleased (0.8.0.dev0)
+
+- Development toward 0.8.0. 0.7.0 is archived on Zenodo: version DOI 10.5281/zenodo.24362514, all versions 10.5281/zenodo.24362513; `CITATION.cff` and the README cite it.
+
 ## 0.7.0 (2026-11-19)
 
 The first stable release. Changes since 0.7.0rc2 below; the release candidates list the rest. The citation title is now "Scientific Data Simulator (scidatasim): A Modular Testbed for Synthetic Scientific Data with Open or Hidden Ground Truth", with an abstract (Zenodo takes both from `CITATION.cff`).

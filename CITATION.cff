@@ -19,6 +19,14 @@ abstract: >-
   validating methods, benchmarks for AI systems and agents, and pre-registered predictions tested
   against data released later, such as Gaia DR4 epoch astrometry.
 version: 0.7.0
+doi: 10.5281/zenodo.24362513
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.24362513
+    description: "All versions (concept DOI; resolves to the latest version)"
+  - type: doi
+    value: 10.5281/zenodo.24362514
+    description: "Version 0.7.0"
 license: Apache-2.0
 date-released: 2026-11-19
 url: "https://github.com/sandner-art/scientific-data-simulator"

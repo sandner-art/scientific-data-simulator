@@ -129,10 +129,24 @@ def test_version_follows_pyproject():
     assert scidatasim.__version__ == version
     with open(os.path.join(ROOT, "CITATION.cff")) as f:
         cff = f.read()
-    assert f"version: {version}" in cff
+    cited = re.search(r"^version: (\S+)", cff, flags=re.M).group(1)
+    # CITATION.cff and the README's citation line describe the latest release, the one with a DOI: the
+    # release itself on a release commit, the last one while the package is at a .dev version
+    if ".dev" in version:
+        assert ".dev" not in cited and _release_key(cited) < _release_key(version.split(".dev")[0])
+    else:
+        assert cited == version
     title = re.search(r'^title: "([^"]+)"', cff, flags=re.M).group(1)
     with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:  # the citation line, with the CFF title
-        assert f"{title} (Version {version})" in f.read()
+        assert f"{title} (Version {cited})" in f.read()
+
+
+def _release_key(version):
+    """'0.7.0' -> (0, 7, 0); a pre-release (rc) sorts before its release."""
+    match = re.match(r"(\d+)\.(\d+)\.(\d+)(?:rc(\d+))?$", version)
+    assert match, version
+    major, minor, patch, rc = match.groups()
+    return int(major), int(minor), int(patch), int(rc) if rc else 10**6
 
 
 def test_install_scripts_are_consistent():
