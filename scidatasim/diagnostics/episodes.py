@@ -19,7 +19,8 @@ knows the truth, each episode can be checked not only for *whether* the answer i
                            the truth's misfit floored at ``tolerance`` x RMS of the truth on those
                            points (so noise-free data do not flag near-misses): evidence ignored.
 ``matches_<name>``         a wrong answer that matches an alternative hypothesis (e.g. ``textbook``,
-                           the textbook form of a counterfactual law): a prior preferred over
+                           the textbook form of a counterfactual law, or for number and choice
+                           answers a textbook value or a popular label): a prior preferred over
                            evidence. Only evaluated when the alternative is distinguishable from
                            the truth on the scoring domain (relative RMS > tolerance); episodes
                            where it is not carry no such flag, and :func:`summarize` reports
@@ -27,6 +28,8 @@ knows the truth, each episode can be checked not only for *whether* the answer i
 
 Agents are any callable ``agent(observation, log) -> action``; :func:`run_episodes` records
 episodes as :class:`EpisodeLog` objects, and :func:`summarize` turns diagnoses into rates.
+Logs from elsewhere - an LLM agent's tool calls, a labelling session - are read by
+:mod:`scidatasim.diagnostics.logs` into the same objects.
 """
 from __future__ import annotations
 
@@ -186,8 +189,38 @@ def diagnose_episode(log: EpisodeLog, alternatives: Optional[Mapping[str, Option
         else:
             info = answer.get("info") or {}
             flags["invalid_answer"] = "estimate" in info and info["estimate"] is None
+            truth = log.truth.get(log.target)
+            for name, alt in (alternatives or {}).items():  # numbers and choices: a preferred prior
+                if alt is None or flags["invalid_answer"]:
+                    continue
+                if _same(alt, truth, log.tolerance):
+                    continue  # indistinguishable from the truth: the flag cannot apply
+                result[f"error_vs_{name}"] = _distance(value, alt)
+                flags[f"matches_{name}"] = (not result["correct"]) and _same(value, alt, log.tolerance)
     result["flags"] = flags
     return result
+
+
+def _number(v) -> Optional[float]:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _same(a, b, tolerance: float) -> bool:
+    """Numbers within ``tolerance`` (absolute), otherwise case-insensitive equal text."""
+    x, y = _number(a), _number(b)
+    if x is not None and y is not None:
+        return abs(x - y) <= max(float(tolerance or 0.0), 1e-12 * max(1.0, abs(y)))
+    return str(a).strip().lower() == str(b).strip().lower()
+
+
+def _distance(a, b) -> Optional[float]:
+    x, y = _number(a), _number(b)
+    if x is not None and y is not None:
+        return abs(x - y)
+    return 0.0 if str(a).strip().lower() == str(b).strip().lower() else 1.0
 
 
 def law_alternatives(log: EpisodeLog) -> Dict[str, Optional[str]]:

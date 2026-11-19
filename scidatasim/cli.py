@@ -172,6 +172,14 @@ def _cmd_check_preregistration(args) -> int:
     return 0 if result["ok"] and not failed else 1
 
 
+def _cmd_fallacies(args) -> int:
+    import json
+    from .diagnostics import logs
+    result = logs.diagnose_log(args.events, args.key)
+    print(json.dumps(result, indent=1, default=float) if args.json else logs.markdown(result))
+    return 0
+
+
 def _cmd_ui(ui_args: List[str]) -> int:
     """Start the UI if it is installed. The simulator does not depend on it: the UI is a separate
     package, found here by name only."""
@@ -236,6 +244,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     chk.add_argument("--root", default=".")
     chk.add_argument("--json", action="store_true")
     chk.set_defaults(func=_cmd_check_preregistration)
+
+    fal = sub.add_parser("fallacies", help="agent-fallacy flags for any event log, against an answer key")
+    fal.add_argument("events", help="event log: JSONL, JSON, CSV, TSV or Parquet (episode, type, inputs, x, y, value)")
+    fal.add_argument("--key", required=True, help="answer key per episode: JSON, YAML or a table")
+    fal.add_argument("--json", action="store_true")
+    fal.set_defaults(func=_cmd_fallacies)
 
     run = sub.add_parser("run", help="run one experiment configuration (YAML)")
     run.add_argument("config")
