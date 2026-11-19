@@ -468,7 +468,16 @@ def _system_info() -> Dict[str, Any]:
         "cpu": platform.processor(),
         "ram": f"{round(psutil.virtual_memory().total / (1024.0 ** 3))}GB",
         "python_version": platform.python_version(),
+        "numerics": _numerics(),
     }
+
+
+def _numerics() -> Dict[str, Any]:
+    from .provenance import numerical_environment
+    try:
+        return numerical_environment()
+    except Exception:  # never let provenance break a run
+        return {}
 
 
 def _print_output_summary(experiment_dir: str) -> None:

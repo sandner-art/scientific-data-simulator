@@ -92,8 +92,17 @@ def fit(z, m, cov_or_err, model: str = "lcdm", z_hel=None, start: Optional[Dict[
         mu = distance_modulus(z, p["om"], p.get("w0", -1.0), p.get("wa", 0.0), z_hel=z_hel)
         return chi2_marginal_m(m, mu, inv)
 
-    res = optimize.minimize(chi2, x0, method="L-BFGS-B", bounds=bounds)
-    best = res.x
+    # Several starts, tight tolerances, then a simplex polish: the w0-wa likelihood has long, flat,
+    # curved valleys where a loose stop leaves chi2 0.1 or more above the minimum - and where it
+    # stops then depends on the last bits of the arithmetic (the BLAS kernel, the platform).
+    starts = [x0] + [np.array(s[:len(names)]) for s in ((0.25, -0.8, -0.5), (0.35, -1.2, 0.3), (0.3, -0.9, -1.0))
+                     if len(names) > 1]
+    tight = {"maxiter": 5000, "ftol": 1e-15, "gtol": 1e-9}
+    runs = [optimize.minimize(chi2, s, method="L-BFGS-B", bounds=bounds, options=tight) for s in starts]
+    res = min(runs, key=lambda r: r.fun)
+    polish = optimize.minimize(chi2, res.x, method="Nelder-Mead", bounds=bounds,
+                               options={"xatol": 1e-9, "fatol": 1e-11, "maxiter": 20000})
+    best = polish.x if polish.fun < res.fun else res.x
     # errors from a finite-difference Hessian of chi2/2
     h = np.array([1e-3, 1e-3, 1e-2])[:len(names)]
     hess = np.zeros((len(names), len(names)))

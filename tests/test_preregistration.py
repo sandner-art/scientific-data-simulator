@@ -59,3 +59,27 @@ def test_cli(tmp_path, capsys):
     outcomes.write_text(json.dumps({"rate": 0.5}))
     assert cli.main(["check-preregistration", str(out), "--root", str(tmp_path), "--outcomes", str(outcomes),
                      "--json"]) == 1
+
+
+def test_numerical_environment_is_recorded(tmp_path):
+    from scidatasim.engine import SimulatorEngine
+    from scidatasim.provenance import numerical_environment
+    info = numerical_environment()
+    assert "machine" in info and info.get("blas", {}).get("name")
+    run = SimulatorEngine(str(tmp_path), verbose=False).run_config(dict(
+        experiment_type="scidatasim.experiments.linear_function.logic.LinearFunctionExperiment", n_points=5,
+        m=1.0, c=0.0, x_min=0.0, x_max=1.0, seed=1, generate_plots=False))
+    record = json.load(open(os.path.join(run.experiment_dir, "experiment_record.json")))
+    assert "numerics" in json.dumps(record)
+    assert "numerics" in pr.seal({"title": "t"}, files=[], root=str(tmp_path))["provenance"]
+
+
+def test_blas_reproducibility_tool(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("blas", os.path.join(ROOT, "tools", "check_blas_reproducibility.py"))
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    code = tool.main(["--kernels", "Haswell", "Nehalem", "--models", "linear", "astrometry", "--out", str(tmp_path)])
+    rows = {r["output"]: r["status"] for r in json.load(open(tmp_path / "blas_reproducibility.json"))["rows"]}
+    assert code == 0 and rows["linear: data"] == "bit-identical"
+    assert rows["astrometry: estimate"] in ("bit-identical", "equal to rtol")

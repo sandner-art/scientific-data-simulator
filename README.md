@@ -336,6 +336,7 @@ The numbers in the changelog and in the verification notes come from three scrip
 | `tools/check_transit_detection.py` | Transits: false alarms of detrend + BLS + SNR > 7.1 on quiet and spotted stars; detection, period and depth by expected SNR; the private labels | 15 min |
 | `tools/check_bump_hunt.py` | Resonances: calibration of the bump hunt's global p-value, local p-values (look-elsewhere), a trigger turn-on modelled and not, detection by Asimov Z | 3 min |
 | `tools/validate_pantheon.py` | Cosmology: the SN-only fit on the public Pantheon+ data against the published Om and w0, and on simulations of the same design (bias, coverage); downloads from GitHub | 2 min |
+| `tools/check_blas_reproducibility.py` | Models and estimators under several OpenBLAS kernels (same seed, different processor code): bit-identical, equal to tolerance, or unstable | 1 min |
 | `tools/gaia_dr4_fetch.py` | Fetches the pre-registered Gaia DR4 sample (selection, auxiliary rows, epoch astrometry) with a manifest of SHA-256 sums; needs astroquery | depends on the archive |
 | `tools/gaia_dr4_analyze.py` | Runs the pre-registered analysis (H1–H5, E1–E4) on the fetched data and writes a report | about an hour on 8 cores |
 
@@ -345,6 +346,20 @@ Results at 0.7.0rc2:
 - **Environment (40 episodes per level).** At 40 and 30 dB `auto` stays at 2 % and changes nothing. At 15 dB the right law passes 78 % instead of 30 %, and a polynomial 22 % instead of 0 %: under that noise the data no longer separate them on the scored range.
 - **Extrapolation question (2,160 runs).** Under the 0.7.0rc2 rule the answer 0 passed 34 % of the questions and the last observed value 57 %; only 17 % of items passed with a fit of the true law and failed every blind and naive answer. The rule since (half the range beyond the data, within 5 % or what a fit of the true law reaches there under the run's noise) gives 60 %; 0 passes 5 %. Plateaus (logistic, Hill, Michaelis-Menten, Arrhenius) still pass with the last observed value: a private `naive_reachable` label marks them.
 - **Leak audit (221 quick releases).** The rule before 0.7.0rc2 refused 3 clean releases (1.4 %): two noisy observations within 1e-6 of an answer by chance, and one answer equal to its question's own x at 4 digits. Now none is refused; the two chance matches appear as medium-severity notes. Every planted copy is still caught (exact, round-off, float32, printed with 4 or more digits). Three answers recomputed with an error of 1e-9 to 1e-6 still refuse the release; a single one is a medium note, because one match that close cannot be told from chance.
+
+### Same seed, different machine
+
+A run is bit-for-bit reproducible on the same machine and software. Across processors it is not
+always: numpy's linear-algebra library (OpenBLAS or MKL) picks code for the processor at run time,
+and those kernels order floating-point operations differently. `tools/check_blas_reproducibility.py`
+runs the models and their estimators under several OpenBLAS kernels. Most simulated data are
+bit-identical everywhere (no BLAS call on their path); the heat solver and the astrometric parallax
+factors differ in the last bit (about 3e-16), so checksums of such data are machine-specific - compare
+them with a tolerance. Estimators agree to their optimiser's tolerance. A larger difference is a bug:
+the tool found one (the w0wa supernova fit stopped early in flat valleys; fixed). Every run record and
+pre-registration now stores the processor, the BLAS/LAPACK build, the kernel chosen at run time and
+the overriding environment variables (`numerics`). To pin the kernel, set `OPENBLAS_CORETYPE`
+(OpenBLAS) or `MKL_CBWR` (MKL).
 
 ## Writing a model
 

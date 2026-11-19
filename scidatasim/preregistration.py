@@ -73,8 +73,13 @@ def provenance(files: Iterable[str], root: str = ".") -> Dict[str, Any]:
     return {"git_commit": _git(root, "rev-parse", "HEAD"),
             "git_dirty": bool(_git(root, "status", "--porcelain", "--", *files)) if files else False,
             "scidatasim": __version__, "python": platform.python_version(), "numpy": numpy.__version__,
-            "scipy": scipy.__version__, "line_endings": "LF",
+            "scipy": scipy.__version__, "line_endings": "LF", "numerics": _numerics(),
             "files_sha256": {f: file_hash(os.path.join(root, f)) for f in files}}
+
+
+def _numerics() -> Dict[str, Any]:
+    from .provenance import numerical_environment
+    return numerical_environment()
 
 
 def seal(record: Dict[str, Any], files: Iterable[str] = (), root: str = ".") -> Dict[str, Any]:

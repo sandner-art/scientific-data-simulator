@@ -97,3 +97,38 @@ def code_provenance(cls: type) -> Dict[str, object]:
             status = _git(["status", "--porcelain", "--untracked-files=no"], directory)
             info["git_dirty"] = bool(status)
     return info
+
+
+#: Environment variables that change which floating-point code paths the linear-algebra libraries take.
+NUMERICS_ENV = ("OPENBLAS_CORETYPE", "OPENBLAS_NUM_THREADS", "MKL_CBWR", "MKL_NUM_THREADS", "MKL_DYNAMIC",
+                "OMP_NUM_THREADS", "NPY_DISABLE_CPU_FEATURES")
+
+
+def numerical_environment() -> Dict[str, object]:
+    """What decides the last bits of a result besides the code and the seed: the processor, the
+    BLAS/LAPACK build numpy uses, the kernel it picked at run time (OpenBLAS and MKL dispatch by
+    processor), its threads, and the environment variables that override them. Two machines with
+    the same seed and versions agree bit for bit only where these agree, or where no BLAS call is
+    involved (``tools/check_blas_reproducibility.py`` measures which outputs are affected)."""
+    import os
+    import platform
+
+    import numpy as np
+    info: Dict[str, object] = {"machine": platform.machine(), "processor": platform.processor() or None}
+    try:
+        deps = np.show_config(mode="dicts")["Build Dependencies"]
+        for lib in ("blas", "lapack"):
+            if lib in deps:
+                info[lib] = {k: deps[lib].get(k) for k in ("name", "version")}
+    except Exception:  # pragma: no cover - older numpy
+        pass
+    try:
+        from threadpoolctl import threadpool_info
+        info["runtime"] = [{k: p.get(k) for k in ("internal_api", "version", "architecture", "num_threads")}
+                           for p in threadpool_info()]
+    except Exception:  # threadpoolctl not installed
+        pass
+    env = {k: os.environ[k] for k in NUMERICS_ENV if k in os.environ}
+    if env:
+        info["env"] = env
+    return info
