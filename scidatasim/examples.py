@@ -50,7 +50,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import yaml
 
-FIELDS = ("physics", "mathematics", "statistics", "geometry", "social", "economics", "methods", "ai")
+FIELDS = ("physics", "astronomy", "mathematics", "statistics", "geometry", "social", "economics", "methods", "ai")
 LEVELS = ("student", "research")
 PARAM_TYPES = ("int", "float", "str", "flag", "choice")
 OUTPUT_KINDS = ("markdown", "image", "html", "table", "json", "text", "folder")

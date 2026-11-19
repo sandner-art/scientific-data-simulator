@@ -1,0 +1,12 @@
+title: Science packs scored with the standard baselines
+summary: Transits, resonances, supernova cosmology and astrometric binaries - planted truth, the field's standard method, and accuracy split by what the data cannot settle and by planted instrument artefacts.
+entry: examples.example_16_science_packs.run_experiment
+fields: [astronomy, physics, statistics]
+level: research
+runtime: {full: 2 min, quick: 20 s}
+quick_args: [--quick]
+params:
+  - {name: seed, arg: --seed, type: int, default: 16, help: base seed of the items}
+outputs:
+  - {path: report.md, kind: markdown}
+  - {path: scores.csv, kind: table}
