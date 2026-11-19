@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scidatasim"
-version = "0.7.0rc2"
+version = "0.7.0"
 description = "Reproducible, provenance-first generation of simulated scientific reference data."
 readme = "README.md"
 license = "Apache-2.0"

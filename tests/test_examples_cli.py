@@ -128,9 +128,11 @@ def test_version_follows_pyproject():
         version = re.search(r'^version = "([^"]+)"', f.read(), flags=re.M).group(1)
     assert scidatasim.__version__ == version
     with open(os.path.join(ROOT, "CITATION.cff")) as f:
-        assert f"version: {version}" in f.read()
-    with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:  # the citation line
-        assert f"Scientific Data Simulator (Version {version})" in f.read()
+        cff = f.read()
+    assert f"version: {version}" in cff
+    title = re.search(r'^title: "([^"]+)"', cff, flags=re.M).group(1)
+    with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:  # the citation line, with the CFF title
+        assert f"{title} (Version {version})" in f.read()
 
 
 def test_install_scripts_are_consistent():

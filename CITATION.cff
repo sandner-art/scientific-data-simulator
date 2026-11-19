@@ -4,10 +4,23 @@ authors:
   - family-names: "Sandner"
     given-names: "Daniel"
     orcid: "https://orcid.org/0000-0002-1041-814X"
-title: "Scientific Data Simulator: A Modular Concept for Reproducible Experiment Design and Synthetic Data Generation"
-version: 0.7.0rc2
+title: "Scientific Data Simulator (scidatasim): A Modular Testbed for Synthetic Scientific Data with Open or Hidden Ground Truth"
+abstract: >-
+  Scientific Data Simulator (scidatasim) is a modular testbed that generates synthetic scientific
+  data whose ground truth is known and kept private. It is designed for creating and managing
+  reproducible scientific simulations, for applications where real data are unavailable, not yet
+  available, incomplete or imprecise, or have no known ground truth. Models declare what each
+  output is: a hidden quantity, an observation or a label. Observation models add the measurement
+  (noise, bias, censoring, calibration). Each run records its configuration, seed, version and
+  checksums. Releases bundle the public data with questions and keep the answer keys apart. A leak
+  audit attacks a release before publication. Simulation studies compare methods against blind and
+  naive baselines. Labels mark questions the data cannot settle, so evaluations can tell real
+  inference from leaks, shortcuts, contamination and guessing. Uses include reference data for
+  validating methods, benchmarks for AI systems and agents, and pre-registered predictions tested
+  against data released later, such as Gaia DR4 epoch astrometry.
+version: 0.7.0
 license: Apache-2.0
-date-released: 2026-11-17
+date-released: 2026-11-19
 url: "https://github.com/sandner-art/scientific-data-simulator"
 repository-code: "https://github.com/sandner-art/scientific-data-simulator"
 keywords:
@@ -16,3 +29,6 @@ keywords:
   - reference data
   - design of experiments
   - reproducibility
+  - ground truth
+  - benchmarking
+  - data leakage

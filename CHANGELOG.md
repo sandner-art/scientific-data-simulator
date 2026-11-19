@@ -2,7 +2,9 @@
 
 Versions 0.2–0.6 were development steps; they were first released together in 0.7.0.
 
-## Unreleased
+## 0.7.0 (2026-11-19)
+
+The first stable release. Changes since 0.7.0rc2 below; the release candidates list the rest. The citation title is now "Scientific Data Simulator (scidatasim): A Modular Testbed for Synthetic Scientific Data with Open or Hidden Ground Truth", with an abstract (Zenodo takes both from `CITATION.cff`).
 
 ### Changed
 - **The law-discovery extrapolation question, redesigned after a study** (`tools/study_extrapolation_scoring.py`, 2,160 runs, 4 rules, 3 distances). The point lies half the data range beyond the data (was a quarter; `extrapolation_distance`), and the tolerance is the larger of 5 % of the true value and the error a fit of the true family reaches at that x in 90 % of replicates of the run's noise (`extrapolation_tolerance: auto`; was at least 1 % of the largest observed |y|, kept as `legacy`). Items that separate a fit of the true law from every blind and naive answer: 17 % before, 60 % now; the answer 0 passes 5 % instead of 34 %, and the right law still passes 97 %. A tolerance relative to the true value alone was rejected: the right law then fails most Gaussian tails (41 % pass). Plateaus still pass with the last observed value under any rule: a new private label, `naive_reachable`, marks the items the last value or a line through the tail passes, and example 13 reports extrapolation accuracy without zero- and naive-reachable items. Items are labelled, not dropped: which items are missing would hint at the family.
