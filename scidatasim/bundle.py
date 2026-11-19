@@ -95,7 +95,10 @@ REACHABILITY_LABELS = ("polynomial_reachable", "zero_reachable", "naive_reachabl
 #: Keplerian search on the item's own data prefers a period outside the tolerance, with a lower
 #: chi2 than the true orbit). They hint at the answer too.
 DETECTABILITY_LABELS = ("signal_undetectable", "period_ambiguous")
-PRIVATE_QUESTION_KEYS = ("answer", "tolerance") + REACHABILITY_LABELS + DETECTABILITY_LABELS
+#: Private label of items with a planted instrument artefact (a trigger turn-on, a calibration offset)
+#: that a method must model to answer right; reports score them separately.
+ARTIFACT_LABELS = ("instrument_artifact",)
+PRIVATE_QUESTION_KEYS = ("answer", "tolerance") + REACHABILITY_LABELS + DETECTABILITY_LABELS + ARTIFACT_LABELS
 
 
 def public_question(item: Dict[str, Any]) -> Dict[str, Any]:

@@ -42,7 +42,7 @@ def _chi2_uniform_p(counts: Sequence[int], n_sim: int = 20000, seed: int = 0) ->
 def quality_card(tasks: Sequence[Mapping[str, Any]], solver: Optional[Callable[[Mapping[str, Any]], Any]] = None
                  ) -> Dict[str, Any]:
     """Quality measures per template and overall (``tasks`` must carry answers)."""
-    from ..bundle import DETECTABILITY_LABELS, REACHABILITY_LABELS, check_answer
+    from ..bundle import ARTIFACT_LABELS, DETECTABILITY_LABELS, REACHABILITY_LABELS, check_answer
     groups: Dict[str, list] = {}
     for t in tasks:
         groups.setdefault(str(t.get("template")), []).append(t)
@@ -82,7 +82,7 @@ def quality_card(tasks: Sequence[Mapping[str, Any]], solver: Optional[Callable[[
         else:
             entry["distinct_ratio"] = len({str(a) for a in answers}) / len(answers)
         labels = {}  # questions a trivial answer passes (a fitted polynomial, the answer 0) or the data cannot settle
-        for label in REACHABILITY_LABELS + DETECTABILITY_LABELS:
+        for label in REACHABILITY_LABELS + DETECTABILITY_LABELS + ARTIFACT_LABELS:
             labelled_by = [t for t in group if t.get(label) is not None]
             if labelled_by:
                 labels[label] = labelled_by

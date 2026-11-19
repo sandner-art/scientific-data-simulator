@@ -37,7 +37,7 @@ The simulator does not try to be a general solver. It is an **observation-and-pr
   * errors that are not independent per point: correlated (AR(1)) noise, instrument drift, a calibration error (gain and offset), detection limits with censoring, missing values that depend on the true value or on position, and timing jitter;
   * fields (images, stacks of frames): point-spread-function blur, a camera model (photon and read noise, saturation, ADC bits), pixel binning, vignetting and sub-pixel misregistration;
   * real noise: the simulated signal placed in a real measured background (a light curve, a stretch of detector data, an image), on its real time stamps with its real gaps, so the noise is real and the truth is still known.
-* **Real data in, with provenance.** `scidatasim.ingest` reads CSV/ECSV/TSV, Parquet, JSON, NPY/NPZ, HDF5 and FITS (with the `astro` extra) and records each file's path, SHA-256 and the rows used. The `external` experiment serves a measured series as a run's observation, so real and simulated data go through the same questions, estimators and reports.
+* **Real data in, with provenance.** `scidatasim.ingest` reads CSV/ECSV/TSV, Parquet, JSON, NPY/NPZ, HDF5 and FITS (with the `astro` extra) and records each file's path, SHA-256 and the rows used. The `external` experiment serves a measured series as a run's observation, so real and simulated data go through the same questions, estimators and reports. `scidatasim.validation` writes a validation report: the same estimator on the real data (against a published result) and on simulations of the same design (bias, error-bar coverage); the cosmology pack reproduces Pantheon+'s published Om and w0 this way.
 
   Every setting is recorded, including noise levels derived from an SNR, outlier positions and the drawn calibration error.
 
@@ -334,6 +334,7 @@ The numbers in the changelog and in the verification notes come from three scrip
 | `tools/preregister_gaia_dr4.py` | Builds the Gaia DR4 pre-registration record (selection, method, simulated predictions, hypotheses, file hashes); `--verify` checks a record against the checkout | 40 min |
 | `tools/check_transit_detection.py` | Transits: false alarms of detrend + BLS + SNR > 7.1 on quiet and spotted stars; detection, period and depth by expected SNR; the private labels | 15 min |
 | `tools/check_bump_hunt.py` | Resonances: calibration of the bump hunt's global p-value, local p-values (look-elsewhere), a trigger turn-on modelled and not, detection by Asimov Z | 3 min |
+| `tools/validate_pantheon.py` | Cosmology: the SN-only fit on the public Pantheon+ data against the published Om and w0, and on simulations of the same design (bias, coverage); downloads from GitHub | 2 min |
 | `tools/gaia_dr4_fetch.py` | Fetches the pre-registered Gaia DR4 sample (selection, auxiliary rows, epoch astrometry) with a manifest of SHA-256 sums; needs astroquery | depends on the archive |
 | `tools/gaia_dr4_analyze.py` | Runs the pre-registered analysis (H1–H5, E1–E4) on the fetched data and writes a report | about an hour on 8 cores |
 

@@ -14,6 +14,7 @@ This directory contains the core implementations of different scientific models 
 | `external`            | A measured series from a file (any format `scidatasim.ingest` reads) served as a run's observation, with the file's provenance. |
 | `transits`            | TESS-like light curves with or without a transiting planet (limb-darkened transits, rotation, gaps); questions on presence, period and depth; detrend + BLS baseline. |
 | `resonances`          | Invariant-mass spectra with known and planted resonances and a trigger efficiency; questions on a new resonance and its mass; the bump hunt with its look-elsewhere correction. |
+| `cosmology`           | Supernova Hubble diagrams in w0wa-CDM with an optional calibration offset; questions on a cosmological constant, Om and w0; validated against Pantheon+. |
 | `predator_prey_calibration`      | Extends the `predator_prey` experiment to include loading and plotting of observed data for calibration purposes.                       |
 | `oscillator`                     | Damped / Duffing oscillator in SI units (closed form or DOP853; explicit Euler as an `audit` model).                                      |
 | `pendulum`                       | Nonlinear pendulum (DOP853); `approximation: small_angle` is an `audit` model with a documented period error.                            |

@@ -28,7 +28,8 @@ Configuration (all optional):
     particle; ``disclosed`` puts the efficiency in the question (an analysis knows its trigger).
 
 Questions: is there a new resonance (private label ``signal_undetectable`` when the Asimov Z is
-below 3), its mass in GeV (0 if none).
+below 3; ``instrument_artifact`` when a trigger turn-on is in the spectrum), its mass in GeV (0 if
+none).
 """
 from __future__ import annotations
 
@@ -196,13 +197,14 @@ class ResonanceExperiment(ExperimentLogic):
             dict(template="new_resonance", question="Is there a new resonance in the spectrum, beyond the known ones?"
                  + context + " Answer yes or no.", answer="yes" if has else "no", answer_type="choice",
                  choices=["no", "yes"], tolerance=None, tolerance_rule="exact", answerable_from="inference",
-                 series=series, signal_undetectable=bool(undetectable)),
+                 series=series, signal_undetectable=bool(undetectable), instrument_artifact=bool(self.trigger)),
             dict(template="resonance_mass", question="What is the mass of the new resonance, in GeV? Answer 0 if "
                  "there is none." + context, answer=float(self.signal["mass"]) if has else 0.0, answer_type="number",
                  tolerance=self.mass_tolerance() if has else 0.0,
                  tolerance_rule=f"the {TOLERANCE_QUANTILE:.0%} error of the peak position given the signal and the "
                                 "background under it, at least half a bin (exactly 0 when there is none)",
-                 answerable_from="inference", series=series, signal_undetectable=bool(undetectable)),
+                 answerable_from="inference", series=series, signal_undetectable=bool(undetectable),
+                 instrument_artifact=bool(self.trigger)),
         ]
 
 
