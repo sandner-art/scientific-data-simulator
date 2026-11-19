@@ -147,6 +147,31 @@ def _cmd_run_config(args) -> int:
     return 0
 
 
+def _cmd_preregister(args) -> int:
+    from . import preregistration as pr
+    spec = pr.load(args.spec)
+    record = pr.seal(spec, files=args.files or spec.get("files") or [], root=args.root)
+    pr.write(record, args.out)
+    prov = record["provenance"]
+    print(f"wrote {args.out}\nrecord_sha256 {record['record_sha256']}\ngit commit {prov['git_commit'] or '(none)'}"
+          + (" - registered files differ from the commit; commit them first" if prov["git_dirty"] else ""))
+    return 0
+
+
+def _cmd_check_preregistration(args) -> int:
+    from . import preregistration as pr
+    record = pr.load(args.record)
+    result = pr.verify(record, root=args.root)
+    rows = pr.check(record, pr.load(args.outcomes)) if args.outcomes else None
+    if args.json:
+        import json
+        print(json.dumps({"verification": result, "hypotheses": rows}, indent=1, default=float))
+    else:
+        print(pr.markdown(record, result, rows))
+    failed = rows is not None and any(r["passed"] is False for r in rows)
+    return 0 if result["ok"] and not failed else 1
+
+
 def _cmd_ui(ui_args: List[str]) -> int:
     """Start the UI if it is installed. The simulator does not depend on it: the UI is a separate
     package, found here by name only."""
@@ -198,6 +223,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     ui = sub.add_parser("ui", help="start the UI in your browser (needs the UI package)")
     ui.add_argument("ui_args", nargs="*", help="passed on to the UI: --port N, --address A, --runs-dir DIR")
     ui.set_defaults(func=lambda a: _cmd_ui(list(a.ui_args)))
+
+    pre = sub.add_parser("preregister", help="seal a pre-registration record (hashes, commit, versions)")
+    pre.add_argument("spec", help="the record to seal: YAML or JSON (title, method, predictions, hypotheses...)")
+    pre.add_argument("--files", nargs="*", help="files the method depends on (default: the spec's 'files')")
+    pre.add_argument("--root", default=".", help="repository root the file paths are relative to")
+    pre.add_argument("--out", default="preregistration.json")
+    pre.set_defaults(func=_cmd_preregister)
+    chk = sub.add_parser("check-preregistration", help="verify a record; with outcomes, score its hypotheses")
+    chk.add_argument("record")
+    chk.add_argument("--outcomes", help="JSON or YAML: {metric: value}")
+    chk.add_argument("--root", default=".")
+    chk.add_argument("--json", action="store_true")
+    chk.set_defaults(func=_cmd_check_preregistration)
 
     run = sub.add_parser("run", help="run one experiment configuration (YAML)")
     run.add_argument("config")
