@@ -27,8 +27,9 @@ Correlated variability
 Instrument transients
     :func:`restart_ramps`: an exponential settling after each restart - after a gap in the
     coordinate and at the start (thermal settling after a downlink or a safe mode, sensor warm-up,
-    drift after recalibration). :func:`gap_edges` and :func:`trim_after_gaps` find the restarts and
-    drop the data right after them, the usual remedy.
+    drift after recalibration). :func:`momentum_dumps`: short jumps at regular events (thruster
+    firings, periodic maintenance). :func:`gap_edges` and :func:`trim_after_gaps` find the
+    restarts and drop the data right after them, the usual remedy.
 
 All amplitudes are in the units of the series they are added to; the packs use them as relative
 flux.
@@ -113,9 +114,17 @@ def tailed_bins(edges, mean: float, sigma: float, tail: Dict[str, float], width:
     return out.reshape(edges.size - 1, fine).sum(1)
 
 
-def response_matrix(centres, sigma, tail: Optional[Dict[str, float]] = None) -> np.ndarray:
+def response_matrix(centres, sigma, tail: Optional[Dict[str, float]] = None, mixture=None) -> np.ndarray:
     """``R[i, j]``: the share of what is true at bin ``j`` that is measured in bin ``i`` (bins with
-    edges halfway between the centres), for a Gaussian or tailed response of width ``sigma[j]``."""
+    edges halfway between the centres), for a Gaussian or tailed response of width ``sigma[j]``;
+    ``mixture`` (pairs ``[weight, factor]``) sums responses of widths ``factor * sigma``."""
+    if mixture:
+        w = np.array([float(m[0]) for m in mixture])
+        f = np.array([float(m[1]) for m in mixture])
+        if np.any(w < 0) or w.sum() <= 0 or np.any(f <= 0):
+            raise ValueError("response mixture needs weights >= 0 (not all 0) and factors > 0")
+        s = np.asarray(sigma, float)
+        return sum(wk / w.sum() * response_matrix(centres, fk * s, tail) for wk, fk in zip(w, f))
     c = np.asarray(centres, float)
     if c.ndim != 1 or c.size < 2 or np.any(np.diff(c) <= 0):
         raise ValueError("response needs increasing bin centres")
@@ -295,6 +304,35 @@ def restart_ramps(t, rng: np.random.Generator, amplitude, timescale: float = 0.3
         out += np.where(dt >= 0, sg * a * np.exp(-np.clip(dt, 0, None) / timescale), 0.0)
         events.append({"start": float(s), "amplitude": sg * a, "timescale": float(timescale)})
     return out, events
+
+
+def momentum_dumps(t, rng: np.random.Generator, interval: float, amplitude, timescale: float = 0.1,
+                   jitter: float = 0.0, sign: Optional[float] = None, first: Optional[float] = None
+                   ) -> Tuple[np.ndarray, np.ndarray]:
+    """Short excursions at regular events: every ``interval`` (from ``first``, default a random
+    phase; each time moved by up to ``jitter``), a jump of ``amplitude`` (a value or a range drawn
+    per event; ``sign`` -1, +1 or None for random) that decays with ``timescale``. TESS fires its
+    thrusters to unload the reaction wheels every 2.5-3 days and the photometry jumps for a few
+    hours; any instrument with periodic maintenance does the same. Periodic dips at the event
+    interval are a classic false transit. Returns the added series and the event times."""
+    t = np.asarray(t, float)
+    if interval <= 0 or timescale <= 0 or jitter < 0:
+        raise ValueError("momentum_dumps need interval > 0, timescale > 0, jitter >= 0")
+    out = np.zeros(t.size)
+    finite = t[np.isfinite(t)]
+    if finite.size == 0:
+        return out, np.zeros(0)
+    t0, t1 = float(finite.min()), float(finite.max())
+    start = t0 + (float(rng.uniform(0, interval)) if first is None else float(first) - t0)
+    times = np.arange(start, t1, interval)
+    if jitter > 0 and times.size:
+        times = times + rng.uniform(-jitter, jitter, times.size)
+    for td in times:
+        a = float(rng.uniform(*amplitude)) if isinstance(amplitude, (list, tuple)) else float(amplitude)
+        sg = float(rng.choice([-1.0, 1.0])) if sign is None else float(sign)
+        dt = t - td
+        out += np.where(dt >= 0, sg * a * np.exp(-np.clip(dt, 0, None) / timescale), 0.0)
+    return out, times
 
 
 def trim_after_gaps(t, after: float, min_gap: float = 0.5, before: float = 0.0) -> np.ndarray:

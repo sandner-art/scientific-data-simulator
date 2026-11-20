@@ -37,6 +37,11 @@ Configuration (all optional):
     ``{tail: {alpha: 1.0, n: 3}}``: peaks with a radiative tail below the mass (Crystal Ball
     response, :func:`scidatasim.nuisance.tailed_bins`) instead of a Gaussian resolution; ``side:
     high`` for a tail above. A Gaussian template then misses part of each known peak.
+    ``{mixture: [[0.6, 0.75], [0.4, 1.4]]}``: the resolution is a mixture - weights and factors on
+    ``resolution`` - as when it depends on the particles' direction (:func:`line_shape_bins`).
+    ``{scale: -0.0013}``: the mass scale is miscalibrated, so every peak is measured at (1 + scale)
+    times its mass (the questions keep the true masses; the known peaks are there to calibrate it,
+    as on the CMS data, where the peaks sit 0.07-0.38 % low).
 
 Questions: is there a new resonance (private label ``signal_undetectable`` when the Asimov Z is
 below 3; ``instrument_artifact`` when a trigger turn-on is in the spectrum), its mass in GeV (0 if
@@ -70,6 +75,27 @@ def voigt_bins(edges, mass: float, width: float, sigma: float) -> np.ndarray:
     mid = 0.5 * (fine[1:] + fine[:-1])
     dens = special.voigt_profile(mid - mass, sigma, width / 2) * np.diff(fine)
     return dens.reshape(edges.size - 1, FINE).sum(1)
+
+
+def line_shape_bins(edges, mass: float, width: float, sigma: float, tail=None, mixture=None) -> np.ndarray:
+    """Fraction of a peak in each bin: a Breit-Wigner (FWHM ``width``) seen with resolution
+    ``sigma`` - Gaussian, or with ``tail`` a Crystal Ball - and with ``mixture`` (pairs
+    ``[weight, factor]``) a weighted sum of such responses of widths ``factor * sigma``: a detector
+    whose resolution depends on where the particles go (narrow in the barrel, wide in the
+    endcaps)."""
+    def one(s):
+        if tail:
+            from scidatasim.nuisance import tailed_bins
+            return tailed_bins(edges, mass, s, tail, width)
+        return voigt_bins(edges, mass, width, s)
+    if not mixture:
+        return one(sigma)
+    w = np.array([float(m[0]) for m in mixture])
+    f = np.array([float(m[1]) for m in mixture])
+    if np.any(w < 0) or w.sum() <= 0 or np.any(f <= 0):
+        raise ValueError("resolution mixture needs weights >= 0 (not all 0) and factors > 0")
+    w = w / w.sum()
+    return sum(wk * one(fk * sigma) for wk, fk in zip(w, f))
 
 
 def background_bins(edges, power: float, slope: float) -> np.ndarray:
@@ -125,6 +151,12 @@ class ResonanceExperiment(ExperimentLogic):
             if self.trigger.get("disclosed_as") not in (None, "logistic"):
                 raise ValueError("trigger disclosed_as must be 'logistic'")
         self.tail = (config.get("line_shape") or {}).get("tail")
+        self.mixture = (config.get("line_shape") or {}).get("mixture")
+        self.scale = float((config.get("line_shape") or {}).get("scale", 0.0))
+        if not -0.1 < self.scale < 0.1:
+            raise ValueError("line_shape scale is a relative miscalibration, |scale| < 0.1")
+        if self.mixture:
+            line_shape_bins(np.array([0.0, 1.0, 2.0]), 1.0, 0.0, 0.1, None, self.mixture)  # validates
         if not 0 < self.window[0] < self.window[1] or self.n_bins < 10 or self.resolution <= 0:
             raise ValueError("window must be [low, high] with 0 < low < high; n_bins >= 10; resolution > 0")
         self.known = []
@@ -146,11 +178,12 @@ class ResonanceExperiment(ExperimentLogic):
         return self.resolution * mass
 
     def peak(self, mass: float, width: float) -> np.ndarray:
-        """Share of a peak in each bin: Breit-Wigner and resolution, with the radiative tail when
-        ``line_shape`` has one."""
-        if self.tail:
-            from scidatasim.nuisance import tailed_bins
-            return tailed_bins(self.edges, mass, self.sigma_at(mass), self.tail, width)
+        """Share of a peak in each bin: Breit-Wigner and resolution, with the radiative tail and the
+        resolution mixture when ``line_shape`` has them."""
+        if self.scale:  # the detector's mass scale: every peak is measured at (1 + scale) times its mass
+            mass = mass * (1.0 + self.scale)
+        if self.tail or self.mixture:
+            return line_shape_bins(self.edges, mass, width, self.sigma_at(mass), self.tail, self.mixture)
         return voigt_bins(self.edges, mass, width, self.sigma_at(mass))
 
     def _efficiency(self):
@@ -274,14 +307,14 @@ class ResonanceExperiment(ExperimentLogic):
 
 
 def bump_hunt(edges, counts, resolution: float, efficiency=None, known=(), degree: int = 3,
-              z_threshold: float = EVIDENCE_Z, tail=None) -> Dict[str, Any]:
+              z_threshold: float = EVIDENCE_Z, tail=None, mixture=None) -> Dict[str, Any]:
     """The baseline: background fit (exp of a cubic times the efficiency, known peaks with free
     yields), a Gaussian signal scanned over the bin centres with width ``resolution`` x mass, and
     the global significance by Gross-Vitells; detected when the global Z exceeds ``z_threshold``.
-    ``tail`` (``{alpha, n, side}``) gives the known peaks a radiative tail (Crystal Ball)."""
-    if tail:
-        from scidatasim.nuisance import tailed_bins
-        templates = [tailed_bins(edges, m, resolution * m, tail) for m in known]
+    ``tail`` (``{alpha, n, side}``) gives the known peaks a radiative tail (Crystal Ball) and
+    ``mixture`` a resolution mixture (see :func:`line_shape_bins`)."""
+    if tail or mixture:
+        templates = [line_shape_bins(edges, m, 0.0, resolution * m, tail, mixture) for m in known]
     else:
         templates = [(m, resolution * m) for m in known]
     fit = BinnedFit(edges, degree=degree, efficiency=efficiency, known=templates)

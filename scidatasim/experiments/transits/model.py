@@ -12,7 +12,7 @@ parameter). Long-cadence exposures are integrated by supersampling.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
@@ -114,30 +114,102 @@ class Planet:
         return int(np.unique(epochs).size)
 
 
-def detrend(t, flux, window: float = 0.5) -> np.ndarray:
-    """Divide by a running median over ``window`` days (removes stellar variability slower than
-    the window; transits much shorter than it survive)."""
+def detrend(t, flux, window: float = 0.5, method: str = "median") -> np.ndarray:
+    """Divide by a trend over ``window`` days (removes stellar variability slower than the window;
+    transits much shorter than it survive).
+
+    ``median`` (default): a running median. ``local_quadratic``: at steps of window / 20, a
+    quadratic fitted to the points within the window and refitted after dropping points more than
+    2 sigma below or 3 sigma above it (transits and flares), then interpolated. A running median
+    is biased where the flux curves - at the minima and maxima of a spotted star, by about the
+    curvature times window^2 / 24 - and that bias is a dip as long as a transit; a quadratic follows
+    the curvature."""
     t, flux = np.asarray(t, float), np.asarray(flux, float)
     out = np.full(flux.shape, np.nan)
     ok = np.isfinite(t) & np.isfinite(flux)
     tt, ff = t[ok], flux[ok]
-    lo = np.searchsorted(tt, tt - window / 2)
-    hi = np.searchsorted(tt, tt + window / 2)
-    trend = np.array([np.median(ff[a:b]) for a, b in zip(lo, hi)])
+    if method == "median":
+        lo = np.searchsorted(tt, tt - window / 2)
+        hi = np.searchsorted(tt, tt + window / 2)
+        trend = np.array([np.median(ff[a:b]) for a, b in zip(lo, hi)])
+    elif method == "local_quadratic":
+        trend = _local_quadratic(tt, ff, window)
+    else:
+        raise ValueError("detrend method must be 'median' or 'local_quadratic'")
     out[ok] = ff / trend
     return out
 
 
+def _local_quadratic(t, f, window, iterations: int = 4, low: float = 2.0, high: float = 3.0):
+    if t.size < 10:
+        return np.full(t.size, np.median(f) if t.size else np.nan)
+    step = window / 20
+    centres = np.arange(t[0], t[-1] + step, step)
+    lo = np.searchsorted(t, centres - window / 2)
+    hi = np.searchsorted(t, centres + window / 2)
+    trend_c = np.full(centres.size, np.nan)
+    for i, (a, b) in enumerate(zip(lo, hi)):
+        if b - a < 10:
+            continue
+        x, y = t[a:b] - centres[i], f[a:b]
+        A = np.vstack([np.ones_like(x), x, x * x]).T
+        w = np.ones(x.size)
+        for _ in range(iterations):
+            sw = np.sqrt(w)
+            coef = np.linalg.lstsq(A * sw[:, None], y * sw, rcond=None)[0]
+            res = y - A @ coef
+            s = 1.4826 * np.median(np.abs(res[w > 0])) or 1e-12
+            w_new = ((res > -low * s) & (res < high * s)).astype(float)
+            if w_new.sum() < 6 or np.array_equal(w_new, w):
+                break
+            w = w_new
+        trend_c[i] = coef[0]
+    good = np.isfinite(trend_c)
+    if not good.any():
+        return np.full(t.size, np.median(f))
+    return np.interp(t, centres[good], trend_c[good])
+
+
+def red_noise(t, flat, durations) -> Tuple[float, Dict[float, float]]:
+    """White and red noise of a detrended light curve: the point-to-point scatter, and per
+    duration the scatter of means over that duration beyond what white noise gives (Pont, Zucker &
+    Queloz 2006): sigma_r^2 = sigma_binned^2 - sigma_w^2 / points per bin."""
+    t, f = np.asarray(t, float), np.asarray(flat, float)
+    ok = np.isfinite(t) & np.isfinite(f)
+    t, f = t[ok], f[ok] - np.median(f[ok])
+    sw = float(1.4826 * np.median(np.abs(f)))
+    out = {}
+    for d in durations:
+        idx = np.floor((t - t[0]) / d).astype(int)
+        n = np.bincount(idx)
+        sums = np.bincount(idx, f)
+        keep = n >= max(3, 0.5 * np.median(n[n > 0]))
+        if keep.sum() < 5:
+            out[float(d)] = 0.0
+            continue
+        means = sums[keep] / n[keep]
+        sb = 1.4826 * np.median(np.abs(means - np.median(means)))
+        out[float(d)] = float(np.sqrt(max(sb ** 2 - sw ** 2 / np.median(n[keep]), 0.0)))
+    return sw, out
+
+
 def transit_search(t, flux, error, durations=(0.04, 0.08, 0.12, 0.2), min_period: float = 0.5,
                    max_period: Optional[float] = None, snr_threshold: float = 7.1, window: float = 0.5,
-                   trim: float = 0.0, min_gap: float = 0.5) -> dict:
+                   trim: float = 0.0, min_gap: float = 0.5, method: str = "median", noise: str = "white") -> dict:
     """The baseline: running-median detrending, box least squares, and a detection when the box's
     signal-to-noise depth / sigma_depth (= sqrt(Delta chi2)) exceeds ``snr_threshold`` (7.1, as in
     the Kepler pipeline). Returns the BLS best period, depth (ppm), duration, t0, SNR, detected.
     ``trim`` (days, default 0) drops the data that follow the start and every gap longer than
-    ``min_gap``, where instruments settle (:func:`scidatasim.nuisance.trim_after_gaps`)."""
+    ``min_gap``, where instruments settle (:func:`scidatasim.nuisance.trim_after_gaps`).
+    ``method`` is the detrending (:func:`detrend`). ``noise="red"`` ranks and thresholds the
+    periods by the SNR with red noise, depth / sqrt(depth^2 / Delta chi2 + sigma_r^2 / N_transits),
+    where sigma_r is measured on the detrended light curve at the box's duration (:func:`red_noise`):
+    correlated residuals - spots the detrending left, instrument systematics - no longer count as
+    independent points. See :func:`transit_search_robust` for the second baseline."""
     from scidatasim.baselines.bls import bls
     t = np.asarray(t, float)
+    if noise not in ("white", "red"):
+        raise ValueError("noise must be 'white' or 'red'")
     if trim > 0:  # gaps are where the flux is missing, whether or not the time stamps are
         from scidatasim.nuisance import trim_after_gaps
         flux = np.asarray(flux, float)
@@ -146,10 +218,34 @@ def transit_search(t, flux, error, durations=(0.04, 0.08, 0.12, 0.2), min_period
         t, flux = t[keep], flux[keep]
         if np.ndim(error):
             error = np.asarray(error, float)[keep]
-    flat = detrend(t, flux, window)
+    flat = detrend(t, flux, window, method)
     span = float(np.nanmax(t) - np.nanmin(t))
     r = bls(t, flat, error, durations=durations, min_period=min_period,
             max_period=max_period or min(span / 2.0, 20.0))
-    snr = float(np.sqrt(max(r["best_dchi2"], 0.0)))
+    if noise == "red":
+        _, sr = red_noise(t, flat, durations)
+        keys = sorted(sr)
+        sr_at = np.interp(r["duration"], keys, [sr[k] for k in keys])
+        n_tr = np.maximum(span / r["period"], 1.0)
+        dchi2 = np.maximum(r["dchi2"], 1e-12)
+        snr_all = np.where(r["depth"] > 0, r["depth"] / np.sqrt(r["depth"] ** 2 / dchi2 + sr_at ** 2 / n_tr), 0.0)
+        i = int(np.argmax(snr_all))
+        r = {**r, "best_period": float(r["period"][i]), "best_dchi2": float(r["dchi2"][i]),
+             "best_depth": float(r["depth"][i]), "best_duration": float(r["duration"][i]), "best_t0": float(r["t0"][i])}
+        snr = float(snr_all[i])
+        extra = {"snr_white": float(np.sqrt(max(r["best_dchi2"], 0.0))), "red_noise_ppm": {k: 1e6 * v for k, v in sr.items()}}
+    else:
+        snr = float(np.sqrt(max(r["best_dchi2"], 0.0)))
+        extra = {}
     return {"period": r["best_period"], "depth_ppm": 1e6 * r["best_depth"], "duration": r["best_duration"],
-            "t0": r["best_t0"], "snr": snr, "detected": bool(snr > snr_threshold and r["best_depth"] > 0)}
+            "t0": r["best_t0"], "snr": snr, "detected": bool(snr > snr_threshold and r["best_depth"] > 0), **extra}
+
+
+def transit_search_robust(t, flux, error, **kw) -> dict:
+    """The second baseline, for active stars and correlated systematics: local-quadratic
+    detrending over 0.75 d and the red-noise SNR (:func:`transit_search` with ``method=
+    "local_quadratic"``, ``window=0.75``, ``noise="red"``). On TESS it finds AU Mic b, which the
+    first baseline misses in both sectors, at some cost in sensitivity on quiet stars
+    (``tools/validate_tess.py``)."""
+    kw = {"method": "local_quadratic", "window": 0.75, "noise": "red", **kw}
+    return transit_search(t, flux, error, **kw)

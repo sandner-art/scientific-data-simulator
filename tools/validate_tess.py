@@ -32,9 +32,15 @@ Three checks, each comparing the pack's model and baseline with the real light c
    measured after pi Men sector 4's restarts: planted planets found and false alarms, beside the
    real light curves' rates.
 
+6. **The second baseline** (``transit_search_robust``: local-quadratic detrending, red-noise SNR)
+   on checks 1-3, beside the first.
+7. **Instrument systematics.** The signal after TESS's momentum dumps and the red noise of each
+   light curve; the pack with its ``dumps`` option and with AR(1) correlated noise at the measured
+   levels, searched by both baselines.
+
 Writes ``validation_tess.{json,md}`` to ``--out``.
 
-    python tools/validate_tess.py --data C:/opendata/tess/lc --out validation          # about 25 minutes on 2 cores
+    python tools/validate_tess.py --data C:/opendata/tess/lc --out validation          # about an hour on 2 cores
     python tools/validate_tess.py --data lc --injections 30 --jobs 4
 """
 from __future__ import annotations
@@ -95,8 +101,12 @@ def load_lightcurves(data_dir):
             idx = np.arange(t.size)
             t[bad] = np.interp(idx[bad], idx[~bad], t[~bad])
         y = np.where(np.isfinite(s.value), s.value, np.nan)
+        raw = fits.getdata(path, 1)
+        tq, q = np.asarray(raw["TIME"], float), np.asarray(raw["QUALITY"], np.int64)
+        dt = np.sort(tq[((q & 32) > 0) & np.isfinite(tq)])  # momentum dumps (reaction wheel desaturation)
+        dumps = dt[np.concatenate([[True], np.diff(dt) > 0.1])] if dt.size else dt
         out.append({"tic": tic, "host": HOSTS[tic][0], "sector": sector, "time": t, "flux": y,
-                    "provenance": s.provenance, "flagged": s.meta.get("flagged")})
+                    "provenance": s.provenance, "flagged": s.meta.get("flagged"), "dumps": dumps})
     out.sort(key=lambda lc: (lc["host"], lc["sector"]))
     return out
 
@@ -149,18 +159,22 @@ def classify(found_period, period, tol):
 
 
 # ------------------------------------------------------------------------------ 1. recovery
-def iterative_search(t, y, sigma, max_rounds, trim=0.0):
+BASELINES = ("median", "robust")  # transit_search, transit_search_robust
+
+
+def iterative_search(t, y, sigma, max_rounds, trim=0.0, baseline="median"):
     """The baseline run again and again, each signal it finds masked (one duration either side of
     its mid-transits), until it finds nothing or ``max_rounds`` is reached: a second planet, or a
     planted one under a stronger real signal, is found the way an analyst would find it."""
-    from scidatasim.experiments.transits.model import transit_search
+    from scidatasim.experiments.transits.model import transit_search, transit_search_robust
+    search = transit_search_robust if baseline == "robust" else transit_search
     t, y = np.asarray(t, float), np.asarray(y, float)
     mask = np.isfinite(t) & np.isfinite(y)
     rounds = []
     for _ in range(max_rounds):
         if mask.sum() < 100:
             break
-        r = transit_search(t[mask], y[mask], sigma, trim=trim)
+        r = search(t[mask], y[mask], sigma, trim=trim)
         rounds.append({k: r[k] for k in ("period", "depth_ppm", "duration", "t0", "snr", "detected")})
         if not r["detected"]:
             break
@@ -168,7 +182,7 @@ def iterative_search(t, y, sigma, max_rounds, trim=0.0):
     return rounds
 
 
-def recover(lc, extra_rounds=3, trim=0.0):
+def recover(lc, extra_rounds=3, trim=0.0, baseline="median"):
     ok = np.isfinite(lc["flux"])
     t, y = lc["time"][ok], lc["flux"][ok]
     sigma = scatter(lc["time"], lc["flux"])
@@ -180,7 +194,7 @@ def recover(lc, extra_rounds=3, trim=0.0):
         planets.append({"name": p[0], "period": p[1], "depth_ppm": p[3], "duration_h": p[4], **info,
                         "searchable": bool(info["n_transits"] >= 2 and p[1] <= max_period),
                         "expected_snr": p[3] * 1e-6 * np.sqrt(info["n_in"]) / sigma, "found": None})
-    rounds = iterative_search(t, y, sigma, sum(p["searchable"] for p in planets) + extra_rounds, trim)
+    rounds = iterative_search(t, y, sigma, sum(p["searchable"] for p in planets) + extra_rounds, trim, baseline)
     unmatched = []
     for k, r in enumerate(rounds):
         if not r["detected"]:
@@ -253,8 +267,9 @@ def _inject(task):
            "expected_snr": float(np.sqrt(np.sum((1 - model[ok]) ** 2)) / sigma),
            # the expectation used for the known planets: largest depth x sqrt(in-transit points) / scatter
            "box_expected_snr": float((1 - np.min(model[ok])) * np.sqrt(np.sum(model[ok] < 1)) / sigma)}
-    for arm, flux in (("real", real), ("white", white)):
-        found = iterative_search(time, flux, sigma, rounds)
+    for arm, flux, base in (("real", real, "median"), ("white", white, "median"),
+                            ("real robust", real, "robust"), ("white robust", white, "robust")):
+        found = iterative_search(time, flux, sigma, rounds, 0.0, base)
         hits = [(k, classify(r["period"], period, tol)) for k, r in enumerate(found) if r["detected"]]
         k, how = next(((k, h) for k, h in hits if h == "period"), next(((k, h) for k, h in hits if h), (None, None)))
         r = found[k] if k is not None else found[0]
@@ -267,11 +282,13 @@ def _null(task):
     from scidatasim.experiments.transits.model import transit_search
     seed, bg, sigma, label, arm, tic = task[:6]
     trim = task[6] if len(task) > 6 else 0.0
+    baseline = task[7] if len(task) > 7 else "median"
     tp = np.arange(bg.size) * CADENCE
     flux = bg if arm.startswith("real") else np.where(np.isfinite(bg), 1.0 + np.random.default_rng(seed).normal(0, sigma, bg.size),
                                               np.nan)
-    r = transit_search(tp, flux, sigma, trim=trim)
-    return {"light_curve": label, "arm": arm, "trim": trim, "seed": seed, "detected": r["detected"], "snr": r["snr"],
+    from scidatasim.experiments.transits.model import transit_search_robust
+    r = (transit_search_robust if baseline == "robust" else transit_search)(tp, flux, sigma, trim=trim)
+    return {"light_curve": label, "arm": arm, "trim": trim, "baseline": baseline, "seed": seed, "detected": r["detected"], "snr": r["snr"],
             "period": r["period"], "depth_ppm": r["depth_ppm"],
             "near_known": near_known(tic, r["period"]) if r["detected"] else None}
 
@@ -281,15 +298,16 @@ def _binom(k, n):
     return {"n": n, "k": k, "rate": p, "error": float(np.sqrt(p * (1 - p) / n)) if n else float("nan")}
 
 
-def summarise_injections(rows):
+def summarise_injections(rows, suffix=""):
     out = []
     for lo, hi in SNR_BINS:
         sel = [r for r in rows if lo <= r["expected_snr"] < hi]
         line = {"expected_snr": f"{lo:g}-{hi:g}"}
         for arm in ("real", "white"):
-            line[arm] = _binom(sum(r[arm]["found"] == "period" for r in sel), len(sel))
-            line[arm]["alias"] = sum(r[arm]["found"] == "alias" for r in sel)
-            line[arm]["other"] = sum(bool(r[arm]["detected"]) and r[arm]["found"] is None for r in sel)
+            key = arm + suffix
+            line[arm] = _binom(sum(r[key]["found"] == "period" for r in sel), len(sel))
+            line[arm]["alias"] = sum(r[key]["found"] == "alias" for r in sel)
+            line[arm]["other"] = sum(bool(r[key]["detected"]) and r[key]["found"] is None for r in sel)
         d = line["real"]["rate"] - line["white"]["rate"]
         err = np.hypot(line["real"]["error"], line["white"]["error"])
         line["real_minus_white"] = d
@@ -319,15 +337,20 @@ def summarise_clean(rows, nulls):
             **{arm: _binom(sum(r[arm]["found"] == "period" for r in sel), len(sel)) for arm in ("real", "white")}}
 
 
-def summarise_by_star(rows):
+def summarise_by_star(rows, suffix=""):
     out = {}
     for label in sorted({r["light_curve"] for r in rows}):
         sel = [r for r in rows if r["light_curve"] == label and r["expected_snr"] >= SNR_THRESHOLD]
-        out[label] = {arm: _binom(sum(r[arm]["found"] == "period" for r in sel), len(sel)) for arm in ("real", "white")}
+        out[label] = {arm: _binom(sum(r[arm + suffix]["found"] == "period" for r in sel), len(sel))
+                      for arm in ("real", "white")}
     return out
 
 
 # ------------------------------------------- 4-5. trimming, and the pack's nuisances against the data
+def _recover_robust(lc):
+    return recover(lc, baseline="robust")
+
+
 def _recover_trimmed(args):
     lc, trim = args
     return recover(lc, trim=trim)
@@ -456,6 +479,116 @@ def pack_against_data(lcs, labels, sigmas, rec, nulls, injections, n_runs, round
     return out
 
 
+# ----------------------------------------------- 6-7. the second baseline, and instrument systematics
+DUMP_BINS = np.round(np.arange(-0.3, 0.6001, 0.05), 3)
+
+
+def dump_profile(t, flat, dumps):
+    """Median detrended flux (ppm) in 0.05-day bins from 0.3 d before to 0.6 d after the dumps,
+    and the largest |value| within 0.3 d after them, in units of its own error."""
+    t, flat = np.asarray(t, float), np.asarray(flat, float)
+    ok = np.isfinite(flat)
+    t, f = t[ok], flat[ok] - 1.0
+    sw = 1.4826 * np.median(np.abs(f - np.median(f)))
+    prof, err = [], []
+    for a, b in zip(DUMP_BINS[:-1], DUMP_BINS[1:]):
+        vals = np.concatenate([f[(t >= d + a) & (t < d + b)] for d in dumps]) if len(dumps) else np.zeros(0)
+        prof.append(float(np.median(vals)) if vals.size > 20 else float("nan"))
+        err.append(float(1.2533 * sw / np.sqrt(vals.size)) if vals.size > 20 else float("nan"))
+    prof, err = np.array(prof), np.array(err)
+    after = (DUMP_BINS[:-1] >= 0) & (DUMP_BINS[:-1] < 0.3) & np.isfinite(prof)
+    i = int(np.nanargmax(np.where(after, np.abs(prof), -1))) if after.any() else 0
+    return {"profile_ppm": [None if not np.isfinite(v) else 1e6 * v for v in prof],
+            "peak_ppm": float(1e6 * prof[i]) if after.any() else 0.0,
+            "peak_significance": float(abs(prof[i]) / err[i]) if after.any() and err[i] > 0 else 0.0}
+
+
+def systematics_of(lc, bg):
+    """Momentum-dump signature and red noise of a light curve with its planets masked; and the
+    null search with the half day after each dump dropped."""
+    from scidatasim.experiments.transits.model import detrend, red_noise, transit_search
+    ok = np.isfinite(bg)
+    t, y = lc["time"][ok], bg[ok]
+    flat = detrend(t, y, 0.5)
+    sw, sr = red_noise(t, flat, (0.04, 0.08, 0.12, 0.2))
+    near = np.zeros(t.size, bool)
+    for d in lc["dumps"]:
+        near |= (t >= d - 0.05) & (t < d + 0.3)
+    sigma = scatter(lc["time"], lc["flux"])
+    masked = transit_search(t[~near], y[~near], sigma)
+    return {"dumps": int(len(lc["dumps"])),
+            "dump_interval": float(np.median(np.diff(lc["dumps"]))) if len(lc["dumps"]) > 1 else None,
+            **dump_profile(t, flat, lc["dumps"]), "white_ppm": 1e6 * sw, "red_ppm": {k: 1e6 * v for k, v in sr.items()},
+            "null_without_dumps": {"detected": masked["detected"], "snr": masked["snr"], "period": masked["period"]}}
+
+
+def _ar1_sigma_for(red, length, cadence=CADENCE, d=0.08, seed=0):
+    """AR(1) stationary sigma that gives red noise ``red`` at duration ``d`` for correlation
+    ``length`` (numerically: the ratio is computed once on a unit process)."""
+    from scidatasim.experiments.transits.model import red_noise
+    rng = np.random.default_rng(seed)
+    n = int(27.0 / cadence)
+    rho = np.exp(-cadence / length)
+    z = rng.normal(size=n)
+    x = np.empty(n)
+    x[0] = z[0]
+    scale = np.sqrt(1 - rho ** 2)
+    for i in range(1, n):
+        x[i] = rho * x[i - 1] + scale * z[i]
+    unit = red_noise(np.arange(n) * cadence, 1.0 + 1e-3 * x, (d,))[1][d] / 1e-3
+    return red / unit if unit > 0 else 0.0
+
+
+def _mirror_run(task):
+    """A quiet star from the pack with white noise and AR(1) correlated noise at a light curve's
+    measured levels, or with its momentum dumps; null search by both baselines."""
+    from scidatasim.engine import simulate
+    from scidatasim.experiments.transits.model import transit_search, transit_search_robust
+    seed, sigma, ar_sigma, length, dumps = task
+    ops = [{"type": "gaussian", "sigma": sigma}]
+    if ar_sigma > 0:
+        ops.append({"type": "ar1", "sigma": ar_sigma, "length": length})
+    cfg = dict(experiment_type=EXP, seed=seed, planet=False, sigma_ppm=1e6 * sigma,
+               observation={"targets": ["flux"], "operators": ops})
+    if dumps:
+        cfg["dumps"] = dumps
+    sim = simulate(cfg)
+    time, flux = (np.asarray(sim.results[k]["data"], float) for k in ("time", "flux_observed"))
+    return {"median": bool(transit_search(time, flux, sigma)["detected"]),
+            "robust": bool(transit_search_robust(time, flux, sigma)["detected"])}
+
+
+def systematics_check(lcs, labels, sigmas, bgs, nulls, n_runs, seed, pool, length=0.05):
+    rows, tasks, keys = [], [], []
+    for j, lc in enumerate(lcs):
+        info = systematics_of(lc, bgs[j])
+        info["light_curve"] = labels[j]
+        info["real_false_alarm"] = {b: bool(nulls[labels[j]][b]["detected"] and not nulls[labels[j]][b].get("near_known"))
+                                    for b in ("real", "real robust")}
+        info["ar1_sigma_ppm"] = 1e6 * _ar1_sigma_for(info["red_ppm"][0.08] / 1e6, length)
+        rows.append(info)
+        if lc["host"] == "AU Mic":
+            continue  # spots, not the instrument: check 5
+        for i in range(n_runs):
+            tasks.append((seed + 1000 * j + i, sigmas[j], info["ar1_sigma_ppm"] / 1e6, length, None))
+            keys.append((j, "correlated noise"))
+    big = max((r for r, lc in zip(rows, lcs) if lc["host"] != "AU Mic"), key=lambda r: abs(r["peak_ppm"]))
+    dumps = {"interval": big["dump_interval"] or 2.5, "amplitude": abs(big["peak_ppm"]) / 1e6, "timescale": 0.1}
+    jq = labels.index(big["light_curve"])
+    for i in range(n_runs):
+        tasks.append((seed + 900_000 + i, sigmas[jq], 0.0, length, dumps))
+        keys.append((jq, "dumps"))
+    runs = list(pool.map(_mirror_run, tasks, chunksize=1))
+    for (j, kind), r in zip(keys, runs):
+        g = rows[j].setdefault("pack", {}).setdefault(kind, {"median": [], "robust": []})
+        for b in ("median", "robust"):
+            g[b].append(r[b])
+    for row in rows:
+        for kind, g in row.get("pack", {}).items():
+            row["pack"][kind] = {b: _binom(int(sum(v)), len(v)) for b, v in g.items()}
+    return {"rows": rows, "ar1_length_d": length, "dumps_simulated": {"light_curve": big["light_curve"], **dumps}}
+
+
 # -------------------------------------------------------------------------------------- report
 def markdown(rep):
     def pct(x):
@@ -559,8 +692,76 @@ def markdown(rep):
                   f"{a['k']} of {a['n']} untrimmed, {b['k']} of {b['n']} trimmed {tr['days']:g} d; the real light curve: "
                   f"{'yes' if real['real']['detected'] else 'no'} untrimmed, "
                   f"{'yes' if real['real_trimmed']['detected'] else 'no'} trimmed."]
+    rb = rep.get("robust")
+    if rb:
+        lines += ["", "## 6. The second baseline: local-quadratic detrending and red-noise SNR", "",
+                  "`transit_search_robust`, beside the first baseline (running median, white-noise SNR).", "",
+                  "| light curve | known planets found (1st / 2nd) | false alarm (1st / 2nd) | planted found above SNR 7.1, "
+                  "real (1st / 2nd) | white (1st / 2nd) |", "|---|---|---|---|---|"]
+        by2 = {f"{r['host']} s{r['sector']}": r for r in rb["recovery"]}
+
+        def found_of(rr):
+            ps = [p for p in rr["planets"] if p["searchable"] and p["expected_snr"] >= SNR_THRESHOLD]
+            return sum(p["found"] == "period" for p in ps), len(ps)
+
+        def fa2(r):
+            if not r["detected"]:
+                return "no"
+            return "known period" if r.get("near_known") else f"SNR {r['snr']:.0f}"
+        for lc in rep["recovery"]:
+            label = f"{lc['host']} s{lc['sector']}"
+            a, n = found_of(lc)
+            b, _ = found_of(by2[label])
+            v1, v2 = rep["injection"]["by_light_curve"][label], rb["by_light_curve"][label]
+            lines.append(f"| {label} | {a} / {b} of {n} | {fa2(rep['nulls'][label]['real'])} / "
+                         f"{fa2(rep['nulls'][label]['real_robust'])} | {v1['real']['k']} / {v2['real']['k']} of {v1['real']['n']} | "
+                         f"{v1['white']['k']} / {v2['white']['k']} of {v1['white']['n']} |")
+        lines += ["", "| expected SNR | n | 2nd baseline: found, real noise | found, white noise |", "|---|---|---|---|"]
+        for bl in rb["by_expected_snr"]:
+            lines.append(f"| {bl['expected_snr']} | {bl['real']['n']} | {pct(bl['real']['rate'])} | {pct(bl['white']['rate'])} |")
+        wf = sum(v["white_robust_detected"] for v in rep["nulls"].values())
+        lines += ["", f"White-noise twins, 2nd baseline: {wf} false alarms in "
+                  f"{sum(v['white_n'] for v in rep['nulls'].values())} runs."]
+    sy = rep.get("systematics")
+    if sy:
+        lines += ["", "## 7. Instrument systematics: momentum dumps and correlated noise", "",
+                  "Measured on each light curve with its planets masked: the median detrended flux after the momentum dumps "
+                  "TESS flags (largest 0.05-d bin within 0.3 d, and its significance), the white and red noise (Pont et al. "
+                  "2006) at 0.08 d, and the null search with 0.35 d around each dump dropped. Then the pack, quiet star, with "
+                  f"white noise and AR(1) noise (correlation length {sy['ar1_length_d']:g} d) at that light curve's measured "
+                  "levels: false alarms by the two baselines, beside the real ones.", "",
+                  "| light curve | dumps (interval) | after-dump peak | white / red at 0.08 d (ppm) | real null without dumps | "
+                  "real false alarm (1st / 2nd) | pack with its correlated noise: false alarms (1st / 2nd) |",
+                  "|---|---|---|---|---|---|---|"]
+        for r in sy["rows"]:
+            pk = (r.get("pack") or {}).get("correlated noise")
+            pk_txt = f"{pk['median']['k']}/{pk['median']['n']} / {pk['robust']['k']}/{pk['robust']['n']}" if pk else "- (spots)"
+            nd = r["null_without_dumps"]
+            lines.append(f"| {r['light_curve']} | {r['dumps']} ({r['dump_interval'] or 0:.2f} d) | {r['peak_ppm']:+.0f} ppm "
+                         f"({r['peak_significance']:.1f} sigma) | {r['white_ppm']:.0f} / {r['red_ppm'][0.08]:.0f} | "
+                         f"{'yes' if nd['detected'] else 'no'} (SNR {nd['snr']:.0f}) | "
+                         f"{'yes' if r['real_false_alarm']['real'] else 'no'} / {'yes' if r['real_false_alarm']['real robust'] else 'no'}"
+                         f" | {pk_txt} |")
+        ds = sy["dumps_simulated"]
+        g = next(r for r in sy["rows"] if r["light_curve"] == ds["light_curve"])["pack"]["dumps"]
+        lines += ["", f"The pack with `dumps` as large as the largest measured ({ds['light_curve']}: {1e6 * ds['amplitude']:.0f} ppm "
+                  f"every {ds['interval']:.2f} d, decaying over {ds['timescale']:g} d) on a quiet star with that light curve's "
+                  f"white noise: false alarms {g['median']['k']} of {g['median']['n']} (1st baseline), {g['robust']['k']} of "
+                  f"{g['robust']['n']} (2nd)."]
     lines += ["", "## Verdict", ""] + [f"- {k}: {v}" for k, v in rep["verdict"].items()]
     return "\n".join(lines) + "\n"
+
+
+def _pooled(by_lc, arm):
+    k = sum(v[arm]["k"] for v in by_lc.values())
+    n = sum(v[arm]["n"] for v in by_lc.values())
+    return k / n if n else float("nan")
+
+
+def _pooled_pack(sy, baseline):
+    gs = [r["pack"]["correlated noise"][baseline] for r in sy["rows"] if (r.get("pack") or {}).get("correlated noise")]
+    n = sum(g["n"] for g in gs)
+    return sum(g["k"] for g in gs) / n if n else float("nan")
 
 
 def verdict(rep):
@@ -604,6 +805,22 @@ def verdict(rep):
             f"false alarms {g['null']['trim 0']['rate']:.2f} untrimmed, "
             f"{g['null'][next(k for k in g['null'] if k != 'trim 0')]['rate']:.2f} trimmed"
             for g in rep["pack_against_data"]["ramps"]),
+        **({"second baseline": (
+            f"known planets {sum(p['found'] == 'period' for r in rep['robust']['recovery'] for p in r['planets'] if p['searchable'] and p['expected_snr'] >= SNR_THRESHOLD)}"
+            f" of {len(above)} (1st: {sum(p['found'] == 'period' for p in above)}); real false alarms "
+            f"{sum(1 for v in rep['nulls'].values() if v['real_robust']['detected'] and not v['real_robust'].get('near_known'))}"
+            f" of {len(rep['nulls'])} (1st: {len(real_fa)}); planted planets found above SNR 7.1 in real noise "
+            f"{_pooled(rep['robust']['by_light_curve'], 'real'):.2f} (1st: {_pooled(rep['injection']['by_light_curve'], 'real'):.2f}),"
+            f" in white noise {_pooled(rep['robust']['by_light_curve'], 'white'):.2f} "
+            f"(1st: {_pooled(rep['injection']['by_light_curve'], 'white'):.2f})")} if rep.get("robust") else {}),
+        **({"instrument systematics": (
+            "momentum dumps: largest after-dump signal "
+            f"{max(abs(r['peak_ppm']) for r in rep['systematics']['rows'] if not r['light_curve'].startswith('AU Mic')):.0f} ppm; "
+            f"dropping the data after dumps removes {sum(1 for r in rep['systematics']['rows'] if r['real_false_alarm']['real'] and not r['null_without_dumps']['detected'])}"
+            f" of {sum(1 for r in rep['systematics']['rows'] if r['real_false_alarm']['real'])} real false alarms; the pack with "
+            "each quiet light curve's correlated noise gives false alarms in "
+            f"{_pooled_pack(rep['systematics'], 'median'):.2f} of runs (1st baseline) and {_pooled_pack(rep['systematics'], 'robust'):.2f}"
+            " (2nd)")} if rep.get("systematics") else {}),
         "false alarms": (f"real light curves: {len(real_fa)} of {len(rep['nulls'])}"
                          + (f" ({', '.join(real_fa)})" if real_fa else "")
                          + (f", plus {len(residual)} at a known planet's period ({', '.join(residual)})" if residual else "")
@@ -640,15 +857,23 @@ def main(argv=None):
                    for j in range(len(lcs)) for i in range(args.white_nulls)]
     null_tasks += [(args.seed + 500_000 + 1000 * j, bgs[j], sigmas[j], labels[j], "real, trimmed", lcs[j]["tic"], args.trim)
                    for j in range(len(lcs))]
+    null_tasks += [(args.seed + 500_000 + 1000 * j, bgs[j], sigmas[j], labels[j], "real robust", lcs[j]["tic"], 0.0,
+                    "robust") for j in range(len(lcs))]
+    null_tasks += [(args.seed + 600_000 + 1000 * j + i, bgs[j], sigmas[j], labels[j], "white robust", lcs[j]["tic"], 0.0,
+                    "robust") for j in range(len(lcs)) for i in range(args.white_nulls)]
+
+    def arm_of(lab, arm):
+        return next(n for n in nulls if n["light_curve"] == lab and n["arm"] == arm)
     with ProcessPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         injections = list(pool.map(_inject, inj_tasks, chunksize=2))
         nulls = list(pool.map(_null, null_tasks, chunksize=2))
         rec_trim = list(pool.map(_recover_trimmed, [(lc, args.trim) for lc in lcs]))
-        null_view = {lab: {"real": next(n for n in nulls if n["light_curve"] == lab and n["arm"] == "real"),
-                           "real_trimmed": next(n for n in nulls if n["light_curve"] == lab and n["arm"] == "real, trimmed")}
-                     for lab in labels}
+        rec_robust = list(pool.map(_recover_robust, lcs))
+        null_view = {lab: {"real": arm_of(lab, "real"), "real_trimmed": arm_of(lab, "real, trimmed"),
+                           "real robust": arm_of(lab, "real robust")} for lab in labels}
         pack = pack_against_data(lcs, labels, sigmas, rec, null_view, injections, args.pack_runs, args.rounds, args.trim,
                                  args.seed + 700_000, pool)
+        systematics = systematics_check(lcs, labels, sigmas, bgs, null_view, args.pack_runs, args.seed + 800_000, pool)
     found = [p for lc in rec for p in lc["planets"] if p["found"] == "period"]
     ratios = [p["snr_ratio"] for p in found if p.get("snr_ratio")]
     from scidatasim.provenance import numerical_environment
@@ -669,9 +894,14 @@ def main(argv=None):
            "nulls": {lab: {"real": next(n for n in nulls if n["light_curve"] == lab and n["arm"] == "real"),
                            "white_detected": sum(n["detected"] for n in nulls if n["light_curve"] == lab and n["arm"] == "white"),
                            "white_n": sum(1 for n in nulls if n["light_curve"] == lab and n["arm"] == "white"),
-                           "real_trimmed": next(n for n in nulls if n["light_curve"] == lab and n["arm"] == "real, trimmed")}
+                           "real_trimmed": arm_of(lab, "real, trimmed"), "real_robust": arm_of(lab, "real robust"),
+                           "white_robust_detected": sum(n["detected"] for n in nulls
+                                                        if n["light_curve"] == lab and n["arm"] == "white robust")}
                      for lab in labels},
            "trimmed": {"days": args.trim, "recovery": rec_trim},
+           "robust": {"recovery": rec_robust, "by_expected_snr": summarise_injections(injections, " robust"),
+                      "by_light_curve": summarise_by_star(injections, " robust")},
+           "systematics": systematics,
            "pack_against_data": pack,
            "numerics": numerical_environment()}
     rep["injection"]["clean_light_curves"] = summarise_clean(injections, rep["nulls"])

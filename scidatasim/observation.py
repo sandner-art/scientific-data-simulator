@@ -92,7 +92,8 @@ relative):
 * ``{type: response, sigma: 0.05, tail: {alpha: 1.2, n: 3, side: low}}`` - the detector response
   of a spectrum: what is true in one bin is spread over its neighbours by a Gaussian, or with
   ``tail`` a Crystal Ball (radiative losses, incomplete charge collection; ``side: high`` for
-  tailing). ``relative: 0.01`` instead of ``sigma`` makes the width proportional to the coordinate.
+  tailing). ``relative: 0.01`` instead of ``sigma`` makes the width proportional to the coordinate;
+  ``mixture: [[0.6, 0.75], [0.4, 1.4]]`` sums responses of those weights and width factors.
 
 ``gaussian``, ``multiplicative``, ``poisson``, ``quantize``, ``outliers``, ``missing`` (MCAR),
 ``calibration``, ``censor``, ``detector`` and ``clip`` work on any shape (dead pixels are
@@ -584,10 +585,11 @@ def _response(x, rng, p, ctx):
     if ("sigma" in p) == ("relative" in p):
         raise ValueError("response needs exactly one of 'sigma' or 'relative'")
     sigma = float(p["sigma"]) if "sigma" in p else float(p["relative"]) * np.abs(pos)
-    R = response_matrix(pos, sigma, p.get("tail"))
+    R = response_matrix(pos, sigma, p.get("tail"), p.get("mixture"))
     ok = np.isfinite(x)
     out = R[:, ok] @ x[ok]
     return out, {"sigma": p.get("sigma"), "relative": p.get("relative"), "tail": p.get("tail"),
+                 "mixture": p.get("mixture"),
                  "kept_share": float(np.sum(out) / np.sum(x[ok])) if np.sum(x[ok]) else None}
 
 

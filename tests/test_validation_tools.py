@@ -144,3 +144,23 @@ def test_tess_null_arms_use_the_right_flux():
         r = vt._null((1, bg, 1e-3, "x", arm, 100100827, 1.0 if "trimmed" in arm else 0.0))
         assert r["detected"] and abs(r["period"] - 1.3) < 0.01
     assert not vt._null((1, bg, 1e-3, "x", "white", 100100827))["detected"]
+
+
+def test_tess_dump_profile_and_ar1_calibration():
+    vt = _tool("validate_tess")
+    from scidatasim.nuisance import momentum_dumps
+    from scidatasim.experiments.transits.model import red_noise
+    t = np.arange(0.0, 27.0, vt.CADENCE)
+    x, times = momentum_dumps(t, np.random.default_rng(0), 2.5, 5e-4, 0.1, sign=-1.0, first=1.0)
+    flat = 1 + x + np.random.default_rng(1).normal(0, 2e-4, t.size)
+    prof = vt.dump_profile(t, flat, times)
+    assert prof["peak_ppm"] == pytest.approx(-500 * np.exp(-0.025 / 0.1), rel=0.2) and prof["peak_significance"] > 10
+    s = vt._ar1_sigma_for(1e-4, 0.05)
+    rng = np.random.default_rng(3)
+    rho = np.exp(-vt.CADENCE / 0.05)
+    z = rng.normal(size=t.size)
+    ar = np.empty(t.size)
+    ar[0] = z[0]
+    for i in range(1, t.size):
+        ar[i] = rho * ar[i - 1] + np.sqrt(1 - rho ** 2) * z[i]
+    assert red_noise(t, 1 + s * ar, (0.08,))[1][0.08] == pytest.approx(1e-4, rel=0.25)

@@ -30,8 +30,9 @@ says:
    Upsilons; the two-muon trigger efficiency (``trigger: {shape: two_body}``) fitted to the real
    turn-on, and simulated spectra with it analysed as the real ones (a logistic fitted on half the
    data, the logistic the pack discloses with ``disclosed_as: logistic``, the true efficiency);
-   the Upsilon region with Gaussian and with tailed templates, real and simulated with the fitted
-   tail (``line_shape: {tail: ...}``).
+   the Upsilon region with known-peak templates of increasing fidelity - Gaussian, with the tail,
+   with a two-width resolution mixture, and at masses calibrated by a fitted mass scale - real and
+   simulated with the fitted line shape (``line_shape: {tail, mixture, scale}``).
 
 Writes ``validation_cms_dimuon.{json,md}`` to ``--out``.
 
@@ -383,10 +384,57 @@ def trigger_shape_check(edges, counts, events, n_spectra, seed):
             "events_per_spectrum": int(events), "spectra": n_spectra, "simulated": {k: _rate(v) for k, v in rows.items()}}
 
 
-def upsilon_tail_check(edges, counts, events, n_spectra, seed, tail_fit):
-    """The Upsilon region with Gaussian and with tailed templates for the known peaks (both at the
-    fitted resolution), on the real spectrum thinned and on the pack's spectra with the fitted
-    tail."""
+def fit_mixture(edges, counts, lo, hi, names, tail_fit, degree=2):
+    """The peaks with the pack's full line shape: one relative resolution, a two-width mixture
+    (weight and factor shared), the radiative tail, and one mass scale for all peaks (masses fixed at
+    (1 + scale) times the PDG values), started from the tail fit."""
+    from scidatasim.baselines.counting import poisson_nll
+    from scidatasim.experiments.resonances.logic import KNOWN, line_shape_bins
+    e, c = window(edges, counts, lo, hi)
+    c = c.astype(float)
+    centres, widths = 0.5 * (e[1:] + e[:-1]), np.diff(e)
+    x = 2 * (centres - lo) / (hi - lo) - 1
+    side = np.ones(c.size, bool)
+    for n in names:
+        side &= np.abs(centres - KNOWN[n][0]) > 0.04 * KNOWN[n][0]
+    poly = np.polynomial.polynomial.polyfit(x[side], np.log(np.clip(c[side], 1, None) / widths[side]), degree)
+    res0 = float(np.mean([p["resolution_percent"] for p in tail_fit["peaks"]])) / 100
+    start = list(poly) + [np.log(tail_fit["alpha"]), np.log(min(tail_fit["n"], N_MAX - 1) - 1), np.log(res0), 0.0,
+                          np.log(1.0), float(np.mean([p["offset_percent"] for p in tail_fit["peaks"]])) / 100]
+    start += [np.log(p["events"]) for p in tail_fit["peaks"]]
+
+    def unpack(p):
+        tail = {"alpha": float(np.exp(np.clip(p[degree + 1], -3, 2))),
+                "n": float(1 + np.exp(np.clip(p[degree + 2], -3, np.log(N_MAX - 1))))}
+        w2 = float(1 / (1 + np.exp(-p[degree + 4])))
+        return tail, float(np.exp(p[degree + 3])), [[1 - w2, 1.0], [w2, float(1 + np.exp(p[degree + 5]))]], float(p[degree + 6])
+
+    def model(p):
+        tail, r, mixture, scale = unpack(p)
+        out = np.exp(np.polyval(p[:degree + 1][::-1], x)) * widths
+        for j, n in enumerate(names):
+            m = KNOWN[n][0] * (1 + scale)
+            out = out + np.exp(p[degree + 7 + j]) * line_shape_bins(e, m, 0.0, r * m, tail, mixture)
+        return out
+
+    def nll(p):
+        return poisson_nll(c, model(p))
+
+    res = optimize.minimize(nll, start, method="Powell", options={"maxiter": 200000, "xtol": 1e-9, "ftol": 1e-12})
+    res = optimize.minimize(nll, res.x, method="L-BFGS-B", options={"ftol": 1e-15, "gtol": 1e-9})
+    tail, r, mixture, scale = unpack(res.x)
+    expected = model(res.x)
+    return {"window": [lo, hi], "names": names, "tail": tail, "resolution": r, "mixture": mixture, "scale": scale,
+            "events": [float(np.exp(res.x[degree + 7 + j])) for j in range(len(names))],
+            "chi2_ndf": float(np.sum((c - expected) ** 2 / expected) / (c.size - res.x.size))}
+
+
+def upsilon_tail_check(edges, counts, events, n_spectra, seed, tail_fit, mix_fit=None):
+    """The Upsilon region analysed with known-peak templates of increasing fidelity - Gaussian at
+    the PDG masses; with the radiative tail; with the tail and the resolution mixture; and with
+    both at the masses moved by the fitted mass scale (the calibration an analysis makes with known
+    peaks) - on the real spectrum thinned and on the pack's spectra made with the fitted line shape
+    (tail, mixture and scale)."""
     from scidatasim.engine import simulate
     from scidatasim.experiments.resonances.logic import KNOWN, bump_hunt, background_bins
     from scidatasim.baselines.counting import poisson_nll
@@ -395,14 +443,25 @@ def upsilon_tail_check(edges, counts, events, n_spectra, seed, tail_fit):
     ups = [KNOWN[k][0] for k in names]
     tail = {"alpha": tail_fit["alpha"], "n": tail_fit["n"]}
     resolution = float(np.mean([p["resolution_percent"] for p in tail_fit["peaks"]]) / 100)
+    arms = {"Gaussian templates": dict(resolution=resolution, known=ups),
+            "tailed templates": dict(resolution=resolution, known=ups, tail=tail)}
+    shape = {"tail": tail}
+    if mix_fit:
+        mt, mr, mm, sc = mix_fit["tail"], mix_fit["resolution"], mix_fit["mixture"], mix_fit["scale"]
+        arms["tail and mixture"] = dict(resolution=mr, known=ups, tail=mt, mixture=mm)
+        arms["tail and mixture, calibrated masses"] = dict(resolution=mr, known=[m * (1 + sc) for m in ups],
+                                                           tail=mt, mixture=mm)
+        shape = {"tail": mt, "mixture": mm, "scale": sc}
+        resolution_sim = mr
+    else:
+        resolution_sim = resolution
     rng = np.random.default_rng(seed)
     q = min(1.0, events / c.sum())
-    arms = {"Gaussian templates": None, "tailed templates": tail}
     real = {k: [] for k in arms}
     for _ in range(n_spectra):
         thinned = rng.binomial(c, q)
-        for key, tl in arms.items():
-            r = bump_hunt(e, thinned, resolution, known=ups, tail=tl)
+        for key, kw in arms.items():
+            r = bump_hunt(e, thinned, kw["resolution"], known=kw["known"], tail=kw.get("tail"), mixture=kw.get("mixture"))
             real[key].append({k: r[k] for k in ("detected", "mass", "z_local", "z_global")})
     # the pack: background of the pack's form fitted to the sidebands, peak yields as fitted
     centres = 0.5 * (e[1:] + e[:-1])
@@ -412,21 +471,22 @@ def upsilon_tail_check(edges, counts, events, n_spectra, seed, tail_fit):
                           [np.log(cf.sum()), 3.0, 0.0], method="Nelder-Mead",
                           options={"maxiter": 20000, "xatol": 1e-9, "fatol": 1e-9})
     n_bkg = float(np.exp(r.x[0]))
-    yields = [p["events"] for p in tail_fit["peaks"]]
-    scale = q * c.sum() / (n_bkg + sum(yields))
-    known = [{"name": n, "mass": KNOWN[n][0], "width": KNOWN[n][1], "n": scale * y} for n, y in zip(names, yields)]
+    yields = mix_fit["events"] if mix_fit else [p["events"] for p in tail_fit["peaks"]]
+    norm = q * c.sum() / (n_bkg + sum(yields))
+    known = [{"name": n, "mass": KNOWN[n][0], "width": KNOWN[n][1], "n": norm * y} for n, y in zip(names, yields)]
     sim = {k: [] for k in arms}
     for i in range(n_spectra):
         run = simulate(dict(experiment_type=EXP, seed=seed + 1 + i, signal=False, window=list(UPSILON_WINDOW),
-                            n_bins=e.size - 1, n_background=scale * n_bkg, resolution=resolution,
+                            n_bins=e.size - 1, n_background=norm * n_bkg, resolution=resolution_sim,
                             background={"power": float(r.x[1]), "slope": float(r.x[2])}, known=known,
-                            line_shape={"tail": tail}, observation={"targets": ["counts"], "operators": [{"type": "poisson"}]}))
-        sc = run.results["counts_observed"]["data"]
-        for key, tl in arms.items():
-            rr = bump_hunt(e, sc, resolution, known=ups, tail=tl)
+                            line_shape=shape, observation={"targets": ["counts"], "operators": [{"type": "poisson"}]}))
+        sc_counts = run.results["counts_observed"]["data"]
+        for key, kw in arms.items():
+            rr = bump_hunt(e, sc_counts, kw["resolution"], known=kw["known"], tail=kw.get("tail"),
+                           mixture=kw.get("mixture"))
             sim[key].append({k: rr[k] for k in ("detected", "mass", "z_local", "z_global")})
-    return {"resolution": resolution, "tail": tail, "events_per_spectrum": int(round(q * c.sum())), "spectra": n_spectra,
-            "real": {k: _rate(v) for k, v in real.items()}, "simulated": {k: _rate(v) for k, v in sim.items()}}
+    return {"resolution": resolution, "tail": tail, "line_shape_fit": mix_fit, "events_per_spectrum": int(round(q * c.sum())),
+            "spectra": n_spectra, "real": {k: _rate(v) for k, v in real.items()}, "simulated": {k: _rate(v) for k, v in sim.items()}}
 
 
 # -------------------------------------------------------------------------------------- report
@@ -493,8 +553,17 @@ def markdown(rep):
         m = ", ".join(f"{x:g}" for x in v["masses"]) or "-"
         lines.append(f"| {k} | {v['detected']} of {v['n']} | {m} | {v['median_z_local']:.1f} |")
     ut = rep["upsilon_tail"]
-    lines += ["", f"Upsilon with tails: templates at the fitted resolution ({100 * ut['resolution']:.2f} %), "
-              f"{ut['spectra']} spectra of {ut['events_per_spectrum']:,} events; the simulations have the fitted tail.", "",
+    ls = rep.get("line_shape")
+    if ls:
+        lines += ["", f"The Upsilons with the pack's full line shape (one fit): relative resolution {100 * ls['resolution']:.2f} %, "
+                  f"mixture {ls['mixture'][0][0]:.2f} at x1 and {ls['mixture'][1][0]:.2f} at x{ls['mixture'][1][1]:.2f}, tail alpha "
+                  f"{ls['tail']['alpha']:.2f} and n {ls['tail']['n']:.0f}"
+                  + (" (alpha at its bound: with the mixture, no tail is needed)" if ls["tail"]["alpha"] > 7.3 else "")
+                  + f", mass scale {100 * ls['scale']:+.3f} %; chi2/ndf "
+                  f"{ls['chi2_ndf']:.1f} (Gaussian {rep['tails'][1]['chi2_ndf_gaussian']:.0f}, tail "
+                  f"{rep['tails'][1]['chi2_ndf_tail']:.0f})."]
+    lines += ["", f"Upsilon with known-peak templates of increasing fidelity, {ut['spectra']} spectra of "
+              f"{ut['events_per_spectrum']:,} events; the simulations have the fitted line shape.", "",
               "| spectrum | known-peak templates | excess found | masses (GeV) | median local Z |", "|---|---|---|---|---|"]
     for src in ("real", "simulated"):
         for k, v in ut[src].items():
@@ -534,11 +603,14 @@ def verdict(rep):
             f"{ts['simulated']['true (two-muon)']['rate']:.2f}"),
         "radiative tail in the pack": (
             f"Gaussian templates find an excess below Upsilon(1S) in {ut['simulated']['Gaussian templates']['rate']:.2f} of "
-            f"simulated and {ut['real']['Gaussian templates']['rate']:.2f} of real spectra; tailed templates remove it "
-            f"in the simulation ({ut['simulated']['tailed templates']['rate']:.2f}) but not in the data "
-            f"({ut['real']['tailed templates']['rate']:.2f}, median local Z {ut['real']['tailed templates']['median_z_local']:.0f}"
-            f" against {ut['real']['Gaussian templates']['median_z_local']:.0f}): the real peaks are also wider in some "
-            "parts of the detector than others, which a single resolution does not describe"),
+            f"simulated and {ut['real']['Gaussian templates']['rate']:.2f} of real spectra; tailed templates at the PDG "
+            f"masses in {ut['simulated']['tailed templates']['rate']:.2f} and {ut['real']['tailed templates']['rate']:.2f}"),
+        "resolution mixture and mass scale in the pack": ((
+            f"with the tail, the mixture and the masses calibrated by the fitted scale ({100 * rep['line_shape']['scale']:+.3f} %), "
+            f"the excess is found in {ut['real']['tail and mixture, calibrated masses']['rate']:.2f} of real and "
+            f"{ut['simulated']['tail and mixture, calibrated masses']['rate']:.2f} of simulated spectra; at the PDG masses "
+            f"in {ut['real']['tail and mixture']['rate']:.2f} and {ut['simulated']['tail and mixture']['rate']:.2f}")
+        if rep.get("line_shape") else "not fitted"),
     }
 
 
@@ -565,7 +637,9 @@ def main(argv=None):
            "tails": [fit_tail(edges, counts, lo, hi, names) for (lo, hi), names in TAIL_PEAKS],
            "trigger_shape": trigger_shape_check(edges, counts, args.events, args.spectra, args.seed + 2000),
            "numerics": numerical_environment()}
-    rep["upsilon_tail"] = upsilon_tail_check(edges, counts, args.events, args.spectra, args.seed + 3000, rep["tails"][1])
+    rep["line_shape"] = fit_mixture(edges, counts, 8.8, 11.0, ["Upsilon(1S)", "Upsilon(2S)", "Upsilon(3S)"], rep["tails"][1])
+    rep["upsilon_tail"] = upsilon_tail_check(edges, counts, args.events, args.spectra, args.seed + 3000, rep["tails"][1],
+                                             rep["line_shape"])
     rep["verdict"] = verdict(rep)
     base = os.path.join(args.out, "validation_cms_dimuon")
     with open(base + ".json", "w", encoding="utf-8") as f:

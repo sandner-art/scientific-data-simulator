@@ -37,6 +37,12 @@ Configuration (all optional):
     Instrument settling at the start of the sector and after the data gap:
     ``{amplitude: 0.005, timescale: 0.3, sign: -1}`` (relative; ``[low, high]`` draws one per
     restart; ``sign: random``). The questions carry the private label ``instrument_artifact``.
+``dumps``
+    Momentum dumps: ``{interval: 2.5, amplitude: [0.0001, 0.0004], timescale: 0.1, jitter: 0.05}``
+    - a jump of random sign that decays over ``timescale`` days every ``interval`` days
+    (:func:`scidatasim.nuisance.momentum_dumps`). The dump times are published, as TESS flags
+    them, in the auxiliary series ``quality`` (32 at the cadence of each dump, else 0). The
+    questions carry the private label ``instrument_artifact``.
 ``sigma_ppm``
     The per-point error the noise model reports (``flux_error``; default 1000 ppm). Keep it equal to
     the noise configured in ``observation``: it sets the tolerances and the detectability labels.
@@ -91,6 +97,9 @@ class TransitExperiment(ExperimentLogic):
         self.spots = dict(config.get("spots") or {})
         self.flare_config = dict(config.get("flares") or {})
         self.ramp_config = dict(config.get("ramps") or {})
+        self.dump_config = dict(config.get("dumps") or {})
+        if self.dump_config and "amplitude" not in self.dump_config:
+            raise ValueError("dumps needs an amplitude")
         if self.ramp_config and "amplitude" not in self.ramp_config:
             raise ValueError("ramps needs an amplitude")
         if self.flare_config and "rate" not in self.flare_config:
@@ -160,6 +169,20 @@ class TransitExperiment(ExperimentLogic):
                                           None if sign == "random" else float(sign))
             instrument += extra
             self.nuisance_info["ramps"] = events
+        if self.dump_config:
+            from scidatasim.nuisance import momentum_dumps
+            d = self.dump_config
+            amp = d["amplitude"]
+            amp = [float(v) for v in amp] if isinstance(amp, (list, tuple)) else float(amp)
+            sign = d.get("sign", "random")
+            extra, times = momentum_dumps(t, rng, float(d.get("interval", 2.5)), amp, float(d.get("timescale", 0.1)),
+                                          float(d.get("jitter", 0.0)), None if sign == "random" else float(sign))
+            instrument += extra
+            self.nuisance_info["dumps"] = [float(x) for x in times]
+            self.quality = np.zeros(t.size, dtype=np.int64)
+            if times.size and t.size:
+                idx = np.clip(np.searchsorted(t, times), 0, t.size - 1)
+                self.quality[idx] = 32
         return activity, instrument
 
     def run_step(self, state, step):
@@ -184,7 +207,9 @@ class TransitExperiment(ExperimentLogic):
             **({"stellar_activity": series("stellar_activity", self.activity, "latent", "relative flux")}
                if (self.spots or self.flare_config) else {}),
             **({"systematics": series("systematics", self.instrument, "latent", "relative flux")}
-               if self.ramp_config else {}),
+               if (self.ramp_config or self.dump_config) else {}),
+            **({"quality": series("quality", self.quality, "auxiliary", "TESS-style flags (32: momentum dump)")}
+               if self.dump_config else {}),
             "has_planet": {"data": "yes" if self.planet else "no",
                            "descriptor": DataDescriptor("has_planet", DataType.STRING, role="label")},
         }
@@ -199,6 +224,8 @@ class TransitExperiment(ExperimentLogic):
             params["flares.n"] = len(self.nuisance_info["flares"])
         if "ramps" in self.nuisance_info:
             params["ramps"] = self.nuisance_info["ramps"]
+        if "dumps" in self.nuisance_info:
+            params["dumps"] = self.nuisance_info["dumps"]
         if self.planet:
             params.update({f"planet.{k}": v for k, v in self.elements.items()})
             params.update({"planet.a_over_rstar": self.planet.a, "planet.duration": self.planet.duration,
@@ -230,7 +257,7 @@ class TransitExperiment(ExperimentLogic):
         single = has and self.planet.transits_in(self.time) < 2
         z = float(stats.norm.isf((1 - TOLERANCE_QUANTILE) / 2))
         series = "flux_observed" if "flux_observed" in results else "flux"
-        artifact = {"instrument_artifact": True} if self.ramp_config else {}  # old runs keep their records
+        artifact = {"instrument_artifact": True} if (self.ramp_config or self.dump_config) else {}  # old runs keep records
         if has:
             duration = self.planet.duration
             n_tr = max(self.planet.transits_in(self.time), 1)

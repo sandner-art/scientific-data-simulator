@@ -153,3 +153,89 @@ def test_bump_hunt_with_tailed_templates():
     e, c = run.logic.edges, run.results["counts_observed"]["data"]
     assert bump_hunt(e, c, 0.01, known=[9.4603])["detected"]
     assert not bump_hunt(e, c, 0.01, known=[9.4603], tail=tail)["detected"]
+
+
+def test_line_shape_mixture_and_scale():
+    from scidatasim.experiments.resonances.logic import line_shape_bins, voigt_bins
+    e = np.linspace(8.5, 11.5, 61)
+    one = line_shape_bins(e, 9.46, 0.0, 0.08, None, [[1.0, 1.0]])
+    assert np.allclose(one, voigt_bins(e, 9.46, 0.0, 0.08), atol=1e-14)
+    mix = line_shape_bins(e, 9.46, 0.0, 0.08, None, [[2.0, 1.0], [2.0, 2.0]])  # weights are normalised
+    assert mix.sum() == pytest.approx(one.sum(), abs=1e-3) and mix.max() < one.max()
+    with pytest.raises(ValueError):
+        line_shape_bins(e, 9.46, 0.0, 0.08, None, [[1.0, -1.0]])
+    base = {"experiment_type": RESONANCES, "seed": 1, "signal": False, "known": ["Upsilon(1S)"], "window": [8.5, 11.5],
+            "n_bins": 60}
+    c0 = simulate(base).results["counts"]["data"]
+    c1 = simulate({**base, "line_shape": {"scale": -0.01}}).results["counts"]["data"]
+    centres = 0.5 * (e[1:] + e[:-1])
+    assert centres[np.argmax(c1)] < centres[np.argmax(c0)]
+    with pytest.raises(ValueError):
+        simulate({**base, "line_shape": {"scale": 0.5}})
+    R1 = nu.response_matrix(centres, 0.05)
+    R2 = nu.response_matrix(centres, 0.05, mixture=[[0.5, 1.0], [0.5, 3.0]])
+    assert R2[30, 30] < R1[30, 30] and R2[:, 30].sum() == pytest.approx(1.0, abs=2e-3)
+
+
+def test_bump_hunt_with_mixture_templates():
+    from scidatasim.experiments.resonances.logic import bump_hunt
+    mixture = [[0.5, 1.0], [0.5, 2.2]]
+    run = simulate({"experiment_type": RESONANCES, "seed": 8, "signal": False, "known": ["Upsilon(1S)"], "resolution": 0.008,
+                    "known_n": 2e5, "window": [8.5, 11.5], "n_bins": 60, "line_shape": {"mixture": mixture},
+                    "observation": {"targets": ["counts"], "operators": [{"type": "poisson"}]}})
+    e, c = run.logic.edges, run.results["counts_observed"]["data"]
+    assert bump_hunt(e, c, 0.008, known=[9.4603])["detected"]
+    assert not bump_hunt(e, c, 0.008, known=[9.4603], mixture=mixture)["detected"]
+
+
+def test_momentum_dumps_and_quality_flags():
+    t = np.arange(0, 27, 2 / 1440)
+    x, times = nu.momentum_dumps(t, np.random.default_rng(0), 2.5, 3e-4, 0.1, first=1.0)
+    assert np.allclose(times, np.arange(1.0, 27, 2.5)) and np.max(np.abs(x)) <= 3e-4 * 2
+    run = simulate({"experiment_type": TRANSITS, "seed": 2, "planet": False, "dumps": {"amplitude": [1e-4, 4e-4]}})
+    q = run.results["quality"]["data"]
+    assert 9 <= np.sum(q == 32) <= 12 and set(np.unique(q)) <= {0, 32}
+    assert all(qq.get("instrument_artifact") for qq in run.logic.questions(run.results, np.random.default_rng(0)))
+
+
+def test_local_quadratic_detrend_and_red_noise():
+    from scidatasim.experiments.transits.model import Planet, a_over_rstar, detrend, red_noise
+    rng = np.random.default_rng(4)
+    t = np.arange(0, 20, 2 / 1440)
+    star = 1 + 0.02 * np.sin(2 * np.pi * t / 4.0)  # a spotted star: 2 % at 4 d
+    planet = Planet(3.3, 1.1, 0.04, a_over_rstar(3.3), 0.1)
+    y = star * planet.flux(t) * (1 + rng.normal(0, 3e-4, t.size))
+    out_of_transit = planet.flux(t) == 1
+    med = detrend(t, y, 0.5)
+    lq = detrend(t, y, 0.75, "local_quadratic")
+    assert np.std(lq[out_of_transit]) < np.std(med[out_of_transit])  # follows the curvature
+    inside = planet.flux(t) < 1 - 0.8 * (1 - planet.flux(t).min())
+    assert 1 - np.median(lq[inside]) > 0.7 * (1 - planet.flux(t).min())  # keeps most of the depth
+    with pytest.raises(ValueError):
+        detrend(t, y, 0.5, "spline")
+    sw, sr = red_noise(t, 1 + rng.normal(0, 3e-4, t.size), (0.04, 0.2))
+    assert sw == pytest.approx(3e-4, rel=0.05) and max(sr.values()) < 3e-5
+    ar = np.empty(t.size)
+    ar[0] = 0
+    z = rng.normal(0, 1, t.size)
+    for i in range(1, t.size):
+        ar[i] = 0.98 * ar[i - 1] + np.sqrt(1 - 0.98 ** 2) * z[i]
+    _, sr2 = red_noise(t, 1 + 3e-4 * ar, (0.04, 0.2))
+    assert sr2[0.04] > 5e-5
+
+
+def test_red_noise_search_and_second_baseline():
+    from scidatasim.experiments.transits.model import transit_search, transit_search_robust
+    clean = simulate({"experiment_type": TRANSITS, "seed": 6, "planet": True, "orbit": {"period": 3.3, "rp": 0.03},
+                      "observation": {"targets": ["flux"], "operators": [{"type": "gaussian", "sigma": 4e-4}]}})
+    t, y = clean.results["time"]["data"], clean.results["flux_observed"]["data"]
+    r1, r2 = transit_search(t, y, 4e-4), transit_search_robust(t, y, 4e-4)
+    assert r1["detected"] and r2["detected"] and abs(r2["period"] - 3.3) < 0.02
+    assert r2["snr"] <= r2["snr_white"] + 1e-9 and set(r2["red_noise_ppm"]) == {0.04, 0.08, 0.12, 0.2}
+    red = simulate({"experiment_type": TRANSITS, "seed": 7, "planet": False, "observation": {"targets": ["flux"], "operators": [
+        {"type": "gaussian", "sigma": 4e-4}, {"type": "ar1", "sigma": 4e-4, "length": 0.05}]}})
+    t, y = red.results["time"]["data"], red.results["flux_observed"]["data"]
+    w, rr = transit_search(t, y, 4e-4), transit_search(t, y, 4e-4, noise="red")
+    assert rr["snr"] < w["snr"]
+    with pytest.raises(ValueError):
+        transit_search(t, y, 4e-4, noise="pink")
