@@ -26,6 +26,17 @@ Configuration (all optional):
     ``{threshold: 20.0, width: 1.5, disclosed: true}``: efficiency 1 / (1 + exp(-(m - threshold) /
     width)) times the counts. Rising efficiency on a falling spectrum makes a peak that is not a
     particle; ``disclosed`` puts the efficiency in the question (an analysis knows its trigger).
+    ``shape: erf`` (same parameters) or ``shape: two_body`` - both muons above transverse-momentum
+    thresholds, the real dimuon trigger: ``{thresholds: [17, 8], turn_on: 1.0, pair_pt: 10,
+    eta_max: 2.4, rapidity_sd: 2.0}`` (:func:`scidatasim.nuisance.two_body_efficiency`); its rise
+    is not logistic. ``disclosed_as: logistic`` discloses (in the question and in the published
+    ``trigger_efficiency``) the logistic closest to the true efficiency instead of the true one:
+    the analysis' efficiency model is wrong in shape, as on the CMS data, where such a model
+    leaves an 8-sigma "resonance".
+``line_shape``
+    ``{tail: {alpha: 1.0, n: 3}}``: peaks with a radiative tail below the mass (Crystal Ball
+    response, :func:`scidatasim.nuisance.tailed_bins`) instead of a Gaussian resolution; ``side:
+    high`` for a tail above. A Gaussian template then misses part of each known peak.
 
 Questions: is there a new resonance (private label ``signal_undetectable`` when the Asimov Z is
 below 3; ``instrument_artifact`` when a trigger turn-on is in the spectrum), its mass in GeV (0 if
@@ -74,11 +85,23 @@ def efficiency(centres, threshold: float, width: float) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-(np.asarray(centres, float) - threshold) / width))
 
 
+def fit_logistic(centres, eff):
+    """The logistic (threshold, width, plateau) closest to an efficiency curve in least squares:
+    the model an analysis would fit to a measured trigger efficiency."""
+    from scipy import optimize
+    c, e = np.asarray(centres, float), np.asarray(eff, float)
+    plateau0 = float(e.max()) or 1.0
+    mid = float(c[np.argmin(np.abs(e - plateau0 / 2))])
+    p, _ = optimize.curve_fit(lambda x, t, w, a: a * efficiency(x, t, w), c, e,
+                              p0=[mid, max((c[-1] - c[0]) / 20, 0.1), plateau0], maxfev=20000)
+    return float(p[0]), float(abs(p[1])), float(p[2])
+
+
 class ResonanceExperiment(ExperimentLogic):
     fidelity_level = "reference"
     fidelity_note = ("Phenomenological spectrum (power law times exponential, Breit-Wigner convolved with a Gaussian "
-                     "resolution, logistic trigger efficiency), integrated per bin and checked against closed forms; "
-                     "not an event generator.")
+                     "or radiative-tail resolution, logistic, erf or two-muon trigger efficiency), integrated per bin "
+                     "and checked against closed forms; not an event generator.")
 
     def __init__(self, config: Dict[str, Any]):
         self.config = dict(config)
@@ -95,6 +118,13 @@ class ResonanceExperiment(ExperimentLogic):
         self.z_range = tuple(float(v) for v in config.get("z_range", (0.0, 6.0)))
         self.width = float(config.get("width", 0.0))
         self.trigger = config.get("trigger")
+        if self.trigger:
+            self.trigger = dict(self.trigger)
+            if self.trigger.get("shape", "logistic") not in ("logistic", "erf", "two_body"):
+                raise ValueError("trigger shape must be 'logistic', 'erf' or 'two_body'")
+            if self.trigger.get("disclosed_as") not in (None, "logistic"):
+                raise ValueError("trigger disclosed_as must be 'logistic'")
+        self.tail = (config.get("line_shape") or {}).get("tail")
         if not 0 < self.window[0] < self.window[1] or self.n_bins < 10 or self.resolution <= 0:
             raise ValueError("window must be [low, high] with 0 < low < high; n_bins >= 10; resolution > 0")
         self.known = []
@@ -115,20 +145,50 @@ class ResonanceExperiment(ExperimentLogic):
     def sigma_at(self, mass: float) -> float:
         return self.resolution * mass
 
+    def peak(self, mass: float, width: float) -> np.ndarray:
+        """Share of a peak in each bin: Breit-Wigner and resolution, with the radiative tail when
+        ``line_shape`` has one."""
+        if self.tail:
+            from scidatasim.nuisance import tailed_bins
+            return tailed_bins(self.edges, mass, self.sigma_at(mass), self.tail, width)
+        return voigt_bins(self.edges, mass, width, self.sigma_at(mass))
+
+    def _efficiency(self):
+        """(true efficiency, disclosed efficiency, disclosed description)."""
+        if not self.trigger:
+            return np.ones(self.n_bins), np.ones(self.n_bins), ""
+        shape = self.trigger.get("shape", "logistic")
+        if shape == "logistic":  # unchanged arithmetic for runs made before the other shapes
+            true = efficiency(self.centres, float(self.trigger.get("threshold", 20.0)), float(self.trigger.get("width", 1.5)))
+        else:
+            from scidatasim.observation import selection_efficiency
+            true = selection_efficiency(self.centres, {k: v for k, v in self.trigger.items()
+                                                       if k not in ("disclosed", "disclosed_as")})
+        if self.trigger.get("disclosed_as") == "logistic":
+            thr, w, plateau = fit_logistic(self.centres, true)
+            self.disclosed_logistic = {"threshold": thr, "width": w, "plateau": plateau}
+            return true, plateau * efficiency(self.centres, thr, w), (
+                f"logistic around {thr:.3g} GeV, width {w:.3g} GeV, plateau {plateau:.3g}")
+        if shape == "two_body":
+            th = self.trigger.get("thresholds", (17.0, 8.0))
+            return true, true, (f"two muons with transverse momenta above {float(max(th)):g} and {float(min(th)):g} GeV; "
+                                "the efficiency per bin is given")
+        return true, true, (f"{shape}, around {float(self.trigger.get('threshold', 20.0)):g} GeV, width "
+                            f"{float(self.trigger.get('width', 1.5)):g} GeV")
+
     def initialize(self, config):
         rng = self.get_rng(config)
-        eff = np.ones(self.n_bins) if not self.trigger else efficiency(
-            self.centres, float(self.trigger.get("threshold", 20.0)), float(self.trigger.get("width", 1.5)))
+        eff, self.disclosed_eff, self.disclosed_text = self._efficiency()
         self.eff = eff
         background = self.n_background * background_bins(self.edges, self.power, self.slope)
         known = np.zeros(self.n_bins)
         for k in self.known:
-            known += k["n"] * voigt_bins(self.edges, k["mass"], k["width"], self.sigma_at(k["mass"]))
+            known += k["n"] * self.peak(k["mass"], k["width"])
         has = bool(rng.uniform() < self.signal_probability) if self.signal_mode == "random" else bool(self.signal_mode)
         lo, hi = self.window
         mass = float(self.config.get("mass", rng.uniform(lo + 0.1 * (hi - lo), hi - 0.1 * (hi - lo))))
         z_target = float(self.config.get("z", rng.uniform(*self.z_range)))
-        shape = voigt_bins(self.edges, mass, self.width, self.sigma_at(mass))
+        shape = self.peak(mass, self.width)
         core = np.abs(self.centres - mass) <= 2 * np.hypot(self.sigma_at(mass), self.width / 2.355)
         b_core = float(np.sum((background + known)[core] * eff[core]))
         frac = float(np.sum((shape * eff)[core]))
@@ -160,7 +220,9 @@ class ResonanceExperiment(ExperimentLogic):
             "counts": {"data": self.truth_counts.copy(), "descriptor": desc("counts", "latent", "events / bin", "line")},
             "background_counts": {"data": self.background_counts.copy(), "descriptor": desc(
                 "background_counts", "latent", "events / bin")},
-            "trigger_efficiency": {"data": self.eff.copy(), "descriptor": desc("trigger_efficiency", "auxiliary", "")},
+            "trigger_efficiency": {"data": self.disclosed_eff.copy(), "descriptor": desc("trigger_efficiency", "auxiliary", "")},
+            **({"true_trigger_efficiency": {"data": self.eff.copy(), "descriptor": desc(
+                "true_trigger_efficiency", "latent", "")}} if self.trigger and self.trigger.get("disclosed_as") else {}),
             "has_new_resonance": {"data": "yes" if self.signal["present"] else "no",
                                   "descriptor": DataDescriptor("has_new_resonance", DataType.STRING, role="label")},
         }
@@ -190,8 +252,11 @@ class ResonanceExperiment(ExperimentLogic):
         known = ", ".join(f"{k['name']} at {k['mass']:g} GeV" for k in self.known) or "none in this window"
         trig = ""
         if self.trigger and self.trigger.get("disclosed", True):
-            trig = (f" The trigger efficiency rises around {float(self.trigger.get('threshold', 20.0)):g} GeV "
-                    f"(logistic, width {float(self.trigger.get('width', 1.5)):g} GeV).")
+            if self.trigger.get("shape", "logistic") == "logistic" and not self.trigger.get("disclosed_as"):
+                trig = (f" The trigger efficiency rises around {float(self.trigger.get('threshold', 20.0)):g} GeV "
+                        f"(logistic, width {float(self.trigger.get('width', 1.5)):g} GeV).")
+            else:
+                trig = f" The trigger efficiency: {self.disclosed_text}."
         context = f" Known resonances: {known}.{trig} Mass resolution: {self.resolution:.1%} of the mass."
         return [
             dict(template="new_resonance", question="Is there a new resonance in the spectrum, beyond the known ones?"
@@ -209,12 +274,17 @@ class ResonanceExperiment(ExperimentLogic):
 
 
 def bump_hunt(edges, counts, resolution: float, efficiency=None, known=(), degree: int = 3,
-              z_threshold: float = EVIDENCE_Z) -> Dict[str, Any]:
+              z_threshold: float = EVIDENCE_Z, tail=None) -> Dict[str, Any]:
     """The baseline: background fit (exp of a cubic times the efficiency, known peaks with free
     yields), a Gaussian signal scanned over the bin centres with width ``resolution`` x mass, and
-    the global significance by Gross-Vitells; detected when the global Z exceeds ``z_threshold``."""
-    fit = BinnedFit(edges, degree=degree, efficiency=efficiency,
-                    known=[(m, resolution * m) for m in known])
+    the global significance by Gross-Vitells; detected when the global Z exceeds ``z_threshold``.
+    ``tail`` (``{alpha, n, side}``) gives the known peaks a radiative tail (Crystal Ball)."""
+    if tail:
+        from scidatasim.nuisance import tailed_bins
+        templates = [tailed_bins(edges, m, resolution * m, tail) for m in known]
+    else:
+        templates = [(m, resolution * m) for m in known]
+    fit = BinnedFit(edges, degree=degree, efficiency=efficiency, known=templates)
     lo, hi = fit.edges[0], fit.edges[-1]
     inner = fit.centres[(fit.centres > lo + 0.05 * (hi - lo)) & (fit.centres < hi - 0.05 * (hi - lo))]
     scan = fit.scan(counts, lambda m: resolution * m, masses=inner)

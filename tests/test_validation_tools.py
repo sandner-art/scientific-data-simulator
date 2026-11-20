@@ -103,3 +103,44 @@ def test_tess_iterative_search_finds_two_planets_and_masking():
     assert gone.any()
     near = np.minimum(vt.phase_distance(tt, period, t0 - vt.BTJD), vt.phase_distance(tt, period, t0 - vt.BTJD + period / 2))
     assert np.array_equal(gone, near < dur_h / 24)  # transits and secondary eclipses, one duration either side
+
+
+def test_tess_activity_and_ramp_measures():
+    vt = _tool("validate_tess")
+    t = np.arange(0.0, 27.0, 2.0 / 1440)
+    t = t[(t < 13) | (t >= 14)]
+    y = 1 + 0.01 * np.sin(2 * np.pi * t / 4.86)
+    lc = {"time": t, "flux": y.copy()}
+    act = vt.activity(lc)
+    assert act["period"] == pytest.approx(4.86, rel=0.03) and act["rms"] == pytest.approx(0.01 / np.sqrt(2), rel=0.05)
+    ramp = np.where(t >= 14, -0.003 * np.exp(-(t - 14) / 0.2), 0.0)
+    r = vt.ramp_size({"time": t, "flux": 1 + ramp})
+    assert r["amplitude"] == pytest.approx(0.003 * np.exp(-0.05 / 0.2), rel=0.2) and 0.05 <= r["timescale"] < 0.5
+
+
+def test_cms_tail_fit_recovers_tail(tmp_path):
+    from scidatasim.nuisance import tailed_bins
+    vc = _tool("validate_cms_dimuon")
+    e = vc.EDGES
+    from scidatasim.experiments.resonances.logic import background_bins
+    mu = 2e6 * background_bins(e, 3.0, 0.01) + 3e5 * tailed_bins(e, 3.0969, 0.031, {"alpha": 1.3, "n": 4.0})
+    path = tmp_path / "h.csv"
+    with open(path, "w") as f:
+        f.write("low,high,counts\n")
+        for lo, hi, c in zip(e[:-1], e[1:], np.random.default_rng(2).poisson(mu)):
+            f.write(f"{lo:.2f},{hi:.2f},{c}\n")
+    edges, counts, _ = vc.load(str(path))
+    r = vc.fit_tail(edges, counts, 2.8, 3.4, ["J/psi"])
+    assert r["alpha"] == pytest.approx(1.3, rel=0.25) and r["chi2_ndf_tail"] < r["chi2_ndf_gaussian"]
+    assert abs(r["peaks"][0]["offset_percent"]) < 0.05
+
+
+def test_tess_null_arms_use_the_right_flux():
+    vt = _tool("validate_tess")
+    t = np.arange(8000) * vt.CADENCE
+    bg = 1.0 - 0.01 * (vt.phase_distance(t, 1.3, 0.4) < 0.04)
+    bg[3000:3500] = np.nan  # a gap in the flux, not in the row index
+    for arm in ("real", "real, trimmed"):
+        r = vt._null((1, bg, 1e-3, "x", arm, 100100827, 1.0 if "trimmed" in arm else 0.0))
+        assert r["detected"] and abs(r["period"] - 1.3) < 0.01
+    assert not vt._null((1, bg, 1e-3, "x", "white", 100100827))["detected"]

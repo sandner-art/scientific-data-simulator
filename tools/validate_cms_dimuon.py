@@ -26,9 +26,16 @@ says:
    real line shape the Gaussian template misses (final-state radiation, resolution varying with
    the muons' angles).
 
+4. **The pack's nuisance options against the data.** Radiative tails fitted to J/psi and the
+   Upsilons; the two-muon trigger efficiency (``trigger: {shape: two_body}``) fitted to the real
+   turn-on, and simulated spectra with it analysed as the real ones (a logistic fitted on half the
+   data, the logistic the pack discloses with ``disclosed_as: logistic``, the true efficiency);
+   the Upsilon region with Gaussian and with tailed templates, real and simulated with the fitted
+   tail (``line_shape: {tail: ...}``).
+
 Writes ``validation_cms_dimuon.{json,md}`` to ``--out``.
 
-    python tools/validate_cms_dimuon.py --data dimuon_2012_os.csv --out validation   # about 2 minutes
+    python tools/validate_cms_dimuon.py --data dimuon_2012_os.csv --out validation   # about 6 minutes
     python tools/validate_cms_dimuon.py --root Run2012BC_DoubleMuParked_Muons.root --out validation
 """
 from __future__ import annotations
@@ -255,6 +262,173 @@ def upsilon_check(edges, counts, events, n_spectra, seed):
     return out
 
 
+# ----------------------------------------------- 4. the pack's nuisance options against the data
+TAIL_PEAKS = [((2.8, 3.4), ["J/psi"]), ((8.8, 11.0), ["Upsilon(1S)", "Upsilon(2S)", "Upsilon(3S)"])]
+N_MAX = 150.0
+
+
+def fit_tail(edges, counts, lo, hi, names, degree=2):
+    """The peaks again with a radiative tail (Crystal Ball, ``alpha`` and ``n`` shared by the peaks
+    of the window), started from the Gaussian fit."""
+    from scidatasim.baselines.counting import poisson_nll
+    from scidatasim.experiments.resonances.logic import KNOWN
+    from scidatasim.nuisance import tailed_bins
+    rows = fit_peaks(edges, counts, lo, hi, names, degree)
+    e, c = window(edges, counts, lo, hi)
+    c = c.astype(float)
+    centres, widths = 0.5 * (e[1:] + e[:-1]), np.diff(e)
+    x = 2 * (centres - lo) / (hi - lo) - 1
+    side = np.ones(c.size, bool)
+    for n in names:
+        side &= np.abs(centres - KNOWN[n][0]) > 0.04 * KNOWN[n][0]
+    poly = np.polynomial.polynomial.polyfit(x[side], np.log(np.clip(c[side], 1, None) / widths[side]), degree)
+    start = list(poly) + [np.log(1.5), np.log(2.0)]
+    for r in rows:
+        start += [r["mass"], np.log(r["resolution"]), np.log(r["events"])]
+
+    def tail_of(p):
+        return {"alpha": float(np.exp(np.clip(p[degree + 1], -3, 2))),
+                "n": float(1 + np.exp(np.clip(p[degree + 2], -3, np.log(N_MAX - 1))))}
+
+    def model(p):
+        out = np.exp(np.polyval(p[:degree + 1][::-1], x)) * widths
+        tail = tail_of(p)
+        for j in range(len(names)):
+            m, log_s, log_n = p[degree + 3 + 3 * j: degree + 6 + 3 * j]
+            out = out + np.exp(log_n) * tailed_bins(e, m, np.exp(log_s), tail)
+        return out
+
+    def nll(p):
+        return poisson_nll(c, model(p))
+
+    res = optimize.minimize(nll, start, method="Powell", options={"maxiter": 200000, "xtol": 1e-9, "ftol": 1e-12})
+    res = optimize.minimize(nll, res.x, method="L-BFGS-B", options={"ftol": 1e-15, "gtol": 1e-9})
+    expected = model(res.x)
+    peaks = []
+    for j, n in enumerate(names):
+        m, s = float(res.x[degree + 3 + 3 * j]), float(np.exp(res.x[degree + 4 + 3 * j]))
+        peaks.append({"name": n, "mass": m, "offset_percent": 100 * (m - KNOWN[n][0]) / KNOWN[n][0],
+                      "resolution_percent": 100 * s / m, "events": float(np.exp(res.x[degree + 5 + 3 * j]))})
+    return {"window": [lo, hi], "names": names, **tail_of(res.x), "peaks": peaks,
+            "chi2_ndf_gaussian": rows[0]["chi2_ndf"],
+            "chi2_ndf_tail": float(np.sum((c - expected) ** 2 / expected) / (c.size - res.x.size))}
+
+
+def fit_two_body(e, c):
+    """The two-muon trigger efficiency closest to the real turn-on: thresholds, turn-on width and
+    the pair's transverse momentum on a grid, each under the baseline's flexible background (exp of
+    a cubic in log m); then the pack's background form fitted with the best efficiency."""
+    from scidatasim.baselines.counting import BinnedFit, poisson_nll
+    from scidatasim.experiments.resonances.logic import background_bins
+    from scidatasim.nuisance import two_body_efficiency
+    centres = 0.5 * (e[1:] + e[:-1])
+    best = None
+    for lead in (8.0, 10.0, 13.0, 17.0):
+        for sub in (4.0, 6.0, 8.0):
+            if sub > lead:
+                continue
+            for pair_pt in (3.0, 6.0, 10.0):
+                for turn_on in (0.5, 1.5, 3.0):
+                    eff = two_body_efficiency(centres, (lead, sub), turn_on, pair_pt, n=5000)
+                    m = BinnedFit(e, degree=3, efficiency=eff).fit(c)["expected"]
+                    chi = float(np.sum((c - m) ** 2 / m) / (c.size - 4))
+                    if best is None or chi < best[0]:
+                        best = (chi, lead, sub, pair_pt, turn_on)
+    chi, lead, sub, pair_pt, turn_on = best
+    params = {"thresholds": [lead, sub], "turn_on": turn_on, "pair_pt": pair_pt, "eta_max": 2.4, "rapidity_sd": 2.0}
+    eff = two_body_efficiency(centres, (lead, sub), turn_on, pair_pt)
+    cf = np.asarray(c, float)
+
+    def nll(p):
+        return poisson_nll(cf, np.exp(p[0]) * background_bins(e, p[1], p[2]) * eff)
+
+    r = optimize.minimize(nll, [np.log(cf.sum() / eff.mean()), 3.0, 0.0], method="Nelder-Mead",
+                          options={"maxiter": 20000, "xatol": 1e-9, "fatol": 1e-9})
+    return {"trigger": params, "chi2_ndf_flexible_background": chi, "power": float(r.x[1]), "slope": float(r.x[2]),
+            "kept_fraction": float(np.sum(background_bins(e, r.x[1], r.x[2]) * eff))}
+
+
+def trigger_shape_check(edges, counts, events, n_spectra, seed):
+    """Simulated spectra with the two-muon efficiency fitted to the data, analysed as the real
+    ones were: a logistic fitted on an independent half, the logistic the pack discloses
+    (``disclosed_as: logistic``), and the true efficiency."""
+    from scidatasim.engine import simulate
+    from scidatasim.experiments.resonances.logic import bump_hunt, efficiency
+    e, c = window(edges, counts, *PACK_WINDOW, rebin=PACK_REBIN)
+    centres = 0.5 * (e[1:] + e[:-1])
+    fit = fit_two_body(e, c)
+    logistic = fit_logistic_efficiency(e, c)
+    from scidatasim.baselines.counting import BinnedFit
+    m = BinnedFit(e, degree=3, efficiency=efficiency(centres, logistic["threshold"], logistic["width"])).fit(c)["expected"]
+    chi_logistic = float(np.sum((c - m) ** 2 / m) / (c.size - 4))
+    rng = np.random.default_rng(seed)
+    rows = {"logistic, fitted on a half": [], "logistic, disclosed by the pack": [], "true (two-muon)": []}
+    for i in range(n_spectra):
+        run = simulate(dict(experiment_type=EXP, seed=seed + 1 + i, signal=False, window=list(PACK_WINDOW),
+                            n_bins=e.size - 1, n_background=2 * events / fit["kept_fraction"], resolution=PACK_RESOLUTION,
+                            background={"power": fit["power"], "slope": fit["slope"]},
+                            trigger={"shape": "two_body", **fit["trigger"], "disclosed_as": "logistic"},
+                            observation={"targets": ["counts"], "operators": [{"type": "poisson"}]}))
+        full = np.asarray(run.results["counts_observed"]["data"], np.int64)
+        calib = rng.binomial(full, 0.5)
+        test = full - calib
+        lf = fit_logistic_efficiency(e, calib)
+        effs = {"logistic, fitted on a half": efficiency(centres, lf["threshold"], lf["width"]),
+                "logistic, disclosed by the pack": run.results["trigger_efficiency"]["data"],
+                "true (two-muon)": run.results["true_trigger_efficiency"]["data"]}
+        for key, ef in effs.items():
+            r = bump_hunt(e, test, PACK_RESOLUTION, efficiency=ef)
+            rows[key].append({k: r[k] for k in ("detected", "mass", "z_local", "z_global")})
+    return {"two_body_fit": fit, "logistic_fit": {**logistic, "chi2_ndf_flexible_background": chi_logistic},
+            "events_per_spectrum": int(events), "spectra": n_spectra, "simulated": {k: _rate(v) for k, v in rows.items()}}
+
+
+def upsilon_tail_check(edges, counts, events, n_spectra, seed, tail_fit):
+    """The Upsilon region with Gaussian and with tailed templates for the known peaks (both at the
+    fitted resolution), on the real spectrum thinned and on the pack's spectra with the fitted
+    tail."""
+    from scidatasim.engine import simulate
+    from scidatasim.experiments.resonances.logic import KNOWN, bump_hunt, background_bins
+    from scidatasim.baselines.counting import poisson_nll
+    e, c = window(edges, counts, *UPSILON_WINDOW)
+    names = ["Upsilon(1S)", "Upsilon(2S)", "Upsilon(3S)"]
+    ups = [KNOWN[k][0] for k in names]
+    tail = {"alpha": tail_fit["alpha"], "n": tail_fit["n"]}
+    resolution = float(np.mean([p["resolution_percent"] for p in tail_fit["peaks"]]) / 100)
+    rng = np.random.default_rng(seed)
+    q = min(1.0, events / c.sum())
+    arms = {"Gaussian templates": None, "tailed templates": tail}
+    real = {k: [] for k in arms}
+    for _ in range(n_spectra):
+        thinned = rng.binomial(c, q)
+        for key, tl in arms.items():
+            r = bump_hunt(e, thinned, resolution, known=ups, tail=tl)
+            real[key].append({k: r[k] for k in ("detected", "mass", "z_local", "z_global")})
+    # the pack: background of the pack's form fitted to the sidebands, peak yields as fitted
+    centres = 0.5 * (e[1:] + e[:-1])
+    side = np.all([np.abs(centres - m) > 0.04 * m for m in ups], axis=0)
+    cf = np.asarray(c, float)
+    r = optimize.minimize(lambda p: poisson_nll(cf[side], (np.exp(p[0]) * background_bins(e, p[1], p[2]))[side]),
+                          [np.log(cf.sum()), 3.0, 0.0], method="Nelder-Mead",
+                          options={"maxiter": 20000, "xatol": 1e-9, "fatol": 1e-9})
+    n_bkg = float(np.exp(r.x[0]))
+    yields = [p["events"] for p in tail_fit["peaks"]]
+    scale = q * c.sum() / (n_bkg + sum(yields))
+    known = [{"name": n, "mass": KNOWN[n][0], "width": KNOWN[n][1], "n": scale * y} for n, y in zip(names, yields)]
+    sim = {k: [] for k in arms}
+    for i in range(n_spectra):
+        run = simulate(dict(experiment_type=EXP, seed=seed + 1 + i, signal=False, window=list(UPSILON_WINDOW),
+                            n_bins=e.size - 1, n_background=scale * n_bkg, resolution=resolution,
+                            background={"power": float(r.x[1]), "slope": float(r.x[2])}, known=known,
+                            line_shape={"tail": tail}, observation={"targets": ["counts"], "operators": [{"type": "poisson"}]}))
+        sc = run.results["counts_observed"]["data"]
+        for key, tl in arms.items():
+            rr = bump_hunt(e, sc, resolution, known=ups, tail=tl)
+            sim[key].append({k: rr[k] for k in ("detected", "mass", "z_local", "z_global")})
+    return {"resolution": resolution, "tail": tail, "events_per_spectrum": int(round(q * c.sum())), "spectra": n_spectra,
+            "real": {k: _rate(v) for k, v in real.items()}, "simulated": {k: _rate(v) for k, v in sim.items()}}
+
+
 # -------------------------------------------------------------------------------------- report
 def markdown(rep):
     lines = ["# Validation: the resonance pack on the CMS 2012 dimuon spectrum", "",
@@ -296,7 +470,37 @@ def markdown(rep):
               f"- The same, thinned to {b['thinned']['events_per_spectrum']:,} events: found in {b['thinned']['detected']} "
               f"of {b['thinned']['n']} spectra"
               + (f" (at {', '.join(f'{x:g}' for x in b['thinned']['masses'])} GeV)." if b["thinned"]["masses"] else "."),
-              "", "## Verdict", ""]
+              "", "## 4. The pack's nuisance options against the data", "",
+              "Radiative tails (Crystal Ball, alpha and n shared within a window; n is capped at "
+              f"{N_MAX:g}, where the tail is effectively exponential):", "",
+              "| window | alpha | n | chi2/ndf Gaussian | chi2/ndf tail | masses with the tail (offset from PDG) |",
+              "|---|---|---|---|---|---|"]
+    for tf in rep["tails"]:
+        ms = "; ".join(f"{p['name']} {p['offset_percent']:+.2f} %" for p in tf["peaks"])
+        lines.append(f"| {tf['window'][0]:g}-{tf['window'][1]:g} GeV | {tf['alpha']:.2f} | {tf['n']:.1f} | "
+                     f"{tf['chi2_ndf_gaussian']:.0f} | {tf['chi2_ndf_tail']:.0f} | {ms} |")
+    ts = rep["trigger_shape"]
+    f2 = ts["two_body_fit"]
+    lines += ["", f"Trigger shape. The two-muon efficiency closest to the real turn-on (grid; baseline background): "
+              f"thresholds {f2['trigger']['thresholds'][0]:g} and {f2['trigger']['thresholds'][1]:g} GeV, turn-on width "
+              f"{f2['trigger']['turn_on']:g} GeV, pair transverse momentum {f2['trigger']['pair_pt']:g} GeV: chi2/ndf "
+              f"{f2['chi2_ndf_flexible_background']:.0f}, against {ts['logistic_fit']['chi2_ndf_flexible_background']:.0f} "
+              f"for the best logistic (full statistics). Simulated with it ({ts['spectra']} spectra of "
+              f"{ts['events_per_spectrum']:,} events, the pack's background form fitted with this efficiency), analysed as "
+              "the real spectra were:", "",
+              "| efficiency used by the analysis | 'new resonance' found | masses (GeV) | median local Z |", "|---|---|---|---|"]
+    for k, v in ts["simulated"].items():
+        m = ", ".join(f"{x:g}" for x in v["masses"]) or "-"
+        lines.append(f"| {k} | {v['detected']} of {v['n']} | {m} | {v['median_z_local']:.1f} |")
+    ut = rep["upsilon_tail"]
+    lines += ["", f"Upsilon with tails: templates at the fitted resolution ({100 * ut['resolution']:.2f} %), "
+              f"{ut['spectra']} spectra of {ut['events_per_spectrum']:,} events; the simulations have the fitted tail.", "",
+              "| spectrum | known-peak templates | excess found | masses (GeV) | median local Z |", "|---|---|---|---|---|"]
+    for src in ("real", "simulated"):
+        for k, v in ut[src].items():
+            m = ", ".join(f"{x:g}" for x in v["masses"]) or "-"
+            lines.append(f"| {src} | {k} | {v['detected']} of {v['n']} | {m} | {v['median_z_local']:.1f} |")
+    lines += ["", "## Verdict", ""]
     lines += [f"- {k}: {v}" for k, v in rep["verdict"].items()]
     return "\n".join(lines) + "\n"
 
@@ -304,6 +508,7 @@ def markdown(rep):
 def verdict(rep):
     masses = rep["masses"]
     t, u = rep["trigger"], rep["upsilon"]
+    ts, ut = rep["trigger_shape"], rep["upsilon_tail"]
     quark = [r for r in masses if r["name"] != "Z"]
     res = [r["resolution_percent"] for r in quark]
     return {
@@ -321,6 +526,19 @@ def verdict(rep):
             t['simulated']['logistic, true']['rate'] + 0.2 else
             f"real {t['real']['logistic, fitted']['rate']:.2f}, simulated {t['simulated']['logistic, true']['rate']:.2f}"),
         "Upsilon(1S) found as new": f"at {u['no known peaks']['full_statistics']['mass']:g} GeV",
+        "two-muon trigger in the pack": (
+            f"with the efficiency fitted to the data, a logistic fitted on half the simulated data 'discovers' a resonance "
+            f"in {ts['simulated']['logistic, fitted on a half']['rate']:.2f} of spectra and the pack's disclosed logistic in "
+            f"{ts['simulated']['logistic, disclosed by the pack']['rate']:.2f} (real: "
+            f"{t['real']['logistic, fitted']['rate']:.2f}); the true efficiency in "
+            f"{ts['simulated']['true (two-muon)']['rate']:.2f}"),
+        "radiative tail in the pack": (
+            f"Gaussian templates find an excess below Upsilon(1S) in {ut['simulated']['Gaussian templates']['rate']:.2f} of "
+            f"simulated and {ut['real']['Gaussian templates']['rate']:.2f} of real spectra; tailed templates remove it "
+            f"in the simulation ({ut['simulated']['tailed templates']['rate']:.2f}) but not in the data "
+            f"({ut['real']['tailed templates']['rate']:.2f}, median local Z {ut['real']['tailed templates']['median_z_local']:.0f}"
+            f" against {ut['real']['Gaussian templates']['median_z_local']:.0f}): the real peaks are also wider in some "
+            "parts of the detector than others, which a single resolution does not describe"),
     }
 
 
@@ -344,7 +562,10 @@ def main(argv=None):
            "masses": [row for (lo, hi), names in PEAKS for row in fit_peaks(edges, counts, lo, hi, names)],
            "trigger": trigger_check(edges, counts, args.events, args.spectra, args.seed),
            "upsilon": upsilon_check(edges, counts, args.events, args.spectra, args.seed + 1000),
+           "tails": [fit_tail(edges, counts, lo, hi, names) for (lo, hi), names in TAIL_PEAKS],
+           "trigger_shape": trigger_shape_check(edges, counts, args.events, args.spectra, args.seed + 2000),
            "numerics": numerical_environment()}
+    rep["upsilon_tail"] = upsilon_tail_check(edges, counts, args.events, args.spectra, args.seed + 3000, rep["tails"][1])
     rep["verdict"] = verdict(rep)
     base = os.path.join(args.out, "validation_cms_dimuon")
     with open(base + ".json", "w", encoding="utf-8") as f:

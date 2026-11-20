@@ -72,6 +72,28 @@ Real noise (injection into real data; series and fields):
   the private record: published together with the background file, it would let a solver subtract
   the noise exactly.
 
+Nuisances measured on real data (:mod:`scidatasim.nuisance`; 1-D series, in coordinate units, per
+index without a coordinate; ``combine: add`` (default) or ``multiply``, where the amplitude is
+relative):
+
+* ``{type: quasi_periodic, amplitude: 0.01, period: 4.9, lifetime: 15, harmonics: [1, 0.5, 0.25]}``
+  - variability that repeats but evolves: starspots, seasonal cycles that change from year to
+  year, vibration (RMS ``amplitude``; ``lifetime`` defaults to three periods).
+* ``{type: flares, rate: 0.5, amplitude: [0.001, 0.02], index: 2, rise: 0.003, decay: 0.02}`` -
+  sudden rises with exponential decays at random times (stellar flares, bursts, spikes).
+* ``{type: ramps, amplitude: 0.005, timescale: 0.3, min_gap: 0.5, at_start: true, sign: -1}`` -
+  an exponential settling after every gap in the coordinate longer than ``min_gap`` and at the
+  start (thermal settling after a restart, sensor warm-up); ``amplitude: [low, high]`` draws one
+  per restart, ``sign: random`` a random sign.
+* ``{type: efficiency, shape: logistic, threshold: 20, width: 1.5}`` - a selection efficiency of
+  the coordinate (``logistic``, ``erf``, or ``two_body`` with ``thresholds``, ``turn_on``,
+  ``pair_pt``, ``eta_max``, ``rapidity_sd``: both daughters of a decay above momentum thresholds),
+  multiplying the series (expected counts before ``poisson``; a survey's completeness).
+* ``{type: response, sigma: 0.05, tail: {alpha: 1.2, n: 3, side: low}}`` - the detector response
+  of a spectrum: what is true in one bin is spread over its neighbours by a Gaussian, or with
+  ``tail`` a Crystal Ball (radiative losses, incomplete charge collection; ``side: high`` for
+  tailing). ``relative: 0.01`` instead of ``sigma`` makes the width proportional to the coordinate.
+
 ``gaussian``, ``multiplicative``, ``poisson``, ``quantize``, ``outliers``, ``missing`` (MCAR),
 ``calibration``, ``censor``, ``detector`` and ``clip`` work on any shape (dead pixels are
 ``missing``, hot pixels ``outliers``).
@@ -479,6 +501,96 @@ def _real_noise(x, rng, p, ctx):
     return out, info
 
 
+def _position(x, ctx):
+    coord = ctx.get("coordinate")
+    return np.arange(x.size, dtype=float) if coord is None else np.asarray(coord, float)
+
+
+def _combine(x, extra, p, name):
+    how = p.get("combine", "add")
+    if how == "add":
+        return x + extra
+    if how == "multiply":
+        return x * (1.0 + extra)
+    raise ValueError(f"{name} combine must be 'add' or 'multiply'")
+
+
+def _quasi_periodic(x, rng, p, ctx):
+    from .nuisance import quasi_periodic
+    if x.ndim != 1:
+        raise ValueError("quasi_periodic applies to 1-D series")
+    period = float(p["period"])
+    lifetime = float(p.get("lifetime", 3.0 * period))
+    harmonics = [float(v) for v in p.get("harmonics", (1.0, 0.5, 0.25))]
+    extra = quasi_periodic(_position(x, ctx), rng, float(p["amplitude"]), period, lifetime, harmonics)
+    return _combine(x, extra, p, "quasi_periodic"), {
+        "amplitude": float(p["amplitude"]), "period": period, "lifetime": lifetime, "harmonics": harmonics,
+        "combine": p.get("combine", "add"), "realized_rms": float(np.std(extra)) if x.size else 0.0}
+
+
+def _flares(x, rng, p, ctx):
+    from .nuisance import flares
+    if x.ndim != 1:
+        raise ValueError("flares applies to 1-D series")
+    amp = tuple(float(v) for v in p.get("amplitude", (1e-3, 2e-2)))
+    extra, events = flares(_position(x, ctx), rng, float(p["rate"]), amp, float(p.get("index", 2.0)),
+                           float(p.get("rise", 0.003)), float(p.get("decay", 0.02)))
+    return _combine(x, extra, p, "flares"), {"rate": float(p["rate"]), "amplitude": list(amp),
+                                              "combine": p.get("combine", "add"), "flares": events}
+
+
+def _ramps(x, rng, p, ctx):
+    from .nuisance import restart_ramps
+    if x.ndim != 1:
+        raise ValueError("ramps applies to 1-D series")
+    amp = p["amplitude"]
+    amp = [float(v) for v in amp] if isinstance(amp, (list, tuple)) else float(amp)
+    sign = p.get("sign", -1.0)
+    sign = None if sign == "random" else float(sign)
+    extra, events = restart_ramps(_position(x, ctx), rng, amp, float(p.get("timescale", 0.3)),
+                                  float(p.get("min_gap", 0.5)), bool(p.get("at_start", True)), sign)
+    return _combine(x, extra, p, "ramps"), {"timescale": float(p.get("timescale", 0.3)),
+                                             "combine": p.get("combine", "add"), "ramps": events}
+
+
+def selection_efficiency(coordinate, p: Dict[str, Any]) -> np.ndarray:
+    """A selection efficiency of the coordinate (see the ``efficiency`` operator)."""
+    from .nuisance import erf_efficiency, logistic_efficiency, two_body_efficiency
+    shape = p.get("shape", "logistic")
+    c = np.asarray(coordinate, float)
+    if shape in ("logistic", "erf"):
+        f = logistic_efficiency if shape == "logistic" else erf_efficiency
+        return f(c, float(p.get("threshold", 20.0)), float(p.get("width", 1.5)), float(p.get("plateau", 1.0)))
+    if shape == "two_body":
+        keys = ("thresholds", "turn_on", "pair_pt", "eta_max", "rapidity_sd", "daughter_mass", "n", "seed")
+        kw = {k: p[k] for k in keys if k in p}
+        return float(p.get("plateau", 1.0)) * two_body_efficiency(c, **kw)
+    raise ValueError("efficiency shape must be 'logistic', 'erf' or 'two_body'")
+
+
+def _efficiency(x, rng, p, ctx):
+    if x.ndim != 1:
+        raise ValueError("efficiency applies to 1-D series")
+    eff = selection_efficiency(_position(x, ctx), p)
+    return x * eff, {"shape": p.get("shape", "logistic"), "min": float(eff.min()) if x.size else 0.0,
+                     "max": float(eff.max()) if x.size else 0.0}
+
+
+def _response(x, rng, p, ctx):
+    from .nuisance import response_matrix
+    if x.ndim != 1:
+        raise ValueError("response applies to 1-D series")
+    pos = _position(x, ctx)
+    if ("sigma" in p) == ("relative" in p):
+        raise ValueError("response needs exactly one of 'sigma' or 'relative'")
+    sigma = float(p["sigma"]) if "sigma" in p else float(p["relative"]) * np.abs(pos)
+    R = response_matrix(pos, sigma, p.get("tail"))
+    ok = np.isfinite(x)
+    out = R[:, ok] @ x[ok]
+    return out, {"sigma": p.get("sigma"), "relative": p.get("relative"), "tail": p.get("tail"),
+                 "kept_share": float(np.sum(out) / np.sum(x[ok])) if np.sum(x[ok]) else None}
+
+
 VALUE_OPERATORS: Dict[str, ValueOperator] = {
     "gaussian": _gaussian,
     "multiplicative": _multiplicative,
@@ -503,6 +615,11 @@ CONTEXT_OPERATORS: Dict[str, Callable[..., Tuple[np.ndarray, Info]]] = {
     "drift": _drift,
     "jitter": _jitter,
     "real_noise": _real_noise,
+    "quasi_periodic": _quasi_periodic,
+    "flares": _flares,
+    "ramps": _ramps,
+    "efficiency": _efficiency,
+    "response": _response,
 }
 #: Operators that only make sense first (they start again from the exact values).
 FIRST_ONLY = {"jitter"}

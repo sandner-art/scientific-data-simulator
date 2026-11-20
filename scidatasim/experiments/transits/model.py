@@ -129,12 +129,23 @@ def detrend(t, flux, window: float = 0.5) -> np.ndarray:
 
 
 def transit_search(t, flux, error, durations=(0.04, 0.08, 0.12, 0.2), min_period: float = 0.5,
-                   max_period: Optional[float] = None, snr_threshold: float = 7.1, window: float = 0.5) -> dict:
+                   max_period: Optional[float] = None, snr_threshold: float = 7.1, window: float = 0.5,
+                   trim: float = 0.0, min_gap: float = 0.5) -> dict:
     """The baseline: running-median detrending, box least squares, and a detection when the box's
     signal-to-noise depth / sigma_depth (= sqrt(Delta chi2)) exceeds ``snr_threshold`` (7.1, as in
-    the Kepler pipeline). Returns the BLS best period, depth (ppm), duration, t0, SNR, detected."""
+    the Kepler pipeline). Returns the BLS best period, depth (ppm), duration, t0, SNR, detected.
+    ``trim`` (days, default 0) drops the data that follow the start and every gap longer than
+    ``min_gap``, where instruments settle (:func:`scidatasim.nuisance.trim_after_gaps`)."""
     from scidatasim.baselines.bls import bls
     t = np.asarray(t, float)
+    if trim > 0:  # gaps are where the flux is missing, whether or not the time stamps are
+        from scidatasim.nuisance import trim_after_gaps
+        flux = np.asarray(flux, float)
+        keep = np.isfinite(t) & np.isfinite(flux)
+        keep[keep] = trim_after_gaps(t[keep], trim, min_gap)
+        t, flux = t[keep], flux[keep]
+        if np.ndim(error):
+            error = np.asarray(error, float)[keep]
     flat = detrend(t, flux, window)
     span = float(np.nanmax(t) - np.nanmin(t))
     r = bls(t, flat, error, durations=durations, min_period=min_period,

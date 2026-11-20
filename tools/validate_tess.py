@@ -25,9 +25,16 @@ Three checks, each comparing the pack's model and baseline with the real light c
 3. **False alarms.** The search on each real light curve with its known planets masked, and on its
    white-noise twins.
 
+4. **Trimming.** Checks 1 and 3 again with ``--trim`` days dropped after the start and each gap
+   (``transit_search(trim=...)``), where instruments settle.
+5. **The pack's nuisance options against the real failures.** The pack with ``spots`` at the
+   RMS and rotation period measured on AU Mic (and a quiet twin), and with ``ramps`` of the size
+   measured after pi Men sector 4's restarts: planted planets found and false alarms, beside the
+   real light curves' rates.
+
 Writes ``validation_tess.{json,md}`` to ``--out``.
 
-    python tools/validate_tess.py --data C:/opendata/tess/lc --out validation          # about 10 minutes
+    python tools/validate_tess.py --data C:/opendata/tess/lc --out validation          # about 25 minutes on 2 cores
     python tools/validate_tess.py --data lc --injections 30 --jobs 4
 """
 from __future__ import annotations
@@ -142,7 +149,7 @@ def classify(found_period, period, tol):
 
 
 # ------------------------------------------------------------------------------ 1. recovery
-def iterative_search(t, y, sigma, max_rounds):
+def iterative_search(t, y, sigma, max_rounds, trim=0.0):
     """The baseline run again and again, each signal it finds masked (one duration either side of
     its mid-transits), until it finds nothing or ``max_rounds`` is reached: a second planet, or a
     planted one under a stronger real signal, is found the way an analyst would find it."""
@@ -153,7 +160,7 @@ def iterative_search(t, y, sigma, max_rounds):
     for _ in range(max_rounds):
         if mask.sum() < 100:
             break
-        r = transit_search(t[mask], y[mask], sigma)
+        r = transit_search(t[mask], y[mask], sigma, trim=trim)
         rounds.append({k: r[k] for k in ("period", "depth_ppm", "duration", "t0", "snr", "detected")})
         if not r["detected"]:
             break
@@ -161,7 +168,7 @@ def iterative_search(t, y, sigma, max_rounds):
     return rounds
 
 
-def recover(lc, extra_rounds=3):
+def recover(lc, extra_rounds=3, trim=0.0):
     ok = np.isfinite(lc["flux"])
     t, y = lc["time"][ok], lc["flux"][ok]
     sigma = scatter(lc["time"], lc["flux"])
@@ -173,7 +180,7 @@ def recover(lc, extra_rounds=3):
         planets.append({"name": p[0], "period": p[1], "depth_ppm": p[3], "duration_h": p[4], **info,
                         "searchable": bool(info["n_transits"] >= 2 and p[1] <= max_period),
                         "expected_snr": p[3] * 1e-6 * np.sqrt(info["n_in"]) / sigma, "found": None})
-    rounds = iterative_search(t, y, sigma, sum(p["searchable"] for p in planets) + extra_rounds)
+    rounds = iterative_search(t, y, sigma, sum(p["searchable"] for p in planets) + extra_rounds, trim)
     unmatched = []
     for k, r in enumerate(rounds):
         if not r["detected"]:
@@ -258,12 +265,13 @@ def _inject(task):
 
 def _null(task):
     from scidatasim.experiments.transits.model import transit_search
-    seed, bg, sigma, label, arm, tic = task
+    seed, bg, sigma, label, arm, tic = task[:6]
+    trim = task[6] if len(task) > 6 else 0.0
     tp = np.arange(bg.size) * CADENCE
-    flux = bg if arm == "real" else np.where(np.isfinite(bg), 1.0 + np.random.default_rng(seed).normal(0, sigma, bg.size),
+    flux = bg if arm.startswith("real") else np.where(np.isfinite(bg), 1.0 + np.random.default_rng(seed).normal(0, sigma, bg.size),
                                               np.nan)
-    r = transit_search(tp, flux, sigma)
-    return {"light_curve": label, "arm": arm, "seed": seed, "detected": r["detected"], "snr": r["snr"],
+    r = transit_search(tp, flux, sigma, trim=trim)
+    return {"light_curve": label, "arm": arm, "trim": trim, "seed": seed, "detected": r["detected"], "snr": r["snr"],
             "period": r["period"], "depth_ppm": r["depth_ppm"],
             "near_known": near_known(tic, r["period"]) if r["detected"] else None}
 
@@ -316,6 +324,135 @@ def summarise_by_star(rows):
     for label in sorted({r["light_curve"] for r in rows}):
         sel = [r for r in rows if r["light_curve"] == label and r["expected_snr"] >= SNR_THRESHOLD]
         out[label] = {arm: _binom(sum(r[arm]["found"] == "period" for r in sel), len(sel)) for arm in ("real", "white")}
+    return out
+
+
+# ------------------------------------------- 4-5. trimming, and the pack's nuisances against the data
+def _recover_trimmed(args):
+    lc, trim = args
+    return recover(lc, trim=trim)
+
+
+def activity(lc):
+    """RMS of the relative flux and the rotation period (highest Lomb-Scargle peak, 0.5-15 d, on
+    30-minute means)."""
+    from scidatasim.baselines.periodogram import frequency_grid, lomb_scargle
+    ok = np.isfinite(lc["flux"])
+    t, y = lc["time"][ok], lc["flux"][ok]
+    bins = np.floor((t - t[0]) / (30 / 1440)).astype(int)
+    tb = np.bincount(bins, t) / np.maximum(np.bincount(bins), 1)
+    yb = np.bincount(bins, y) / np.maximum(np.bincount(bins), 1)
+    keep = np.bincount(bins) > 0
+    r = lomb_scargle(tb[keep], yb[keep], frequency=frequency_grid(tb[keep], 0.5, 15.0))
+    return {"rms": float(np.std(y - np.median(y))), "period": float(1.0 / r["best_frequency"])}
+
+
+def ramp_size(lc, after=1.0, min_gap=0.5):
+    """Largest |median deviation| in 0.1-day steps within ``after`` days of each restart, and the
+    time it takes to fall below a third of it: the amplitude and timescale of the worst ramp."""
+    from scidatasim.nuisance import gap_edges
+    ok = np.isfinite(lc["flux"])
+    t, y = lc["time"][ok], lc["flux"][ok] / np.median(lc["flux"][ok])
+    best = (0.0, 0.1)
+    for s in gap_edges(t, min_gap):
+        dev = []
+        for a in np.arange(0.0, after, 0.1):
+            m = (t >= s + a) & (t < s + a + 0.1)
+            dev.append(float(np.median(y[m]) - 1.0) if m.sum() > 10 else 0.0)
+        dev = np.abs(dev)
+        if dev.size and dev.max() > best[0]:
+            below = np.nonzero(dev < dev.max() / 3)[0]
+            later = below[below > int(np.argmax(dev))]
+            best = (float(dev.max()), 0.1 * float(later[0] if later.size else len(dev)) / np.log(3))
+    return {"amplitude": best[0], "timescale": max(best[1], 0.05)}
+
+
+def _pack_planet(rng, sigma, time):
+    """A planted planet with an expected white-noise SNR uniform in 7.1-20 on ``time``."""
+    from scidatasim.experiments.transits.model import Planet, a_over_rstar
+    period = float(np.exp(rng.uniform(np.log(1.0), np.log(12.0))))
+    t0, b, target = float(rng.uniform(0, period)), float(rng.uniform(0, 0.7)), float(rng.uniform(SNR_THRESHOLD, 20.0))
+    rp = 0.02
+    for _ in range(3):
+        f = Planet(period, t0, rp, a_over_rstar(period), b).flux(time)
+        snr = float(np.sqrt(np.sum((1 - f) ** 2)) / sigma)
+        if snr <= 0:
+            break
+        rp = float(min(0.2, rp * np.sqrt(target / snr)))
+    return {"period": period, "t0": t0, "rp": rp, "b": b}
+
+
+def _pack_run(task):
+    """One run of the pack (quiet, spotted or with ramps), searched as the real light curves."""
+    from scidatasim.engine import simulate
+    seed, extra, sigma, planted, trims, rounds = task
+    rng = np.random.default_rng(seed)
+    grid = np.arange(0.0, 27.4, CADENCE)
+    grid = grid[(grid < 13.2) | (grid >= 14.2)]
+    cfg = dict(experiment_type=EXP, seed=seed, planet=bool(planted), sigma_ppm=1e6 * sigma, **extra,
+               observation={"targets": ["flux"], "operators": [{"type": "gaussian", "sigma": sigma}]})
+    if planted:
+        cfg["orbit"] = _pack_planet(rng, sigma, grid)
+    sim = simulate(cfg)
+    time, flux = (np.asarray(sim.results[k]["data"], float) for k in ("time", "flux_observed"))
+    out = {"seed": seed, "planted": bool(planted)}
+    planet = sim.logic.planet
+    for trim in trims:
+        found = iterative_search(time, flux, sigma, rounds if planted else 1, trim)
+        if planted:
+            tol = tolerance(planet.period, planet.duration, planet.transits_in(time))
+            hit = any(r["detected"] and classify(r["period"], planet.period, tol) == "period" for r in found)
+        else:
+            hit = bool(found and found[0]["detected"])
+        out[f"trim {trim:g}"] = hit
+    return out
+
+
+def pack_against_data(lcs, labels, sigmas, rec, nulls, injections, n_runs, rounds, trim, seed, pool):
+    """The pack with the nuisances measured on the real light curves: AU Mic's spots (and a quiet
+    twin), pi Men sector 4's ramp; planted planets found and false alarms, beside the real rates."""
+    out = {"spotted": [], "ramps": []}
+    tasks, keys = [], []
+    for j, lc in enumerate(lcs):
+        if lc["host"] != "AU Mic":
+            continue
+        act = activity(lc)
+        spots = {"spots": {"amplitude": act["rms"], "period": act["period"]}}
+        for kind, extra in (("spotted", spots), ("quiet twin", {})):
+            for i in range(n_runs):
+                tasks.append((seed + 10_000 * j + 100 * (kind == "quiet twin") + i, extra, sigmas[j], True, (0.0, trim),
+                              rounds))
+                keys.append((labels[j], kind, "planted", act))
+            for i in range(max(2, n_runs // 2)):
+                tasks.append((seed + 10_000 * j + 500 + 100 * (kind == "quiet twin") + i, extra, sigmas[j], False,
+                              (0.0, trim), rounds))
+                keys.append((labels[j], kind, "null", act))
+    for j, lc in enumerate(lcs):
+        if not (lc["host"] == "pi Men" and lc["sector"] == 4):
+            continue
+        ramp = ramp_size(lc)
+        extra = {"ramps": {"amplitude": ramp["amplitude"], "timescale": ramp["timescale"]}}
+        for i in range(n_runs):
+            tasks.append((seed + 20_000 + i, extra, sigmas[j], False, (0.0, trim), rounds))
+            keys.append((labels[j], "ramps", "null", ramp))
+    runs = list(pool.map(_pack_run, tasks, chunksize=1))
+    groups = {}
+    for (label, kind, what, measured), r in zip(keys, runs):
+        g = groups.setdefault((label, kind), {"light_curve": label, "kind": kind, "measured": measured})
+        for k, v in r.items():
+            if k.startswith("trim"):
+                g.setdefault(what, {}).setdefault(k, []).append(v)
+    for g in groups.values():
+        for what in ("planted", "null"):
+            if what in g:
+                g[what] = {k: _binom(int(sum(v)), len(v)) for k, v in g[what].items()}
+        label = g["light_curve"]
+        sel = [r for r in injections if r["light_curve"] == label and r["expected_snr"] >= SNR_THRESHOLD]
+        g["real_planted_found"] = _binom(sum(r["real"]["found"] == "period" for r in sel), len(sel))
+        g["real_false_alarm"] = bool(nulls[label]["real"]["detected"] and not nulls[label]["real"].get("near_known"))
+        g["real_false_alarm_trimmed"] = bool(nulls[label]["real_trimmed"]["detected"]
+                                             and not nulls[label]["real_trimmed"].get("near_known"))
+        (out["ramps"] if g["kind"] == "ramps" else out["spotted"]).append(g)
     return out
 
 
@@ -374,6 +511,54 @@ def markdown(rep):
         if r.get("near_known"):
             real += f" - at the period of {r['near_known']}: a known planet's residual, not a new signal"
         lines.append(f"| {label} | {real} | {v['white_detected']} of {v['white_n']} |")
+    tr = rep["trimmed"]
+    lines += ["", f"## 4. Trimming {tr['days']:g} d after the start and each gap", "",
+              "| light curve | false alarm | false alarm, trimmed | known planets found | found, trimmed |",
+              "|---|---|---|---|---|"]
+    by_label = {f"{r['host']} s{r['sector']}": r for r in tr["recovery"]}
+    for lc in rep["recovery"]:
+        label = f"{lc['host']} s{lc['sector']}"
+        v = rep["nulls"][label]
+
+        def fa(r):
+            if not r["detected"]:
+                return "no"
+            return "known planet's period" if r.get("near_known") else f"yes (SNR {r['snr']:.0f})"
+
+        def n_found(rr):
+            ps = [p for p in rr["planets"] if p["searchable"] and p["expected_snr"] >= SNR_THRESHOLD]
+            return f"{sum(p['found'] == 'period' for p in ps)} of {len(ps)}"
+        lines.append(f"| {label} | {fa(v['real'])} | {fa(v['real_trimmed'])} | {n_found(lc)} | {n_found(by_label[label])} |")
+    pk = rep["pack_against_data"]
+    lines += ["", "## 5. The pack's nuisance options against the real failures", "",
+              "Spots: the pack with `spots` at the RMS and rotation period measured on each AU Mic sector, white noise at "
+              f"its scatter, planets planted at expected SNR 7.1-20, and a quiet twin without spots; searched as is and "
+              f"with {tr['days']:g} d trimmed after restarts. Real: the injections of check 2 (not trimmed) and the null "
+              "searches of checks 3 and 4.", "",
+              "| light curve | measured RMS, period | arm | planted found | found, trimmed | false alarms | "
+              "false alarms, trimmed |", "|---|---|---|---|---|---|---|"]
+    spotted = {g["light_curve"]: g for g in pk["spotted"] if g["kind"] == "spotted"}
+    quiet = {g["light_curve"]: g for g in pk["spotted"] if g["kind"] == "quiet twin"}
+    key_t = f"trim {tr['days']:g}"
+
+    def frac(b):
+        return f"{b['k']}/{b['n']}"
+    for label, g in spotted.items():
+        m = g["measured"]
+        for arm, h in (("spotted pack", g), ("quiet twin", quiet[label])):
+            lines.append(f"| {label} | {100 * m['rms']:.2f} %, {m['period']:.2f} d | {arm} | {frac(h['planted']['trim 0'])} | "
+                         f"{frac(h['planted'][key_t])} | {frac(h['null']['trim 0'])} | {frac(h['null'][key_t])} |")
+        lines.append(f"| {label} | | real | {frac(g['real_planted_found'])} | - | "
+                     f"{'yes' if g['real_false_alarm'] else 'no'} | {'yes' if g['real_false_alarm_trimmed'] else 'no'} |")
+    for g in pk["ramps"]:
+        m = g["measured"]
+        a, b = g["null"]["trim 0"], g["null"][f"trim {tr['days']:g}"]
+        real = rep["nulls"][g["light_curve"]]
+        lines += ["", f"Ramps: the pack with `ramps` of the size measured after {g['light_curve']}'s restarts "
+                  f"({1e6 * m['amplitude']:.0f} ppm, timescale {m['timescale']:.2f} d) on a quiet star: false alarms "
+                  f"{a['k']} of {a['n']} untrimmed, {b['k']} of {b['n']} trimmed {tr['days']:g} d; the real light curve: "
+                  f"{'yes' if real['real']['detected'] else 'no'} untrimmed, "
+                  f"{'yes' if real['real_trimmed']['detected'] else 'no'} trimmed."]
     lines += ["", "## Verdict", ""] + [f"- {k}: {v}" for k, v in rep["verdict"].items()]
     return "\n".join(lines) + "\n"
 
@@ -383,6 +568,7 @@ def verdict(rep):
     above = [p for p in found if p["expected_snr"] >= SNR_THRESHOLD]
     inj = rep["injection"]["by_expected_snr"]
     clean = rep["injection"]["clean_light_curves"]
+    tr = rep["trimmed"]["days"]
     differs = [b["expected_snr"] for b in inj if b["differs"]]
     real_fa = [k for k, v in rep["nulls"].items() if v["real"]["detected"] and not v["real"].get("near_known")]
     residual = [k for k, v in rep["nulls"].items() if v["real"]["detected"] and v["real"].get("near_known")]
@@ -402,6 +588,22 @@ def verdict(rep):
             f"real {clean['real']['rate']:.2f} ± {clean['real']['error']:.2f}, white {clean['white']['rate']:.2f} ± "
             f"{clean['white']['error']:.2f} (expected SNR >= {SNR_THRESHOLD}, n = {clean['real']['n']}; "
             f"{', '.join(clean['light_curves'])})"),
+        "trimming after restarts": (
+            f"false alarms {len(real_fa)} -> "
+            f"{sum(1 for v in rep['nulls'].values() if v['real_trimmed']['detected'] and not v['real_trimmed'].get('near_known'))}"
+            f" of {len(rep['nulls'])} with {rep['trimmed']['days']:g} d trimmed"),
+        "the pack's spots": "; ".join(
+            f"{g['light_curve']}: planted planets found {g['planted']['trim 0']['rate']:.2f} (quiet twin "
+            f"{q['planted']['trim 0']['rate']:.2f}, real {g['real_planted_found']['rate']:.2f}), "
+            f"{g['planted'][f'trim {tr:g}']['rate']:.2f} trimmed; false alarms {g['null']['trim 0']['rate']:.2f} "
+            f"(real {'yes' if g['real_false_alarm'] else 'no'}), {g['null'][f'trim {tr:g}']['rate']:.2f} trimmed "
+            f"(real {'yes' if g['real_false_alarm_trimmed'] else 'no'})"
+            for g in rep["pack_against_data"]["spotted"] if g["kind"] == "spotted"
+            for q in rep["pack_against_data"]["spotted"] if q["kind"] == "quiet twin" and q["light_curve"] == g["light_curve"]),
+        "the pack's ramps": "; ".join(
+            f"false alarms {g['null']['trim 0']['rate']:.2f} untrimmed, "
+            f"{g['null'][next(k for k in g['null'] if k != 'trim 0')]['rate']:.2f} trimmed"
+            for g in rep["pack_against_data"]["ramps"]),
         "false alarms": (f"real light curves: {len(real_fa)} of {len(rep['nulls'])}"
                          + (f" ({', '.join(real_fa)})" if real_fa else "")
                          + (f", plus {len(residual)} at a known planet's period ({', '.join(residual)})" if residual else "")
@@ -415,6 +617,9 @@ def main(argv=None):
     parser.add_argument("--injections", type=int, default=12, help="planted planets per light curve")
     parser.add_argument("--white-nulls", type=int, default=5, help="white-noise twins per light curve for false alarms")
     parser.add_argument("--rounds", type=int, default=3, help="search rounds per planted planet (each found signal masked)")
+    parser.add_argument("--trim", type=float, default=1.0,
+                        help="days dropped after the start and each gap in check 4 (the remedy for ramps)")
+    parser.add_argument("--pack-runs", type=int, default=12, help="pack runs per arm in check 5")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     parser.add_argument("--out", default=".")
@@ -433,15 +638,23 @@ def main(argv=None):
                   for j in range(len(lcs))]
     null_tasks += [(args.seed + 600_000 + 1000 * j + i, bgs[j], sigmas[j], labels[j], "white", lcs[j]["tic"])
                    for j in range(len(lcs)) for i in range(args.white_nulls)]
+    null_tasks += [(args.seed + 500_000 + 1000 * j, bgs[j], sigmas[j], labels[j], "real, trimmed", lcs[j]["tic"], args.trim)
+                   for j in range(len(lcs))]
     with ProcessPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         injections = list(pool.map(_inject, inj_tasks, chunksize=2))
         nulls = list(pool.map(_null, null_tasks, chunksize=2))
+        rec_trim = list(pool.map(_recover_trimmed, [(lc, args.trim) for lc in lcs]))
+        null_view = {lab: {"real": next(n for n in nulls if n["light_curve"] == lab and n["arm"] == "real"),
+                           "real_trimmed": next(n for n in nulls if n["light_curve"] == lab and n["arm"] == "real, trimmed")}
+                     for lab in labels}
+        pack = pack_against_data(lcs, labels, sigmas, rec, null_view, injections, args.pack_runs, args.rounds, args.trim,
+                                 args.seed + 700_000, pool)
     found = [p for lc in rec for p in lc["planets"] if p["found"] == "period"]
     ratios = [p["snr_ratio"] for p in found if p.get("snr_ratio")]
     from scidatasim.provenance import numerical_environment
     rep = {"name": "transits on TESS", "created_utc": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
            "settings": {"injections": args.injections, "rounds": args.rounds, "white_nulls": args.white_nulls,
-                        "seed": args.seed},
+                        "trim": args.trim, "pack_runs": args.pack_runs, "seed": args.seed},
            "known_planets": {str(k): {"host": v[0], "planets": [dict(zip(("name", "period", "t0_bjd", "depth_ppm", "duration_h",
                                                                           "rp_over_rstar", "source"), p)) for p in v[1]]}
                              for k, v in HOSTS.items()},
@@ -455,8 +668,11 @@ def main(argv=None):
                          "runs": injections},
            "nulls": {lab: {"real": next(n for n in nulls if n["light_curve"] == lab and n["arm"] == "real"),
                            "white_detected": sum(n["detected"] for n in nulls if n["light_curve"] == lab and n["arm"] == "white"),
-                           "white_n": sum(1 for n in nulls if n["light_curve"] == lab and n["arm"] == "white")}
+                           "white_n": sum(1 for n in nulls if n["light_curve"] == lab and n["arm"] == "white"),
+                           "real_trimmed": next(n for n in nulls if n["light_curve"] == lab and n["arm"] == "real, trimmed")}
                      for lab in labels},
+           "trimmed": {"days": args.trim, "recovery": rec_trim},
+           "pack_against_data": pack,
            "numerics": numerical_environment()}
     rep["injection"]["clean_light_curves"] = summarise_clean(injections, rep["nulls"])
     rep["verdict"] = verdict(rep)

@@ -32,7 +32,7 @@ class BinnedFit:
     """Background (+ signal) model for counts in bins ``edges``.
 
     Background: exp(poly_deg(x)) * bin width * efficiency, with x the bin centre's logarithm
-    (``log_x``, default) or the centre itself, scaled to [-1, 1]; known peaks: Gaussians (``known``: list of (mean, sigma)) with free
+    (``log_x``, default) or the centre itself, scaled to [-1, 1]; known peaks: Gaussians (``known``: list of (mean, sigma)) or shapes (bin fractions) with free
     yields >= 0."""
 
     def __init__(self, edges, degree: int = 3, efficiency: Optional[Sequence[float]] = None,
@@ -47,7 +47,9 @@ class BinnedFit:
         self.widths = np.diff(self.edges)
         self.degree = int(degree)
         self.eff = np.ones(self.centres.size) if efficiency is None else np.asarray(efficiency, float)
-        self.known = [gaussian_bins(self.edges, m, s) for m, s in known]
+        # a known peak: (mean, sigma) for a Gaussian, or its shape as bin fractions
+        self.known = [np.asarray(k, float) if np.ndim(k) == 1 and len(k) == self.centres.size
+                      else gaussian_bins(self.edges, k[0], k[1]) for k in known]
 
     def background(self, coeffs) -> np.ndarray:
         shape = np.exp(np.clip(np.polyval(coeffs[::-1], self.x), -700, 700)) * self.widths * self.eff
