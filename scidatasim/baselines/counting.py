@@ -126,10 +126,13 @@ def global_significance(scan: Dict[str, object], null_scans: Optional[Sequence[S
     q = float(scan["best_q0"])
     n0 = float(np.mean([upcrossings(s, level) for s in null_scans])) if null_scans else \
         float(upcrossings(scan["q0"], level))
-    p_local = 0.5 * stats.chi2.sf(q, 1)  # one-sided: signal yield >= 0
-    p_global = min(1.0, p_local + n0 * np.exp(-(q - level) / 2))
-    return {"p_local": float(p_local), "z_local": float(np.sqrt(q)), "upcrossings": n0,
-            "p_global": float(p_global), "z_global": float(stats.norm.isf(p_global)) if p_global < 1 else 0.0,
+    # in logarithms, so that a very large q (a known resonance, millions of events) gives a finite Z
+    log_p_local = np.log(0.5) + stats.chi2.logsf(q, 1)  # one-sided: signal yield >= 0
+    log_p_global = np.logaddexp(log_p_local, np.log(n0) - (q - level) / 2) if n0 > 0 else log_p_local
+    log_p_global = min(0.0, float(log_p_global))
+    return {"p_local": float(np.exp(log_p_local)), "z_local": float(np.sqrt(q)), "upcrossings": n0,
+            "p_global": float(np.exp(log_p_global)),
+            "z_global": float(-special.ndtri_exp(log_p_global)) if log_p_global < 0 else 0.0,
             "gross_vitells_two_sided": gross_vitells(q, n0, level)}
 
 
