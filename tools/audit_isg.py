@@ -583,8 +583,10 @@ def run_generate(args) -> int:
         t0 = time.time()
         try:
             fs = sim.get_filesystem(seed)
-            with open(os.path.join(args.fs_dir, f"{seed}.json"), "w", encoding="utf-8") as f:
+            final = os.path.join(args.fs_dir, f"{seed}.json")
+            with open(final + ".tmp", "w", encoding="utf-8") as f:  # complete or absent, even after Ctrl+C
                 json.dump(fs.to_json(), f, indent=2)
+            os.replace(final + ".tmp", final)
             manifest["seconds"][str(seed)] = round(time.time() - t0, 1)
             manifest["failed"].pop(str(seed), None)
         except Exception as e:  # ISG marks such seeds corrupted; the item will be missing

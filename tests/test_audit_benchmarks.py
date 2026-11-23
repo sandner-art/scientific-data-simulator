@@ -177,6 +177,55 @@ def test_audit_scilaws_end_to_end_without_harness(tmp_path):
     assert "Leak audit" in md and "Non-law submissions" in md and "no marker" in md
 
 
+def test_leak_hits_are_located_with_a_chance_estimate(tmp_path):
+    sl = _tool("audit_scilaws")
+    key = tmp_path / "key.jsonl"
+    key.write_text("\n".join(json.dumps(r) for r in (
+        {"id": "e", "template": "law_expression", "answer": "M_mol / rho_liq", "answer_type": "text"},
+        {"id": "c", "template": "law_constant", "answer": 8.6912, "answer_type": "number"},
+        {"id": "r", "template": "reference_constant", "answer": 2.3457, "answer_type": "number"})) + "\n")
+    task = tmp_path / "task"
+    (task / "data").mkdir(parents=True)
+    (task / "metadata.yaml").write_text("inputs:\n  - name: V\n    description: molar volume, M_mol/rho_liq\n")
+    rng = np.random.default_rng(0)
+    values = np.round(rng.uniform(8.6, 8.8, 20000), 4)  # dense 4-decimal data: 8.6912 is there by chance
+    (task / "data" / "train.csv").write_text("y,x\n" + "\n".join(f"{v:.4f},1.0" for v in values) + "\n8.6912,2.3457\n")
+    hits = {h["id"]: h for h in sl.locate_hits(str(key), [str(task / "metadata.yaml"), str(task / "data")],
+                                                base=str(task))}
+    assert hits["e"]["file"] == "metadata.yaml" and hits["e"]["line"] == 3
+    assert hits["c"]["chance_expected"] > 5 and hits["c"]["file"] == os.path.join("data", "train.csv")
+    assert hits["r"]["count"] == 1 and hits["r"]["chance_expected"] < 0.05  # alone in its range: not chance
+
+
+def test_overlap_is_counted_on_scored_rows_against_the_data_s_own_repeats():
+    import pandas as pd
+    sl = _tool("audit_scilaws")
+    train = pd.DataFrame({"y": [1.0, 1.0, 2.0, 3.0], "group_id": [1, 2, 2, 3], "x": [0.0, 0.0, 1.0, 2.0]})
+    fit = pd.DataFrame({"y": [3.0], "group_id": [9], "x": [2.0]})  # calibration rows: not counted
+    test = pd.DataFrame({"y": [1.0, 5.0], "group_id": [9, 9], "x": [0.0, 3.0]})
+    task = {"type": "typeII", "inputs": ["x"], "target": "y", "train": train, "fit": fit, "test": test}
+    prof = sl.split_profile(task)
+    assert prof["test_rows_in_train"] == 1 and prof["n_test_rows"] == 2
+    assert prof["train_rows_repeated_across_groups"] == pytest.approx(0.5)  # (0, 1) in groups 1 and 2
+
+
+def test_a_crashing_harness_is_reported_and_local_s_n_used(tmp_path):
+    sl = _tool("audit_scilaws")
+    tasks = make_release(str(tmp_path / "release"), np.random.default_rng(3))
+    fake = tmp_path / "Crashing" / "harness"
+    fake.mkdir(parents=True)
+    (fake / "evaluate_numeric.py").write_text("raise UnicodeDecodeError('charmap', b'\\x81', 0, 1, 'undefined')\n")
+    out = tmp_path / "out"
+    sl.main(["--tasks", tasks, "--harness", str(tmp_path / "Crashing"), "--out", str(out), "--skip-audit",
+             "--jobs", "1", "--only", "line_task__y"])
+    r = json.loads((out / "scilaws_audit.json").read_text())
+    tier = r["tasks"][0]["fits"]["tiers"]["prompt"]
+    assert tier["s_n_source"] == "local (harness crashed)" and tier["s_n"] == tier["s_n_local"] > 0.4
+    assert "UnicodeDecodeError" in tier["harness_error"]
+    assert r["summary"]["harness_crashes"]["tasks"] == ["line_task__y"]
+    assert "The harness crashed" in (out / "scilaws_audit.md").read_text()
+
+
 def test_harness_is_run_in_a_child_process_and_its_json_parsed(tmp_path):
     sl = _tool("audit_scilaws")
     fake = tmp_path / "SciLaws-Bench" / "harness"
@@ -184,6 +233,7 @@ def test_harness_is_run_in_a_child_process_and_its_json_parsed(tmp_path):
     (fake / "evaluate_numeric.py").write_text(
         "import json, sys\n"
         "assert sys.argv[1] == 'score'\n"
+        "assert sys.flags.utf8_mode, 'run the harness in UTF-8 mode'\n"
         "print('BLAS warning before the JSON')\n"
         "print(json.dumps({'status': 'ok', 'contract_ok': True, 'numeric_score': 0.42, 'n': len(sys.argv)}))\n")
     sub = tmp_path / "sub.py"

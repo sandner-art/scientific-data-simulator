@@ -390,14 +390,23 @@ def split_profile(task: Dict[str, Any]) -> Dict[str, Any]:
         out["outside_train_share"] = 0.0
     every = list(cols) + [target]
     th = pd.util.hash_pandas_object(tr[every], index=False).to_numpy()
-    tests = [task["test"]] + ([task["fit"]] if task["type"] == "typeII" else [])
-    eh = np.concatenate([pd.util.hash_pandas_object(fr[every], index=False).to_numpy() for fr in tests])
+    scored = task["test"]  # test.csv (Type I) or test_test.csv (Type II): the rows S_N is computed on
+    eh = pd.util.hash_pandas_object(scored[every], index=False).to_numpy()
     out["test_rows_in_train"] = int(np.isin(eh, th).sum())
     if cols:
         tx = pd.util.hash_pandas_object(tr[cols], index=False).to_numpy()
-        ex = np.concatenate([pd.util.hash_pandas_object(fr[cols], index=False).to_numpy() for fr in tests])
+        ex = pd.util.hash_pandas_object(scored[cols], index=False).to_numpy()
         out["test_inputs_in_train"] = int(np.isin(ex, tx).sum())
-    out["n_test_rows"] = int(len(eh))
+    # the data's own duplication, for comparison: training rows that repeat another training row
+    # (Type II: one from another group)
+    if task["type"] == "typeII":
+        g = _gid(tr)
+        pairs = pd.DataFrame({"h": th, "g": g}).drop_duplicates()
+        groups_per_row = pairs.groupby("h")["g"].nunique()
+        out["train_rows_repeated_across_groups"] = float(np.mean(groups_per_row.reindex(th).to_numpy() > 1))
+    else:
+        out["train_rows_repeated"] = float(np.mean(pd.Series(th).duplicated(keep=False).to_numpy()))
+    out["n_test_rows"] = int(len(eh))  # scored rows
     share = out["outside_train_share"]
     if task["type"] == "typeI":
         out["class"] = "interpolation" if share < 0.05 else ("extrapolation" if share >= 0.5 else "mixed")
@@ -602,6 +611,65 @@ def canary_scan(root: str, per_file: int = 8 << 20, per_csv: int = 1 << 20) -> D
     return {"files_scanned": files, "canary_hits": hits, "guid_examples": guids[:20], "n_guid_files": len({g[0] for g in guids})}
 
 
+NUMBER = re.compile(r"[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?")
+
+
+def _sig_digits(token: str) -> int:
+    mant = re.sub(r"[eE].*$", "", token).lstrip("+-").replace(".", "").lstrip("0")
+    return len(mant)
+
+
+def locate_hits(key_path: str, public: Sequence[str], base: str = "", window: int = 100) -> List[Dict[str, Any]]:
+    """Where each answer-key item stands in the public files, so a finding can be judged.
+
+    Text: the file and the line. Numbers (printed with >= 4 significant digits, the audit's rule):
+    the file, how often, and how many such matches chance would give - the public numbers printed
+    with the same decimals within ``window`` steps of the value, divided by the 2 window + 1 steps.
+    Files are given relative to ``base``."""
+    with open(key_path, encoding="utf-8") as f:
+        items = [json.loads(line) for line in f if line.strip()]
+    files = []
+    for p in public:
+        if os.path.isdir(p):
+            for dp, dn, fn in os.walk(p):
+                dn.sort()
+                files += [os.path.join(dp, x) for x in sorted(fn) if x.lower().endswith(TEXTLIKE)]
+        elif os.path.exists(p):
+            files.append(p)
+    hits = []
+    for path in files:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        compact = re.sub(r"\s+", "", text)
+        tokens = None
+        for it in items:
+            a = it["answer"]
+            if it["answer_type"] == "text":
+                if len(str(a).strip()) < 4 or re.sub(r"\s+", "", str(a)) not in compact:
+                    continue
+                pattern = r"\s*".join(re.escape(ch) for ch in re.sub(r"\s+", "", str(a)))
+                m = re.search(pattern, text)
+                line = text[:m.start()].count("\n") + 1 if m else None
+                hits.append({"id": it["id"], "template": it["template"], "answer": a,
+                             "file": os.path.relpath(path, base) if base else path, "line": line,
+                             "context": text[max(0, m.start() - 80): m.end() + 80].replace("\n", " ") if m else None})
+                continue
+            if tokens is None:
+                tokens = NUMBER.findall(text)
+            value = float(a)
+            exact = [t for t in tokens if _sig_digits(t) >= 4 and float(t) == value]
+            if not exact:
+                continue
+            decimals = len(exact[0].split(".")[1].split("e")[0].split("E")[0]) if "." in exact[0] else 0
+            step = 10.0 ** -decimals
+            near = sum(1 for t in tokens if ("." in t) == (decimals > 0)
+                       and (len(t.split(".")[1]) if "." in t else 0) == decimals
+                       and abs(float(t) - value) <= window * step + 1e-12)
+            hits.append({"id": it["id"], "template": it["template"], "answer": value,
+                         "file": os.path.relpath(path, base) if base else path, "count": len(exact), "printed": exact[0], "chance_expected": near / (2 * window + 1)})
+    return hits
+
+
 def audit_task(task: Dict[str, Any], out_dir: str) -> Dict[str, Any]:
     from scidatasim.audit import audit_export
     path, name = task["path"], task["name"]
@@ -624,6 +692,9 @@ def audit_task(task: Dict[str, Any], out_dir: str) -> Dict[str, Any]:
     if res["answer_key_items"]:  # what a solver may read: metadata.yaml and data/
         res["solver_facing"] = audit_export([os.path.join(path, "metadata.yaml"), os.path.join(path, "data")],
                                             full, check_arrays=False).to_dict()
+        if res["solver_facing"].get("findings"):
+            res["solver_facing_hits"] = locate_hits(full, [os.path.join(path, "metadata.yaml"),
+                                                           os.path.join(path, "data")], base=path)
     grader = [p for p in (os.path.join(path, "eval"), os.path.join(path, "simulator")) if os.path.exists(p)]
     if law and grader:  # the positive control: the files the release documents as answer keys
         only_law = os.path.join(keys, f"{name}.law.jsonl")
@@ -1136,12 +1207,14 @@ def harness_provenance(root: Optional[str]) -> Dict[str, Any]:
 
 def run_scorer(root: str, task_dir: str, sub: str, cwd: str, timeout: int = 1800) -> Dict[str, Any]:
     """``evaluate_numeric.py score`` in a child process (isolated mode: no user site, no script
-    directory on the path); the JSON it prints, or a zero score with the error."""
+    directory on the path; UTF-8 mode); the JSON it prints, or ``score_error`` with the error."""
     shim = os.path.join(cwd, "_scilaws_scorer.py")
     if not os.path.exists(shim):
         with open(shim, "w", encoding="utf-8") as f:
             f.write(SHIM.lstrip())
-    cmd = [sys.executable, "-I", shim, root, "score", os.path.abspath(task_dir), os.path.abspath(sub)]
+    # UTF-8 mode: the harness opens metadata.yaml and the CSVs without an encoding, so on Windows
+    # (cp1252) a task whose files hold e.g. "log₁₀" (byte 0x81) crashes before scoring.
+    cmd = [sys.executable, "-I", "-X", "utf8", shim, root, "score", os.path.abspath(task_dir), os.path.abspath(sub)]
     try:
         proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -1220,16 +1293,20 @@ def fit_and_score(task: Dict[str, Any], profile: Dict[str, Any], out_dir: str, r
     def summary(c):
         e = scored[files[id(c)]]
         h, loc = e.get("harness"), e.get("local", {})
-        s_n = h.get("numeric_score") if h else loc.get("s_n")
+        crashed = bool(h) and h.get("status") == "score_error"  # the harness itself failed: no verdict on the fit
+        s_n = loc.get("s_n") if (not h or crashed) else h.get("numeric_score")
+        source = "local" if not h else ("local (harness crashed)" if crashed else "harness")
         row = {"family": c["family"], "variant": c["variant"], "cv_loss": c["cv_loss"], "n_global": c["n_global"],
-               "n_local": c["n_local"], "s_n": s_n, "s_n_source": "harness" if h else "local",
-               "s_n_local": loc.get("s_n"), "file": e["file"]}
+               "n_local": c["n_local"], "s_n": s_n, "s_n_source": source, "s_n_local": loc.get("s_n"),
+               "file": e["file"]}
         if h:
             row["harness_status"] = h.get("status")
             row["contract_ok"] = h.get("contract_ok")
             if h.get("violations"):
                 row["violations"] = h["violations"]
-            if loc.get("s_n") is not None and s_n is not None:
+            if crashed:
+                row["harness_error"] = (h.get("error") or "") + " | " + (h.get("stderr_tail") or "")[-800:]
+            elif loc.get("s_n") is not None and s_n is not None:
                 row["local_agrees"] = abs(loc["s_n"] - s_n) <= 1e-6
         if loc.get("max_fit_seconds") is not None:
             row["max_fit_seconds"] = loc["max_fit_seconds"]
@@ -1320,6 +1397,9 @@ def summarise(results: List[Dict[str, Any]], agents: Dict[str, Dict[str, float]]
                        for k, v in sorted(fam.items(), key=lambda kv: -np.mean(kv[1]))}
     checks = [f for r in fitted for f in r["fits"].get("families", []) if "local_agrees" in f]
     out["local_vs_harness"] = {"compared": len(checks), "agree": sum(bool(f["local_agrees"]) for f in checks)}
+    crashed = [(r["task"], f) for r in fitted for f in r["fits"].get("families", []) if "harness_error" in f]
+    out["harness_crashes"] = {"submissions": len(crashed), "tasks": sorted({t for t, _ in crashed}),
+                              "first_error": crashed[0][1]["harness_error"][-400:] if crashed else None}
     slow = [f for r in fitted for f in r["fits"].get("families", []) if f.get("fit_within_timeout") is False]
     out["fits_over_timeout"] = len(slow)
     return out
@@ -1335,6 +1415,8 @@ def audit_summary(results: List[Dict[str, Any]], canary: Optional[Dict[str, Any]
     for r in au:
         for f in (r["audit"].get("solver_facing") or {}).get("findings", []):
             out["solver_facing_findings"].setdefault(f"{f['attack']} ({f['severity']})", []).append(r["task"])
+    out["solver_facing_hits"] = {r["task"]: r["audit"]["solver_facing_hits"] for r in au
+                                 if r["audit"].get("solver_facing_hits")}
     grader = [r for r in au if r["audit"].get("grader_facing")]
     out["grader_facing_audited"] = len(grader)
     out["grader_facing_answer_lookup"] = sum(
@@ -1350,8 +1432,11 @@ def audit_summary(results: List[Dict[str, Any]], canary: Optional[Dict[str, Any]
                                key=lambda kv: -kv[1])[:40]),
     }
     splits = [r["split"] for r in results if r.get("split")]
-    out["test_rows_in_train"] = {r["task"]: r["split"]["test_rows_in_train"] for r in results
-                                 if r.get("split", {}).get("test_rows_in_train")}
+    out["test_rows_in_train"] = {
+        r["task"]: {"rows": r["split"]["test_rows_in_train"], "of": r["split"]["n_test_rows"],
+                    "data_repeats": r["split"].get("train_rows_repeated",
+                                                   r["split"].get("train_rows_repeated_across_groups"))}
+        for r in results if r.get("split", {}).get("test_rows_in_train")}
     out["split_classes"] = dict(_count(s["class"] for s in splits))
     out["canary"] = canary
     return out
@@ -1388,6 +1473,15 @@ def markdown(report: Dict[str, Any]) -> str:
               ]
         for k, v in a["solver_facing_findings"].items():
             L.append(f"  * {k}: {len(v)} tasks")
+        for task, hits in a.get("solver_facing_hits", {}).items():
+            for h in hits[:6]:
+                where = h["file"]
+                if h["template"] == "law_expression" or isinstance(h["answer"], str):
+                    L.append(f"    * {task}: `{h['answer']}` ({h['template']}) in {where}, line {h.get('line')}: "
+                             f"...{(h.get('context') or '')[:160]}...")
+                else:
+                    L.append(f"    * {task}: {h['printed']} ({h['template']}) {h['count']}x in {where}; "
+                             f"chance would give {h['chance_expected']:.2g}")
         L += [f"* Grader-facing files (`eval/`, `simulator/`), the positive control (the release documents them as "
               f"answer keys): the hidden law found verbatim in {a['grader_facing_answer_lookup']} of "
               f"{a['grader_facing_audited']} tasks (`state.joblib` is binary and left to the next line).",
@@ -1398,9 +1492,13 @@ def markdown(report: Dict[str, Any]) -> str:
               + ", ".join(f"{k} {v}" for k, v in a["state_joblib"]["compression"].items()) + ".",
               "* Globals that unpickling would import (files): "
               + (", ".join(f"`{k}` {v}" for k, v in list(a["state_joblib"]["imports"].items())[:15]) or "none found") + ".",
-              f"* Test rows also in the training file: {len(a['test_rows_in_train'])} tasks"
-              + (f" ({', '.join(f'{k}: {v}' for k, v in list(a['test_rows_in_train'].items())[:8])})"
-                 if a["test_rows_in_train"] else "") + "."]
+              f"* Scored test rows identical to a training row (target included): {len(a['test_rows_in_train'])} "
+              "tasks" + (". For comparison, the share of training rows that repeat another training row (Type II: "
+                         "one of another group) - duplication in the data itself:" if a["test_rows_in_train"] else ".")]
+        for k, v in sorted(a["test_rows_in_train"].items(), key=lambda kv: -kv[1]["rows"] / max(1, kv[1]["of"])):
+            rep = v.get("data_repeats")
+            L.append(f"  * {k}: {v['rows']} of {v['of']} ({v['rows'] / max(1, v['of']):.0%}); in the training data "
+                     f"{'-' if rep is None else f'{rep:.0%}'}")
         c = a.get("canary")
         if c:
             L.append(f"* Canary strings: {len(c['canary_hits'])} hits in {c['files_scanned']} text files"
@@ -1438,9 +1536,14 @@ def markdown(report: Dict[str, Any]) -> str:
               "| Family | Tasks | Pass | Mean S_N |", "|---|---:|---:|---:|"]
         for k, v in s["families"].items():
             L.append(f"| {k} | {v['n']} | {v['pass']} | {v['mean_s_n']:.3f} |")
-        lv = s["local_vs_harness"]
-        L += ["", f"S_N computed here agrees with the harness on {lv['agree']} of {lv['compared']} submissions. "
-              f"Fits slower than the harness's timeout: {s['fits_over_timeout']}.", ""]
+        lv, hc = s["local_vs_harness"], s.get("harness_crashes") or {}
+        L += ["", f"S_N computed here agrees with the harness on {lv['agree']} of {lv['compared']} submissions both "
+              f"scored. Fits slower than the harness's timeout: {s['fits_over_timeout']}."]
+        if hc.get("submissions"):
+            L += [f"**The harness crashed** on {hc['submissions']} submissions in {len(hc['tasks'])} tasks "
+                  f"({', '.join(hc['tasks'][:12])}); S_N computed here is used for them. First error: "
+                  f"`{(hc['first_error'] or '').strip()[-300:]}`"]
+        L.append("")
     rows = [r for r in report["tasks"] if r.get("fits", {}).get("tiers")]
     if rows:
         L += ["## Per task", "",
