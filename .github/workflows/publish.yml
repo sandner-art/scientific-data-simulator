@@ -43,7 +43,7 @@ jobs:
           cd /tmp
           /tmp/check/bin/sds doctor
           /tmp/check/bin/python -c "import scidatasim, sds_ui; print(scidatasim.__version__, sds_ui.__version__)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
