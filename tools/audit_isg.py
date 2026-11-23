@@ -31,7 +31,10 @@ transformers picks by default for this model) and refuses remote model code. ISG
 call write up to 300,000 tokens; a call that runs on fills a 16 GB card and takes hours, so
 ``generate`` stops each call at 8,192 tokens (``--max-new-tokens``; 0 keeps ISG's ceiling). A cut
 output fails ISG's own parser and ISG asks again, as it does for any malformed output; the
-manifest counts the cut calls per repository, and a line is printed per model call.
+manifest counts the cut calls per repository, and a line is printed per model call. The model goes
+entirely on the GPU (``--device-map cuda:0``): ISG's ``auto`` moves the layers that do not fit
+into free GPU memory to the CPU without saying so, and generation then runs at CPU speed.
+``generate`` prints where the model sits and stops if part of it is off the GPU (``--allow-cpu``).
 ISG executes Python that the model writes for each dependent variable (while generating, and again
 when questions are generated): run it in its own environment. Sampling on other hardware or in
 another precision gives other repositories than the paper's; the blind baselines depend on the
@@ -544,6 +547,26 @@ def markdown(r: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------- generate
+def model_placement(sim) -> Dict[str, int]:
+    """Where the loaded model sits: device -> number of modules (``hf_device_map``), or
+    parameters when the model has no device map."""
+    model = getattr(getattr(getattr(sim, "llm", None), "pipe", None), "model", None)
+    if model is None:
+        return {}
+    where: Counter = Counter()
+    layout = getattr(model, "hf_device_map", None)
+    if layout:
+        for v in layout.values():
+            where[f"cuda:{v}" if isinstance(v, int) else str(v)] += 1
+    else:
+        try:
+            for param in model.parameters():
+                where[str(param.device)] += 1
+        except Exception:  # not a torch model: nothing to report
+            return {}
+    return dict(where)
+
+
 def run_generate(args) -> int:
     """ISG's ``1_generate_filesystem.py`` loop, for the seeds the 500 items use, resumable."""
     isg = os.path.abspath(args.isg)
@@ -593,8 +616,9 @@ def run_generate(args) -> int:
             calls["tokens"] += max(tokens, 0)
             calls["cut"] += cut
             calls["seconds"] += seconds
-            print(f"    model call {calls['n']}: {tokens} tokens, {seconds:.0f} s" + (" - cut at the ceiling" if cut else ""),
-                  flush=True)
+            rate = f", {tokens / seconds:.0f} tokens/s" if seconds > 0 and tokens > 0 else ""
+            print(f"    model call {calls['n']}: {tokens} tokens, {seconds:.0f} s{rate}"
+                  + (" - cut at the ceiling" if cut else ""), flush=True)
             return out
 
     def pipeline(*a, **kw):
@@ -602,13 +626,30 @@ def run_generate(args) -> int:
         kw.setdefault("torch_dtype", dtype)
         return Capped(original(*a, **kw))
     isg_llm.pipeline = functools.wraps(original)(pipeline)
+    cuda = torch.cuda.is_available()
+    device_map = args.device_map or ("cuda:0" if cuda else "cpu")
+    free = None
+    if cuda:
+        free, total = torch.cuda.mem_get_info()
+        print(f"{torch.cuda.get_device_name(0)}: {free / 2 ** 30:.1f} of {total / 2 ** 30:.1f} GB free before loading",
+              flush=True)
     sim = Simulator(story_config=StoryConfig(taxonomy=load_taxonomy(os.path.join(isg, "taxonomy"))),
-                    fs_config=FileSystemConfig(), file_config=FileConfig(), device_map=args.device_map,
+                    fs_config=FileSystemConfig(), file_config=FileConfig(), device_map=device_map,
                     model_name=args.model)
-    device = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+    placement = model_placement(sim)
+    if placement:
+        print("model placed on: " + ", ".join(f"{d} ({n} modules)" for d, n in placement.items()), flush=True)
+    elsewhere = sorted(d for d in placement if not d.startswith("cuda"))
+    if cuda and elsewhere and not args.allow_cpu:
+        raise SystemExit(f"part of the model is on {', '.join(elsewhere)}, so it would write at CPU speed. Close "
+                         "programs that use GPU memory and run again with --device-map cuda:0 (the default), or "
+                         "pass --allow-cpu to run anyway.")
+    device = torch.cuda.get_device_name(0) if cuda else "cpu"
     manifest_path = os.path.join(args.fs_dir, "regeneration_manifest.json")
     manifest = {"model": args.model, "dtype": args.dtype, "device": device, "isg": _provenance(isg),
                 "torch": torch.__version__, "max_new_tokens": args.max_new_tokens or 300000,
+                "device_map": device_map, "placement": placement,
+                "gpu_free_gb_before_loading": round(free / 2 ** 30, 2) if free is not None else None,
                 "seconds": {}, "failed": {}, "model_calls": {}}
     if os.path.exists(manifest_path):
         with open(manifest_path, encoding="utf-8") as f:
@@ -661,7 +702,10 @@ def main(argv=None) -> int:
                       help="bfloat16 is what transformers 4.57's default ('auto') picks for Qwen3-4B")
     gsub.add_argument("--max-new-tokens", type=int, default=8192,
                       help="ceiling per model call (ISG asks for 300000; 0 keeps that)")
-    gsub.add_argument("--device-map", default="auto")
+    gsub.add_argument("--device-map", default=None,
+                      help="default: cuda:0 when a GPU is present (all of the model on it), else cpu; 'auto' lets "
+                           "transformers move layers that do not fit to the CPU, as ISG does")
+    gsub.add_argument("--allow-cpu", action="store_true", help="run even if part of the model is on the CPU")
     gsub.add_argument("--limit", type=int, default=0, help="only the first N repositories (to time a run)")
     args = p.parse_args(argv)
     if args.command == "generate":

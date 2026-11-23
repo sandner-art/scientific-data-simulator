@@ -367,10 +367,8 @@ def test_isg_seeds_check_and_blind_baselines(tmp_path):
     assert c["shared"] == c["same_answer"] == 240
 
 
-def test_isg_generate_runs_only_the_needed_seeds_and_resumes(tmp_path, monkeypatch):
-    """The 'generate' loop against a stand-in for ISG's package (no model, no GPU)."""
-    import types
-    ig = _tool("audit_isg")
+def _fake_isg(tmp_path):
+    """A stand-in for ISG's package (no model, no GPU); FAKE_LAYOUT sets the model's device map."""
     isg = tmp_path / "isg"
     pkg = isg / "simulator"
     pkg.mkdir(parents=True)
@@ -385,9 +383,11 @@ def test_isg_generate_runs_only_the_needed_seeds_and_resumes(tmp_path, monkeypat
         "        self.llm.pipe([{'role': 'user', 'content': 'story'}], do_sample=True, max_new_tokens=300000)\n"
         "        return _FS(seed)\n")
     (pkg / "llm.py").write_text(
+        "import json, os, types\n"
         "CALLS, GENERATE = [], []\n"
         "class _Tok:\n    def __call__(self, text, add_special_tokens=False): return {'input_ids': text.split()}\n"
         "class _Pipe:\n    tokenizer = _Tok()\n"
+        "    model = types.SimpleNamespace(hf_device_map=json.loads(os.environ.get('FAKE_LAYOUT', 'null')))\n"
         "    def __call__(self, messages, **kw):\n        GENERATE.append(kw)\n"
         "        return [{'generated_text': messages + [{'role': 'assistant', 'content': 'a b c'}]}]\n"
         "def pipeline(*a, **kw):\n    CALLS.append(kw)\n    return _Pipe()\n"
@@ -397,11 +397,28 @@ def test_isg_generate_runs_only_the_needed_seeds_and_resumes(tmp_path, monkeypat
                                    "class FileSystemConfig: pass\nclass FileConfig: pass\n")
     (pkg / "utils.py").write_text("def load_taxonomy(path):\n    return {}\n")
     (isg / "seeds.txt").write_text("1.file_extension\n3.count_rows_1\n1.count_rows_0\n7.get_title\n")
+    return isg
+
+
+def _fake_torch(monkeypatch, cuda):
+    import types
     torch = types.ModuleType("torch")
     torch.bfloat16, torch.float16, torch.float32, torch.__version__ = "bf16", "f16", "f32", "0"
-    torch.cuda = types.SimpleNamespace(is_available=lambda: False)
+    torch.cuda = types.SimpleNamespace(is_available=lambda: cuda, get_device_name=lambda i: "Fake GPU",
+                                       mem_get_info=lambda: (6 * 2 ** 30, 16 * 2 ** 30))
     monkeypatch.setitem(sys.modules, "torch", torch)
     monkeypatch.setattr(sys, "path", list(sys.path))
+
+
+def _forget_fake_isg():
+    for name in [m for m in sys.modules if m == "simulator" or m.startswith("simulator.")]:
+        del sys.modules[name]
+
+
+def test_isg_generate_runs_only_the_needed_seeds_and_resumes(tmp_path, monkeypatch):
+    ig = _tool("audit_isg")
+    isg = _fake_isg(tmp_path)
+    _fake_torch(monkeypatch, cuda=False)
     try:
         fs_dir = tmp_path / "fs"
         assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(fs_dir)]) == 0
@@ -410,11 +427,33 @@ def test_isg_generate_runs_only_the_needed_seeds_and_resumes(tmp_path, monkeypat
         assert man["n_done"] == 2 and list(man["failed"]) == ["3"] and man["dtype"] == "bfloat16"
         llm = sys.modules["simulator.llm"]
         assert llm.CALLS[0]["trust_remote_code"] is False and llm.CALLS[0]["torch_dtype"] == "bf16"
+        assert llm.CALLS[0]["device_map"] == "cpu" and man["device_map"] == "cpu"  # no GPU here
         assert [g["max_new_tokens"] for g in llm.GENERATE] == [8192, 8192]  # ISG's 300000, capped
         assert man["model_calls"]["1"] == {"n": 1, "tokens": 3, "cut": 0, "seconds": man["model_calls"]["1"]["seconds"]}
         assert man["max_new_tokens"] == 8192
         assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(fs_dir)]) == 0  # only seed 3 retried
         assert list(json.loads((fs_dir / "regeneration_manifest.json").read_text())["failed"]) == ["3"]
     finally:
-        for name in [m for m in sys.modules if m == "simulator" or m.startswith("simulator.")]:
-            del sys.modules[name]
+        _forget_fake_isg()
+
+
+def test_isg_generate_refuses_a_model_partly_on_the_cpu(tmp_path, monkeypatch):
+    ig = _tool("audit_isg")
+    isg = _fake_isg(tmp_path)
+    _fake_torch(monkeypatch, cuda=True)
+    monkeypatch.setenv("FAKE_LAYOUT", json.dumps({"model.embed_tokens": 0, "model.layers.0": 0, "model.layers.35": "cpu"}))
+    fs_dir = tmp_path / "fs"
+    try:
+        with pytest.raises(SystemExit, match="part of the model is on cpu"):
+            ig.main(["generate", "--isg", str(isg), "--fs-dir", str(fs_dir), "--device-map", "auto"])
+        assert not fs_dir.joinpath("1.json").exists()
+        assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(fs_dir), "--device-map", "auto",
+                        "--allow-cpu"]) == 0
+        man = json.loads((fs_dir / "regeneration_manifest.json").read_text())
+        assert man["placement"] == {"cuda:0": 2, "cpu": 1} and man["gpu_free_gb_before_loading"] == 6.0
+        _forget_fake_isg()
+        monkeypatch.setenv("FAKE_LAYOUT", json.dumps({"": 0}))
+        assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(tmp_path / "fs2")]) == 0
+        assert sys.modules["simulator.llm"].CALLS[0]["device_map"] == "cuda:0"  # the default with a GPU
+    finally:
+        _forget_fake_isg()
