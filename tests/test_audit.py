@@ -333,7 +333,7 @@ def test_generic_answer_key_and_hidden_arrays(tmp_path):
     report = audit_export(str(pub), [str(key), str(tmp_path / "true_vertices.npy")])
     kinds = {f.attack for f in report.findings}
     assert "answer_lookup" in kinds and "latent_exposure" in kinds
-    assert report.exposure["answer_lookup"] == {"exposed": 1, "total": 3}
+    assert report.exposure["answer_lookup"] == {"exposed": 1, "total": 3, "chance": 0}
     (pub / "scene.gltf").write_text(_json.dumps({"nodes": [{"name": "rock", "extras": {"answer": "basalt rock"}}]}))
     report = audit_export(str(pub), [str(key)])
     assert any("answer" in f.detail for f in report.findings if f.severity == "high")

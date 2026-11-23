@@ -183,18 +183,41 @@ def test_leak_hits_are_located_with_a_chance_estimate(tmp_path):
     key.write_text("\n".join(json.dumps(r) for r in (
         {"id": "e", "template": "law_expression", "answer": "M_mol / rho_liq", "answer_type": "text"},
         {"id": "c", "template": "law_constant", "answer": 8.6912, "answer_type": "number"},
-        {"id": "r", "template": "reference_constant", "answer": 2.3457, "answer_type": "number"})) + "\n")
+        {"id": "r", "template": "reference_constant", "answer": 2.3457, "answer_type": "number"},
+        {"id": "q", "template": "law_constant", "answer": 0.25, "answer_type": "number"})) + "\n")
     task = tmp_path / "task"
     (task / "data").mkdir(parents=True)
     (task / "metadata.yaml").write_text("inputs:\n  - name: V\n    description: molar volume, M_mol/rho_liq\n")
     rng = np.random.default_rng(0)
     values = np.round(rng.uniform(8.6, 8.8, 20000), 4)  # dense 4-decimal data: 8.6912 is there by chance
-    (task / "data" / "train.csv").write_text("y,x\n" + "\n".join(f"{v:.4f},1.0" for v in values) + "\n8.6912,2.3457\n")
+    (task / "data" / "train.csv").write_text("y,x\n" + "\n".join(f"{v:.4f},1.0" for v in values)
+                                             + "\n8.6912,2.34570000\n2.50000000e-01,1\n")
     hits = {h["id"]: h for h in sl.locate_hits(str(key), [str(task / "metadata.yaml"), str(task / "data")],
                                                 base=str(task))}
     assert hits["e"]["file"] == "metadata.yaml" and hits["e"]["line"] == 3
-    assert hits["c"]["chance_expected"] > 5 and hits["c"]["file"] == os.path.join("data", "train.csv")
-    assert hits["r"]["count"] == 1 and hits["r"]["chance_expected"] < 0.05  # alone in its range: not chance
+    assert hits["c"]["chance_expected"] > 5 and not hits["c"]["counted"]
+    assert hits["c"]["file"] == os.path.join("data", "train.csv")
+    assert hits["r"]["count"] == 1 and hits["r"]["counted"]  # alone in its range, padded with zeros
+    assert "q" not in hits  # 0.25 is trivial, however many zeros pad it
+
+
+def test_audit_counts_digits_without_padding_and_discounts_chance_matches(tmp_path):
+    from scidatasim.audit import _printed_digits, audit_export
+    assert [_printed_digits(t) for t in ("2.50000000e-01", "0.25", "1.482000", "8000", "13.7094", "1013.0")] \
+        == [2, 2, 4, 1, 6, 4]
+    pub = tmp_path / "public"
+    pub.mkdir()
+    pressures = np.round(np.random.default_rng(1).normal(1013.25, 3.0, 5000), 1)
+    (pub / "obs.csv").write_text("p\n" + "\n".join(f"{v:.1f}" for v in pressures) + "\n1013.3\n")
+    key = tmp_path / "key.jsonl"
+    key.write_text(json.dumps({"id": "a", "answer": 1013.3, "answer_type": "number"}) + "\n"
+                   + json.dumps({"id": "b", "answer": 7.31942, "answer_type": "number"}) + "\n")
+    report = audit_export(str(pub), str(key), check_arrays=False)
+    assert report.exposure["answer_lookup"] == {"exposed": 0, "total": 2, "chance": 1}
+    assert report.ok and report.by_attack("answer_lookup_chance")[0].severity == "info"
+    (pub / "notes.md").write_text("the constant is 7.31942\n")
+    report = audit_export(str(pub), str(key), check_arrays=False)
+    assert not report.ok and report.exposure["answer_lookup"]["exposed"] == 1
 
 
 def test_overlap_is_counted_on_scored_rows_against_the_data_s_own_repeats():

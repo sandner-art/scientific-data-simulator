@@ -31,7 +31,11 @@ Attacks (``Finding.attack``):
     A non-trivial numeric answer, or an expression/text answer, appears verbatim among the
     public numbers or text, e.g. an exact (noise-free) table next to a figure question.
     Answers on the public coordinate grid, or equal to a number their own question states,
-    are not counted.
+    are not counted. Nor is a numeric match that chance explains: the public numbers on the
+    grid of the matched digits, within 100 steps of the answer, put on average 0.05 or more
+    of them on the answer itself (a reference value such as 1013.0 in a column of pressures).
+    Those are reported as ``answer_lookup_chance`` (info). Zeros that only pad a printed
+    number (``2.50000000e-01``, ``1.482000``) are not significant digits.
 ``answer_near_match``
     A numeric answer lies within ``rel_tol`` of a public number without being a copy (equal to
     float64 round-off, as float32, or printed to 4 digits). Among many noisy public numbers this
@@ -179,9 +183,10 @@ class _Public:
 
 
 def _printed_digits(token: str) -> int:
+    """Significant digits a printed number carries; zeros that only pad it do not count
+    (``2.50000000e-01`` and ``0.25`` carry 2, ``1.482000`` carries 4, ``8000`` carries 1)."""
     mantissa = token.lstrip("+-").lower().split("e")[0]
-    digits = mantissa.replace(".", "").lstrip("0")
-    return len(digits) if "." in mantissa else len(digits.rstrip("0"))
+    return len(mantissa.replace(".", "").strip("0"))
 
 
 def _empty(value: Any) -> bool:
@@ -639,18 +644,43 @@ def _copied(sorted_numbers: np.ndarray, value: float) -> bool:
     return i < sorted_numbers.size and sorted_numbers[i] == single
 
 
-def _printed(printed: List[Tuple[float, int]], value: float) -> bool:
-    """``value`` printed to the digits of a public number (``13.7094`` for 13.70937...)."""
+def _printed(printed: List[Tuple[float, int]], value: float) -> int:
+    """``value`` printed to the digits of a public number (``13.7094`` for 13.70937...): the
+    number of digits of the closest such match, or 0."""
     if not printed or not math.isfinite(value) or value == 0:
-        return False
+        return 0
     import bisect
     lo = bisect.bisect_left(printed, (value - abs(value) * 1e-3, -1))
+    best = 0
     for number, digits in printed[lo:]:
         if number > value + abs(value) * 1e-3:
             break
         if float(f"{value:.{digits - 1}e}") == number:
-            return True
-    return False
+            best = max(best, digits)
+    return best
+
+
+#: A verbatim numeric match counts as a lookup only when chance gives fewer matches than this.
+_LOOKUP_CHANCE = 0.05
+_GRID_STEPS = 100
+
+
+def _lookup_chance(sorted_numbers: np.ndarray, value: float, digits: int) -> float:
+    """Expected number of public numbers equal to ``value`` at ``digits`` significant digits by
+    chance: the public numbers on that grid within 100 steps of the value, other than those equal
+    to it, per step (a column of pressures printed to 0.1 hPa holds 1013.0 often)."""
+    if sorted_numbers.size == 0 or value == 0 or not math.isfinite(value) or digits <= 0:
+        return 0.0
+    step = 10.0 ** (math.floor(math.log10(abs(value))) - digits + 1)
+    reach = _GRID_STEPS * step * (1 + 1e-9)
+    window = sorted_numbers[np.searchsorted(sorted_numbers, value - reach):
+                            np.searchsorted(sorted_numbers, value + reach, side="right")]
+    if window.size == 0:
+        return 0.0
+    q = window / step
+    on_grid = np.abs(q - np.round(q)) <= 1e-6 * np.maximum(1.0, np.abs(q))
+    others = on_grid & (np.round(q) != round(value / step))
+    return float(np.sum(others)) / (2 * _GRID_STEPS)
 
 
 #: Half-width (relative) of the window used to estimate how densely public numbers lie around an answer.
@@ -836,7 +866,7 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
 
     # answer lookup ---------------------------------------------------------
     printed = sorted(pub.printed)
-    lookups, total = [], 0
+    lookups, chance_lookups, total = [], [], 0
     near, expected_near = [], 0.0  # within rel_tol of a public number, but not a copy
     for t in priv.tasks:
         a = t.get("answer")
@@ -849,8 +879,10 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
             if _stated_in_question(t.get("question"), float(a)):
                 continue  # the question states this number itself (an input), so it is public by design
             total += 1
-            if _copied(numbers, float(a)) or _printed(printed, float(a)):
-                lookups.append(t)
+            digits = _significant_digits(float(a)) if _copied(numbers, float(a)) else _printed(printed, float(a))
+            if digits:
+                chance = _lookup_chance(numbers, float(a), digits)
+                (lookups if chance < _LOOKUP_CHANCE else chance_lookups).append((t, chance))
             else:
                 expected_near += _chance_matches(numbers, float(a), rel_tol)
                 if _contains(numbers, float(a), rel_tol):
@@ -858,8 +890,15 @@ def audit_export(public: Union[PathLike, Sequence[PathLike]], private: Union[Pat
         elif isinstance(a, str) and len(a.strip()) >= 4:
             total += 1
             if a.strip() in alltext or re.sub(r"\s+", "", a) in compact:
-                lookups.append(t)
-    report.exposure["answer_lookup"] = {"exposed": len(lookups), "total": total}
+                lookups.append((t, 0.0))
+    report.exposure["answer_lookup"] = {"exposed": len(lookups), "total": total, "chance": len(chance_lookups)}
+    if chance_lookups:
+        report.findings.append(Finding(
+            "answer_lookup_chance", "info", f"{len(chance_lookups)} numeric answers appear verbatim in public files, "
+            f"but about as often as chance predicts from how densely public numbers lie on their grid (expected "
+            f"{min(c for _, c in chance_lookups):.2g} to {max(c for _, c in chance_lookups):.2g} matches each), "
+            f"e.g. {chance_lookups[0][0]['id']}", None, len(chance_lookups)))
+    lookups = [t for t, _ in lookups]
     if lookups:
         templates = sorted({str(t.get("template")) for t in lookups})
         report.findings.append(Finding(

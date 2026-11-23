@@ -611,21 +611,17 @@ def canary_scan(root: str, per_file: int = 8 << 20, per_csv: int = 1 << 20) -> D
     return {"files_scanned": files, "canary_hits": hits, "guid_examples": guids[:20], "n_guid_files": len({g[0] for g in guids})}
 
 
-NUMBER = re.compile(r"[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?")
+def locate_hits(key_path: str, public: Sequence[str], base: str = "") -> List[Dict[str, Any]]:
+    """Where each answer-key item stands in the public files, by the audit's own rules, so a
+    finding can be judged.
 
-
-def _sig_digits(token: str) -> int:
-    mant = re.sub(r"[eE].*$", "", token).lstrip("+-").replace(".", "").lstrip("0")
-    return len(mant)
-
-
-def locate_hits(key_path: str, public: Sequence[str], base: str = "", window: int = 100) -> List[Dict[str, Any]]:
-    """Where each answer-key item stands in the public files, so a finding can be judged.
-
-    Text: the file and the line. Numbers (printed with >= 4 significant digits, the audit's rule):
-    the file, how often, and how many such matches chance would give - the public numbers printed
-    with the same decimals within ``window`` steps of the value, divided by the 2 window + 1 steps.
+    Text: the file and the line. Numbers: only non-trivial ones, matched as the audit matches
+    them (a copy, or the value printed to a public number's digits; padding zeros are not
+    digits); per file, how often, and how many matches chance gives on that grid
+    (``counted``: below the audit's threshold, so part of its ``answer_lookup`` finding).
     Files are given relative to ``base``."""
+    from scidatasim.audit import (_LOOKUP_CHANCE, _NUMBER, _copied, _lookup_chance, _nontrivial, _printed,
+                                  _printed_digits, _significant_digits)
     with open(key_path, encoding="utf-8") as f:
         items = [json.loads(line) for line in f if line.strip()]
     files = []
@@ -636,37 +632,51 @@ def locate_hits(key_path: str, public: Sequence[str], base: str = "", window: in
                 files += [os.path.join(dp, x) for x in sorted(fn) if x.lower().endswith(TEXTLIKE)]
         elif os.path.exists(p):
             files.append(p)
-    hits = []
+    scanned = []
     for path in files:
         with open(path, encoding="utf-8", errors="replace") as f:
             text = f.read()
-        compact = re.sub(r"\s+", "", text)
-        tokens = None
+        values, printed = [], []
+        for token in _NUMBER.findall(text):
+            try:
+                v = float(token)
+            except (ValueError, OverflowError):
+                continue
+            if math.isfinite(v):
+                values.append(v)
+                d = _printed_digits(token)
+                if d >= 4:
+                    printed.append((v, d))
+        scanned.append((path, text, np.sort(np.asarray(values, dtype=float)), sorted(printed)))
+    everything = np.sort(np.concatenate([n for _, _, n, _ in scanned])) if scanned else np.empty(0)
+    hits = []
+    for path, text, numbers, printed in scanned:
+        where = os.path.relpath(path, base) if base else path
+        compact = None
         for it in items:
             a = it["answer"]
             if it["answer_type"] == "text":
+                compact = compact if compact is not None else re.sub(r"\s+", "", text)
                 if len(str(a).strip()) < 4 or re.sub(r"\s+", "", str(a)) not in compact:
                     continue
                 pattern = r"\s*".join(re.escape(ch) for ch in re.sub(r"\s+", "", str(a)))
                 m = re.search(pattern, text)
-                line = text[:m.start()].count("\n") + 1 if m else None
-                hits.append({"id": it["id"], "template": it["template"], "answer": a,
-                             "file": os.path.relpath(path, base) if base else path, "line": line,
+                hits.append({"id": it["id"], "template": it["template"], "answer": a, "file": where,
+                             "line": text[:m.start()].count("\n") + 1 if m else None, "counted": True,
                              "context": text[max(0, m.start() - 80): m.end() + 80].replace("\n", " ") if m else None})
                 continue
-            if tokens is None:
-                tokens = NUMBER.findall(text)
             value = float(a)
-            exact = [t for t in tokens if _sig_digits(t) >= 4 and float(t) == value]
-            if not exact:
+            if not _nontrivial(value):
                 continue
-            decimals = len(exact[0].split(".")[1].split("e")[0].split("E")[0]) if "." in exact[0] else 0
-            step = 10.0 ** -decimals
-            near = sum(1 for t in tokens if ("." in t) == (decimals > 0)
-                       and (len(t.split(".")[1]) if "." in t else 0) == decimals
-                       and abs(float(t) - value) <= window * step + 1e-12)
-            hits.append({"id": it["id"], "template": it["template"], "answer": value,
-                         "file": os.path.relpath(path, base) if base else path, "count": len(exact), "printed": exact[0], "chance_expected": near / (2 * window + 1)})
+            digits = _significant_digits(value) if _copied(numbers, value) else _printed(printed, value)
+            if not digits:
+                continue
+            same = float(f"{value:.{digits - 1}e}")
+            count = int(np.sum((numbers == value) | (numbers == same)))
+            chance = _lookup_chance(everything, value, digits)
+            hits.append({"id": it["id"], "template": it["template"], "answer": value, "file": where,
+                         "digits": digits, "count": max(count, 1), "chance_expected": chance,
+                         "counted": chance < _LOOKUP_CHANCE})
     return hits
 
 
@@ -1474,14 +1484,15 @@ def markdown(report: Dict[str, Any]) -> str:
         for k, v in a["solver_facing_findings"].items():
             L.append(f"  * {k}: {len(v)} tasks")
         for task, hits in a.get("solver_facing_hits", {}).items():
-            for h in hits[:6]:
+            for h in hits[:8]:
                 where = h["file"]
                 if h["template"] == "law_expression" or isinstance(h["answer"], str):
                     L.append(f"    * {task}: `{h['answer']}` ({h['template']}) in {where}, line {h.get('line')}: "
                              f"...{(h.get('context') or '')[:160]}...")
                 else:
-                    L.append(f"    * {task}: {h['printed']} ({h['template']}) {h['count']}x in {where}; "
-                             f"chance would give {h['chance_expected']:.2g}")
+                    L.append(f"    * {task}: {h['answer']:.{h['digits']}g} ({h['template']}, {h['digits']} digits) "
+                             f"{h['count']}x in {where}; chance gives {h['chance_expected']:.2g} - "
+                             + ("counted" if h["counted"] else "explained by chance"))
         L += [f"* Grader-facing files (`eval/`, `simulator/`), the positive control (the release documents them as "
               f"answer keys): the hidden law found verbatim in {a['grader_facing_answer_lookup']} of "
               f"{a['grader_facing_audited']} tasks (`state.joblib` is binary and left to the next line).",
