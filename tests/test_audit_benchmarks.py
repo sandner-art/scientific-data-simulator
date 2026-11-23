@@ -359,10 +359,15 @@ def test_isg_generate_runs_only_the_needed_seeds_and_resumes(tmp_path, monkeypat
         "        self.llm = LLM(model_name, device_map)\n"
         "    def get_filesystem(self, seed):\n"
         "        if seed == 3:\n            raise RuntimeError('corrupted')\n"
+        "        self.llm.pipe([{'role': 'user', 'content': 'story'}], do_sample=True, max_new_tokens=300000)\n"
         "        return _FS(seed)\n")
     (pkg / "llm.py").write_text(
-        "CALLS = []\n"
-        "def pipeline(*a, **kw):\n    CALLS.append(kw)\n"
+        "CALLS, GENERATE = [], []\n"
+        "class _Tok:\n    def __call__(self, text, add_special_tokens=False): return {'input_ids': text.split()}\n"
+        "class _Pipe:\n    tokenizer = _Tok()\n"
+        "    def __call__(self, messages, **kw):\n        GENERATE.append(kw)\n"
+        "        return [{'generated_text': messages + [{'role': 'assistant', 'content': 'a b c'}]}]\n"
+        "def pipeline(*a, **kw):\n    CALLS.append(kw)\n    return _Pipe()\n"
         "class LLM:\n    def __init__(self, model_name, device_map):\n"
         "        self.pipe = pipeline('text-generation', model=model_name, device_map=device_map, trust_remote_code=True)\n")
     (pkg / "config.py").write_text("class StoryConfig:\n    def __init__(self, taxonomy=None): pass\n"
@@ -380,8 +385,11 @@ def test_isg_generate_runs_only_the_needed_seeds_and_resumes(tmp_path, monkeypat
         assert sorted(p.name for p in fs_dir.glob("*.json")) == ["1.json", "7.json", "regeneration_manifest.json"]
         man = json.loads((fs_dir / "regeneration_manifest.json").read_text())
         assert man["n_done"] == 2 and list(man["failed"]) == ["3"] and man["dtype"] == "bfloat16"
-        calls = sys.modules["simulator.llm"].CALLS
-        assert calls[0]["trust_remote_code"] is False and calls[0]["torch_dtype"] == "bf16"
+        llm = sys.modules["simulator.llm"]
+        assert llm.CALLS[0]["trust_remote_code"] is False and llm.CALLS[0]["torch_dtype"] == "bf16"
+        assert [g["max_new_tokens"] for g in llm.GENERATE] == [8192, 8192]  # ISG's 300000, capped
+        assert man["model_calls"]["1"] == {"n": 1, "tokens": 3, "cut": 0, "seconds": man["model_calls"]["1"]["seconds"]}
+        assert man["max_new_tokens"] == 8192
         assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(fs_dir)]) == 0  # only seed 3 retried
         assert list(json.loads((fs_dir / "regeneration_manifest.json").read_text())["failed"]) == ["3"]
     finally:

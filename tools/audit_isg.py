@@ -26,8 +26,12 @@ Without ``--qa`` only the ``seeds.txt`` check runs (no regeneration needed).
 
 Regenerating (``generate``): the paper's repositories were written by Qwen3-4B-Instruct-2507 on an
 H200. ``generate`` builds only the repositories the 500 items use (287 seeds, not 499), one seed
-at a time, resumable, with ISG's own ``Simulator``; it loads the model in bfloat16 by default so
-it fits a 16 GB GPU (``--dtype float32`` for the library default) and refuses remote model code.
+at a time, resumable, with ISG's own ``Simulator``; it loads the model in bfloat16 (what the pinned
+transformers picks by default for this model) and refuses remote model code. ISG lets one model
+call write up to 300,000 tokens; a call that runs on fills a 16 GB card and takes hours, so
+``generate`` stops each call at 8,192 tokens (``--max-new-tokens``; 0 keeps ISG's ceiling). A cut
+output fails ISG's own parser and ISG asks again, as it does for any malformed output; the
+manifest counts the cut calls per repository, and a line is printed per model call.
 ISG executes Python that the model writes for each dependent variable (while generating, and again
 when questions are generated): run it in its own environment. Sampling on other hardware or in
 another precision gives other repositories than the paper's; the blind baselines depend on the
@@ -562,11 +566,41 @@ def run_generate(args) -> int:
     from simulator.utils import load_taxonomy
     dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[args.dtype]
     original = isg_llm.pipeline
+    calls = {"n": 0, "tokens": 0, "cut": 0, "seconds": 0.0}
+
+    class Capped:
+        """ISG's text-generation pipeline with a ceiling on new tokens and a line per call."""
+
+        def __init__(self, pipe):
+            self._pipe = pipe
+
+        def __getattr__(self, name):
+            return getattr(self._pipe, name)
+
+        def __call__(self, *a, **kw):
+            if args.max_new_tokens:  # ISG asks for up to 300000
+                kw["max_new_tokens"] = min(int(kw.get("max_new_tokens") or args.max_new_tokens), args.max_new_tokens)
+            t0 = time.time()
+            out = self._pipe(*a, **kw)
+            seconds = time.time() - t0
+            try:
+                text = out[0]["generated_text"][-1]["content"]
+                tokens = len(self._pipe.tokenizer(text, add_special_tokens=False)["input_ids"])
+            except Exception:
+                tokens = -1
+            cut = bool(args.max_new_tokens) and tokens >= args.max_new_tokens - 1
+            calls["n"] += 1
+            calls["tokens"] += max(tokens, 0)
+            calls["cut"] += cut
+            calls["seconds"] += seconds
+            print(f"    model call {calls['n']}: {tokens} tokens, {seconds:.0f} s" + (" - cut at the ceiling" if cut else ""),
+                  flush=True)
+            return out
 
     def pipeline(*a, **kw):
         kw["trust_remote_code"] = False  # Qwen3 is built into transformers; no model-supplied code
         kw.setdefault("torch_dtype", dtype)
-        return original(*a, **kw)
+        return Capped(original(*a, **kw))
     isg_llm.pipeline = functools.wraps(original)(pipeline)
     sim = Simulator(story_config=StoryConfig(taxonomy=load_taxonomy(os.path.join(isg, "taxonomy"))),
                     fs_config=FileSystemConfig(), file_config=FileConfig(), device_map=args.device_map,
@@ -574,13 +608,16 @@ def run_generate(args) -> int:
     device = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
     manifest_path = os.path.join(args.fs_dir, "regeneration_manifest.json")
     manifest = {"model": args.model, "dtype": args.dtype, "device": device, "isg": _provenance(isg),
-                "torch": torch.__version__, "seconds": {}, "failed": {}}
+                "torch": torch.__version__, "max_new_tokens": args.max_new_tokens or 300000,
+                "seconds": {}, "failed": {}, "model_calls": {}}
     if os.path.exists(manifest_path):
         with open(manifest_path, encoding="utf-8") as f:
-            manifest.update({k: v for k, v in json.load(f).items() if k in ("seconds", "failed")})
+            manifest.update({k: v for k, v in json.load(f).items() if k in ("seconds", "failed", "model_calls")})
     t_start = time.time()
     for n, seed in enumerate(todo, 1):
         t0 = time.time()
+        calls.update(n=0, tokens=0, cut=0, seconds=0.0)
+        print(f"[{n}/{len(todo)}] seed {seed}", flush=True)
         try:
             fs = sim.get_filesystem(seed)
             final = os.path.join(args.fs_dir, f"{seed}.json")
@@ -591,13 +628,15 @@ def run_generate(args) -> int:
             manifest["failed"].pop(str(seed), None)
         except Exception as e:  # ISG marks such seeds corrupted; the item will be missing
             manifest["failed"][str(seed)] = f"{type(e).__name__}: {e}"[:300]
+        manifest["model_calls"][str(seed)] = {k: (round(v, 1) if isinstance(v, float) else v) for k, v in calls.items()}
         manifest["n_done"] = len(manifest["seconds"])
         manifest["n_failed"] = len(manifest["failed"])
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=1)
         rate = (time.time() - t_start) / n
-        print(f"[{n}/{len(todo)}] seed {seed}: {time.time() - t0:.0f} s; about {rate * (len(todo) - n) / 3600:.1f} h left",
-              flush=True)
+        print(f"[{n}/{len(todo)}] seed {seed} {'done' if str(seed) in manifest['seconds'] else 'FAILED'} in "
+              f"{time.time() - t0:.0f} s ({calls['n']} model calls, {calls['cut']} cut); about "
+              f"{rate * (len(todo) - n) / 3600:.1f} h left", flush=True)
     return 0
 
 
@@ -618,7 +657,10 @@ def main(argv=None) -> int:
     gsub.add_argument("--seeds")
     gsub.add_argument("--fs-dir", required=True, help="where <seed>.json go (ISG's data/fs)")
     gsub.add_argument("--model", default=MODEL)
-    gsub.add_argument("--dtype", default="bfloat16", choices=["bfloat16", "float16", "float32"])
+    gsub.add_argument("--dtype", default="bfloat16", choices=["bfloat16", "float16", "float32"],
+                      help="bfloat16 is what transformers 4.57's default ('auto') picks for Qwen3-4B")
+    gsub.add_argument("--max-new-tokens", type=int, default=8192,
+                      help="ceiling per model call (ISG asks for 300000; 0 keeps that)")
     gsub.add_argument("--device-map", default="auto")
     gsub.add_argument("--limit", type=int, default=0, help="only the first N repositories (to time a run)")
     args = p.parse_args(argv)
