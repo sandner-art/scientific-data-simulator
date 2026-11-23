@@ -607,8 +607,9 @@ def _significant_digits(value: float) -> int:
 
 
 def _nontrivial(value: float) -> bool:
-    """Numbers specific enough that a coincidental match is unlikely."""
-    if not math.isfinite(value) or value == 0:
+    """Numbers specific enough that a coincidental match is unlikely. A number with one significant
+    digit (1e16, 8000, 0.5) is a unit or a round number, never specific."""
+    if not math.isfinite(value) or value == 0 or _significant_digits(value) < 2:
         return False
     if value == int(value):
         return abs(value) >= 10 ** 5
@@ -636,7 +637,8 @@ def _copied(sorted_numbers: np.ndarray, value: float) -> bool:
     """
     if _contains(sorted_numbers, value, _COPY_TOL):
         return True
-    single = float(np.float32(value))
+    with np.errstate(over="ignore"):
+        single = float(np.float32(value))  # inf beyond float32's range, then not a copy
     if (sorted_numbers.size == 0 or not math.isfinite(single) or single == 0.0
             or abs(single - value) > abs(value) * 2.0 ** -23):
         return False  # float32 cannot hold this value (it would underflow to 0 and match every zero)
@@ -678,8 +680,10 @@ def _lookup_chance(sorted_numbers: np.ndarray, value: float, digits: int) -> flo
     if window.size == 0:
         return 0.0
     q = window / step
-    on_grid = np.abs(q - np.round(q)) <= 1e-6 * np.maximum(1.0, np.abs(q))
-    others = on_grid & (np.round(q) != round(value / step))
+    index = np.round(q)
+    # numbers that only round to 0 (much smaller than a step) are not on the grid; 0 itself is
+    on_grid = (np.abs(q - index) <= 1e-6 * np.maximum(1.0, np.abs(q))) & ((index != 0) | (window == 0))
+    others = on_grid & (index != round(value / step))
     return float(np.sum(others)) / (2 * _GRID_STEPS)
 
 

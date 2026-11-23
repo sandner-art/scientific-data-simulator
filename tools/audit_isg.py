@@ -35,6 +35,14 @@ manifest counts the cut calls per repository, and a line is printed per model ca
 entirely on the GPU (``--device-map cuda:0``): ISG's ``auto`` moves the layers that do not fit
 into free GPU memory to the CPU without saying so, and generation then runs at CPU speed.
 ``generate`` prints where the model sits and stops if part of it is off the GPU (``--allow-cpu``).
+
+``--backend ollama`` lets a local Ollama server write instead of transformers (on Windows the
+transformers path managed 5 tokens/s on an RTX A4000). The model is the same,
+Qwen3-4B-Instruct-2507 (``qwen3:4b-instruct-2507-fp16``, F16 instead of bfloat16); every prompt is
+rendered by the model's own chat template through its tokenizer, exactly as ISG's pipeline renders
+it; ISG's sampling parameters (temperature 0.7, top-p 0.8, top-k 20) are passed, with a seed per
+repository and call; replies come back in the pipeline's shape. Sampling by another engine gives
+other text than transformers would, as other hardware does too.
 ISG executes Python that the model writes for each dependent variable (while generating, and again
 when questions are generated): run it in its own environment. Sampling on other hardware or in
 another precision gives other repositories than the paper's; the blind baselines depend on the
@@ -547,6 +555,88 @@ def markdown(r: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------- generate
+OLLAMA_MODEL = "qwen3:4b-instruct-2507-fp16"  # the same Qwen3-4B-Instruct-2507, F16 GGUF
+QWEN_STOP = ["<|im_start|>", "<|im_end|>", "<|endoftext|>"]
+
+
+def load_tokenizer(name: str):
+    from transformers import AutoTokenizer
+    return AutoTokenizer.from_pretrained(name)
+
+
+class Ollama:
+    """A minimal client for a local Ollama server (standard library HTTP)."""
+
+    def __init__(self, url: str, model: str, num_ctx: int, timeout: float = 7200):
+        self.url, self.model, self.num_ctx, self.timeout = url.rstrip("/"), model, num_ctx, timeout
+
+    def _request(self, path: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(self.url + path, data=None if body is None else json.dumps(body).encode("utf-8"),
+                                     headers={"Content-Type": "application/json"},
+                                     method="GET" if body is None else "POST")
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Ollama {path}: HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}") from None
+        except urllib.error.URLError as e:
+            raise ConnectionError(f"Ollama is not reachable at {self.url} ({e.reason})") from None
+
+    def version(self) -> Optional[str]:
+        return self._request("/api/version").get("version")
+
+    def load(self) -> None:
+        self._request("/api/generate", {"model": self.model, "prompt": "", "keep_alive": "60m",
+                                        "options": {"num_ctx": self.num_ctx}})
+
+    def placement(self) -> Dict[str, Any]:
+        for m in self._request("/api/ps").get("models", []):
+            if self.model in (m.get("name"), m.get("model")):
+                return {"size_gb": round(m.get("size", 0) / 2 ** 30, 2),
+                        "vram_gb": round(m.get("size_vram", 0) / 2 ** 30, 2), "digest": m.get("digest")}
+        return {}
+
+    def generate(self, prompt: str, options: Dict[str, Any]) -> Dict[str, Any]:
+        return self._request("/api/generate", {"model": self.model, "prompt": prompt, "raw": True, "stream": False,
+                                               "keep_alive": "60m", "options": options})
+
+
+class OllamaPipe:
+    """Stands in for ISG's transformers text-generation pipeline: the chat is rendered as the
+    pipeline renders it (the model's own chat template, through its tokenizer), Ollama writes the
+    reply with ISG's sampling parameters, and the result has the pipeline's shape (a prefilled
+    final message is continued, as with ``continue_final_message``)."""
+
+    def __init__(self, client: Ollama, tokenizer, seed_of_call):
+        self.client, self.tokenizer, self.seed_of_call = client, tokenizer, seed_of_call
+        self.last: Optional[Dict[str, Any]] = None
+
+    def __call__(self, messages, **kw):
+        cont = bool(kw.get("continue_final_message"))
+        prompt = self.tokenizer.apply_chat_template(list(messages), tokenize=False, add_generation_prompt=not cont,
+                                                    continue_final_message=cont)
+        n_prompt = len(self.tokenizer(prompt, add_special_tokens=False)["input_ids"])
+        room = self.client.num_ctx - n_prompt - 16
+        if room < 64:
+            raise RuntimeError(f"a prompt of {n_prompt} tokens does not fit the context of {self.client.num_ctx}")
+        sample = kw.get("do_sample", True)
+        options = {"num_ctx": self.client.num_ctx, "num_predict": min(int(kw.get("max_new_tokens") or room), room),
+                   "temperature": float(kw.get("temperature", 1.0)) if sample else 0.0,
+                   "top_p": float(kw.get("top_p", 1.0)), "top_k": int(kw.get("top_k", 0) or 0), "min_p": 0.0,
+                   "repeat_penalty": 1.0, "seed": self.seed_of_call(), "stop": QWEN_STOP}
+        r = self.client.generate(prompt, options)
+        text = r.get("response", "")
+        self.last = {"tokens": r.get("eval_count"), "prompt_tokens": r.get("prompt_eval_count", n_prompt),
+                     "generation_seconds": (r.get("eval_duration") or 0) / 1e9}
+        if cont:
+            out = list(messages)[:-1] + [{"role": messages[-1]["role"], "content": messages[-1]["content"] + text}]
+        else:
+            out = list(messages) + [{"role": "assistant", "content": text}]
+        return [{"generated_text": out}]
+
+
 def model_placement(sim) -> Dict[str, int]:
     """Where the loaded model sits: device -> number of modules (``hf_device_map``), or
     parameters when the model has no device map."""
@@ -606,9 +696,13 @@ def run_generate(args) -> int:
             t0 = time.time()
             out = self._pipe(*a, **kw)
             seconds = time.time() - t0
+            last = getattr(self._pipe, "last", None)
             try:
-                text = out[0]["generated_text"][-1]["content"]
-                tokens = len(self._pipe.tokenizer(text, add_special_tokens=False)["input_ids"])
+                if last and last.get("tokens") is not None:
+                    tokens = int(last["tokens"])
+                else:
+                    text = out[0]["generated_text"][-1]["content"]
+                    tokens = len(self._pipe.tokenizer(text, add_special_tokens=False)["input_ids"])
             except Exception:
                 tokens = -1
             cut = bool(args.max_new_tokens) and tokens >= args.max_new_tokens - 1
@@ -616,17 +710,43 @@ def run_generate(args) -> int:
             calls["tokens"] += max(tokens, 0)
             calls["cut"] += cut
             calls["seconds"] += seconds
-            rate = f", {tokens / seconds:.0f} tokens/s" if seconds > 0 and tokens > 0 else ""
+            writing = last.get("generation_seconds") if last else None
+            rate = f", {tokens / (writing or seconds):.0f} tokens/s" if (writing or seconds) > 0 and tokens > 0 else ""
             print(f"    model call {calls['n']}: {tokens} tokens, {seconds:.0f} s{rate}"
                   + (" - cut at the ceiling" if cut else ""), flush=True)
             return out
 
-    def pipeline(*a, **kw):
-        kw["trust_remote_code"] = False  # Qwen3 is built into transformers; no model-supplied code
-        kw.setdefault("torch_dtype", dtype)
-        return Capped(original(*a, **kw))
+    current = {"seed": 0}
+    backend: Dict[str, Any] = {"name": args.backend}
+    if args.backend == "ollama":
+        client = Ollama(args.ollama_url, args.ollama_model, args.num_ctx)
+        try:
+            backend["version"] = client.version()
+            client.load()
+            backend.update(client.placement())
+        except (ConnectionError, RuntimeError) as e:
+            raise SystemExit(f"{e}. Start Ollama (ollama serve) and fetch the model (ollama pull {args.ollama_model}).")
+        backend.update(model=args.ollama_model, num_ctx=args.num_ctx, url=args.ollama_url)
+        print(f"Ollama {backend.get('version')}: {args.ollama_model}, {backend.get('vram_gb', 0):.1f} of "
+              f"{backend.get('size_gb', 0):.1f} GB on the GPU, context {args.num_ctx} tokens", flush=True)
+        if backend.get("size_gb") and backend.get("vram_gb", 0) < backend["size_gb"] - 0.01 and not args.allow_cpu:
+            raise SystemExit("part of the model is on the CPU, so it would write at CPU speed. Start Ollama with "
+                             "OLLAMA_NUM_PARALLEL=1, lower --num-ctx, or close programs that use GPU memory; "
+                             "--allow-cpu runs anyway.")
+        tokenizer = load_tokenizer(args.model)
+
+        def seed_of_call():  # reproducible per repository and call
+            return (current["seed"] * 100003 + calls["n"]) % 2 ** 31
+
+        def pipeline(*a, **kw):
+            return Capped(OllamaPipe(client, tokenizer, seed_of_call))
+    else:
+        def pipeline(*a, **kw):
+            kw["trust_remote_code"] = False  # Qwen3 is built into transformers; no model-supplied code
+            kw.setdefault("torch_dtype", dtype)
+            return Capped(original(*a, **kw))
     isg_llm.pipeline = functools.wraps(original)(pipeline)
-    cuda = torch.cuda.is_available()
+    cuda = torch.cuda.is_available() and args.backend == "transformers"
     device_map = args.device_map or ("cuda:0" if cuda else "cpu")
     free = None
     if cuda:
@@ -644,11 +764,11 @@ def run_generate(args) -> int:
         raise SystemExit(f"part of the model is on {', '.join(elsewhere)}, so it would write at CPU speed. Close "
                          "programs that use GPU memory and run again with --device-map cuda:0 (the default), or "
                          "pass --allow-cpu to run anyway.")
-    device = torch.cuda.get_device_name(0) if cuda else "cpu"
+    device = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
     manifest_path = os.path.join(args.fs_dir, "regeneration_manifest.json")
     manifest = {"model": args.model, "dtype": args.dtype, "device": device, "isg": _provenance(isg),
                 "torch": torch.__version__, "max_new_tokens": args.max_new_tokens or 300000,
-                "device_map": device_map, "placement": placement,
+                "backend": backend, "device_map": device_map, "placement": placement,
                 "gpu_free_gb_before_loading": round(free / 2 ** 30, 2) if free is not None else None,
                 "seconds": {}, "failed": {}, "model_calls": {}}
     if os.path.exists(manifest_path):
@@ -658,6 +778,7 @@ def run_generate(args) -> int:
     for n, seed in enumerate(todo, 1):
         t0 = time.time()
         calls.update(n=0, tokens=0, cut=0, seconds=0.0)
+        current["seed"] = seed
         print(f"[{n}/{len(todo)}] seed {seed}", flush=True)
         try:
             fs = sim.get_filesystem(seed)
@@ -706,6 +827,11 @@ def main(argv=None) -> int:
                       help="default: cuda:0 when a GPU is present (all of the model on it), else cpu; 'auto' lets "
                            "transformers move layers that do not fit to the CPU, as ISG does")
     gsub.add_argument("--allow-cpu", action="store_true", help="run even if part of the model is on the CPU")
+    gsub.add_argument("--backend", default="transformers", choices=["transformers", "ollama"],
+                      help="who writes: ISG's transformers pipeline, or a local Ollama server (much faster on Windows)")
+    gsub.add_argument("--ollama-model", default=OLLAMA_MODEL)
+    gsub.add_argument("--ollama-url", default="http://localhost:11434")
+    gsub.add_argument("--num-ctx", type=int, default=16384, help="Ollama context (prompt + reply) in tokens")
     gsub.add_argument("--limit", type=int, default=0, help="only the first N repositories (to time a run)")
     args = p.parse_args(argv)
     if args.command == "generate":

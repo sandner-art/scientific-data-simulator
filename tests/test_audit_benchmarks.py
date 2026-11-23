@@ -202,9 +202,15 @@ def test_leak_hits_are_located_with_a_chance_estimate(tmp_path):
 
 
 def test_audit_counts_digits_without_padding_and_discounts_chance_matches(tmp_path):
-    from scidatasim.audit import _printed_digits, audit_export
+    import warnings
+    from scidatasim.audit import _copied, _lookup_chance, _nontrivial, _printed_digits, audit_export
     assert [_printed_digits(t) for t in ("2.50000000e-01", "0.25", "1.482000", "8000", "13.7094", "1013.0")] \
         == [2, 2, 4, 1, 6, 4]
+    assert not _nontrivial(1e16) and not _nontrivial(8000.0) and _nontrivial(123456.0) and _nontrivial(13.7094)
+    assert _lookup_chance(np.array([0.0005, 3.0, 2e16]), 2e16, 1) == 0.0  # small numbers are not on a 1e16 grid
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert not _copied(np.array([1.0, 2.0]), 1e300)  # beyond float32: no overflow warning
     pub = tmp_path / "public"
     pub.mkdir()
     pressures = np.round(np.random.default_rng(1).normal(1013.25, 3.0, 5000), 1)
@@ -374,13 +380,18 @@ def _fake_isg(tmp_path):
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text(
         "from .llm import LLM\n"
+        "OUTPUTS = []\n"
+        "SAMPLING = dict(do_sample=True, max_new_tokens=300000, temperature=0.7, top_p=0.8, top_k=20)\n"
         "class _FS:\n    def __init__(self, s): self.s = s\n    def to_json(self): return {'seed': self.s}\n"
         "class Simulator:\n"
         "    def __init__(self, story_config, fs_config, file_config, device_map, model_name):\n"
         "        self.llm = LLM(model_name, device_map)\n"
         "    def get_filesystem(self, seed):\n"
         "        if seed == 3:\n            raise RuntimeError('corrupted')\n"
-        "        self.llm.pipe([{'role': 'user', 'content': 'story'}], do_sample=True, max_new_tokens=300000)\n"
+        "        story = self.llm.pipe([{'role': 'user', 'content': 'story'}], **SAMPLING)\n"
+        "        code = self.llm.pipe([{'role': 'user', 'content': 'code'}, {'role': 'assistant', 'content': 'PRE:'}],\n"
+        "                             continue_final_message=True, **SAMPLING)\n"
+        "        OUTPUTS.append((story, code))\n"
         "        return _FS(seed)\n")
     (pkg / "llm.py").write_text(
         "import json, os, types\n"
@@ -428,8 +439,8 @@ def test_isg_generate_runs_only_the_needed_seeds_and_resumes(tmp_path, monkeypat
         llm = sys.modules["simulator.llm"]
         assert llm.CALLS[0]["trust_remote_code"] is False and llm.CALLS[0]["torch_dtype"] == "bf16"
         assert llm.CALLS[0]["device_map"] == "cpu" and man["device_map"] == "cpu"  # no GPU here
-        assert [g["max_new_tokens"] for g in llm.GENERATE] == [8192, 8192]  # ISG's 300000, capped
-        assert man["model_calls"]["1"] == {"n": 1, "tokens": 3, "cut": 0, "seconds": man["model_calls"]["1"]["seconds"]}
+        assert [g["max_new_tokens"] for g in llm.GENERATE] == [8192] * 4  # ISG's 300000, capped
+        assert man["model_calls"]["1"] == {"n": 2, "tokens": 6, "cut": 0, "seconds": man["model_calls"]["1"]["seconds"]}
         assert man["max_new_tokens"] == 8192
         assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(fs_dir)]) == 0  # only seed 3 retried
         assert list(json.loads((fs_dir / "regeneration_manifest.json").read_text())["failed"]) == ["3"]
@@ -456,4 +467,106 @@ def test_isg_generate_refuses_a_model_partly_on_the_cpu(tmp_path, monkeypatch):
         assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(tmp_path / "fs2")]) == 0
         assert sys.modules["simulator.llm"].CALLS[0]["device_map"] == "cuda:0"  # the default with a GPU
     finally:
+        _forget_fake_isg()
+
+
+class _FakeOllama:
+    """An Ollama server stand-in on a free local port: records requests, answers like Ollama."""
+
+    def __init__(self, vram_share=1.0):
+        import http.server
+        import threading
+        self.requests, self.vram_share = [], vram_share
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _send(self, obj):
+                data = json.dumps(obj).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def do_GET(self):
+                if self.path == "/api/version":
+                    return self._send({"version": "0.0-test"})
+                size = 9 * 2 ** 30
+                self._send({"models": [{"name": "qwen3:4b-instruct-2507-fp16", "model": "qwen3:4b-instruct-2507-fp16",
+                                        "size": size, "size_vram": int(size * outer.vram_share), "digest": "abc"}]})
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                outer.requests.append(body)
+                if not body.get("prompt"):
+                    return self._send({"done": True})
+                self._send({"response": " written", "eval_count": 7, "eval_duration": 5e8, "prompt_eval_count": 5,
+                            "done": True})
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+
+
+class _FakeTokenizer:
+    def apply_chat_template(self, messages, tokenize, add_generation_prompt, continue_final_message):
+        return json.dumps({"messages": messages, "generation_prompt": add_generation_prompt,
+                           "continue": continue_final_message})
+
+    def __call__(self, text, add_special_tokens=False):
+        return {"input_ids": text.split()}
+
+
+def test_isg_generate_with_ollama_renders_prompts_like_the_pipeline(tmp_path, monkeypatch):
+    ig = _tool("audit_isg")
+    isg = _fake_isg(tmp_path)
+    _fake_torch(monkeypatch, cuda=True)
+    monkeypatch.setattr(ig, "load_tokenizer", lambda name: _FakeTokenizer())
+    server = _FakeOllama()
+    fs_dir = tmp_path / "fs"
+    try:
+        assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(fs_dir), "--backend", "ollama",
+                        "--ollama-url", server.url, "--num-ctx", "20000"]) == 0
+        assert sys.modules["simulator.llm"].CALLS == []  # transformers never loaded
+        writes = [r for r in server.requests if r.get("prompt")]
+        assert len(writes) == 4 and all(r["raw"] and not r["stream"] for r in writes)
+        o = writes[0]["options"]
+        assert (o["num_predict"], o["temperature"], o["top_p"], o["top_k"], o["min_p"], o["num_ctx"]) == \
+            (8192, 0.7, 0.8, 20, 0.0, 20000)
+        assert "<|im_end|>" in o["stop"] and len({r["options"]["seed"] for r in writes}) == 4
+        first, prefill = (json.loads(r["prompt"]) for r in writes[:2])
+        assert first["generation_prompt"] and not first["continue"]
+        assert prefill["continue"] and not prefill["generation_prompt"]
+        story, code = sys.modules["simulator"].OUTPUTS[0]
+        assert story[0]["generated_text"][-1] == {"role": "assistant", "content": " written"}
+        assert code[0]["generated_text"][-1] == {"role": "assistant", "content": "PRE: written"}
+        man = json.loads((fs_dir / "regeneration_manifest.json").read_text())
+        assert man["backend"]["name"] == "ollama" and man["backend"]["vram_gb"] == 9.0
+        assert man["model_calls"]["1"]["tokens"] == 14  # Ollama's own counts
+    finally:
+        server.close()
+        _forget_fake_isg()
+
+
+def test_isg_generate_with_ollama_stops_when_the_model_spills_to_the_cpu(tmp_path, monkeypatch):
+    ig = _tool("audit_isg")
+    isg = _fake_isg(tmp_path)
+    _fake_torch(monkeypatch, cuda=True)
+    monkeypatch.setattr(ig, "load_tokenizer", lambda name: _FakeTokenizer())
+    server = _FakeOllama(vram_share=0.7)
+    try:
+        with pytest.raises(SystemExit, match="part of the model is on the CPU"):
+            ig.main(["generate", "--isg", str(isg), "--fs-dir", str(tmp_path / "fs"), "--backend", "ollama",
+                     "--ollama-url", server.url])
+        with pytest.raises(SystemExit, match="not reachable"):
+            ig.main(["generate", "--isg", str(isg), "--fs-dir", str(tmp_path / "fs"), "--backend", "ollama",
+                     "--ollama-url", "http://127.0.0.1:9"])
+    finally:
+        server.close()
         _forget_fake_isg()

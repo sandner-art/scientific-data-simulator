@@ -28,7 +28,7 @@ writes. The method is described in full in the tool's docstring.
 
 | | Version used on 23 November 2026 |
 |---|---|
-| scidatasim | this repository, commit 876c18e (patch 0058) or later |
+| scidatasim | this repository: commit 876c18e (patch 0058) for run A, 1172ae8 (patch 0060) for run B |
 | SciLaws-Bench code (harness, published agent scores) | `https://github.com/yiyihum/SciLaws-Bench`, commit `8174c7b5289fd3e414892f20efca322cb1e0e5e9` |
 | SciLaws-Bench data | Hugging Face dataset `RealSR/SciLaws-Bench`, `tasks/` only (1.1 GB), revision `<REVISION>` |
 | Python | 3.12.10 (any 3.10-3.13 should do), with scidatasim's dependencies (numpy 2.2.6, pandas, scipy, PyYAML) |
@@ -117,14 +117,17 @@ code (`baseline_agent/model_task_scores.json`).
 | gpt-5-mini, gpt5.4-mini | 0.407, 0.372 | 43, 40 |
 | gpt-4o-mini | 0.206 | 18 |
 
-The fitting is seeded per task, so a rerun on the same versions should give the same S_N values.
+The fitting is seeded per task. Run B (1172ae8) reproduced run A (876c18e) exactly on the same machine: all
+352 per-task results (three limits, 118 tasks) and every family's S_N are identical.
 
-The leak-audit counts in that run came from patch 0058. Patch 0060 changed two of the audit's rules:
+Run A's leak-audit counts came from patch 0058. Patch 0060 changed two of the audit's rules, and run B
+used them:
 - zeros that only pad a printed number are not significant digits;
 - a numeric match that chance explains on that number's grid is reported as `answer_lookup_chance`
   (info), not counted as a leak.
 
-The solver-facing findings therefore differ from the 23 November report. That run flagged nine
-tasks. The hits inspected by hand were explained by chance, by a deliberate hint in the metadata
-(`V_m = M_mol / rho_liq`), or by padded round numbers. A run with 0060 lists every counted hit with
-its file and the number of matches chance would give.
+Run A flagged nine tasks. In run B no solver-facing file of any task contains the hidden law. One
+high finding remains: a deliberate hint in the metadata of the surface-tension task (the derived
+input `V_m = M_mol / rho_liq`, a sub-expression of the law). Ten tasks have matches that chance
+explains. In electron-impact ionization the matched constant was 1e16, a unit conversion; since
+patch 0062, numbers with a single significant digit are never treated as specific.
