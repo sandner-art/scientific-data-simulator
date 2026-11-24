@@ -43,6 +43,20 @@ rendered by the model's own chat template through its tokenizer, exactly as ISG'
 it; ISG's sampling parameters (temperature 0.7, top-p 0.8, top-k 20) are passed, with a seed per
 repository and call; replies come back in the pipeline's shape. Sampling by another engine gives
 other text than transformers would, as other hardware does too.
+
+Several repositories at once (``--shard I/N``): the seeds are dealt into N interleaved shards and a
+process builds shard I, so several processes against one Ollama server (with
+``OLLAMA_NUM_PARALLEL`` slots), or processes on several machines, split the work without overlap.
+Each shard keeps its own manifest (``regeneration_manifest.shard-I-of-N.json``), and every manifest
+records per repository the machine (``--machine``; default: the GPUs ``nvidia-smi`` lists) and
+the engine that built it; ``audit`` pools the manifests it finds next to the questions.
+``--stop-after H`` starts no repository after H hours (a Kaggle session ends at 12 h);
+``--ollama-digest`` refuses a model whose digest differs, so every machine writes with the same
+weights. Each model call's line gives the prompt and reply lengths, and the manifest the largest
+context per repository, which sets how many slots fit in GPU memory. Parallel decoding gives each
+call the same seed as before, but batches change the floating-point sums, so two runs can differ.
+``docs/reproduce/isg_regeneration.md`` gives the steps, locally and on Kaggle.
+
 ISG executes Python that the model writes for each dependent variable (while generating, and again
 when questions are generated): run it in its own environment. Sampling on other hardware or in
 another precision gives other repositories than the paper's; the blind baselines depend on the
@@ -53,6 +67,7 @@ from the paper's.
     git -C isg checkout 2006f69872986e502074282ee4d23634e0cab689
     python tools/audit_isg.py audit --isg isg --out experiments_output/isg              # seeds.txt only
     python tools/audit_isg.py generate --isg isg --fs-dir isg/data/fs                   # GPU, hours
+    python tools/audit_isg.py generate --isg isg --fs-dir isg/data/fs --backend ollama --shard 1/2  # and 2/2
     (cd isg && python scripts/2_generate_questions.py --cache-dir ./data --n-seeded-samples 5)
     python tools/audit_isg.py audit --isg isg --qa isg/data/qa --out experiments_output/isg
 
@@ -62,6 +77,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import glob
 import json
 import math
 import os
@@ -438,9 +454,9 @@ def run_audit(args) -> Dict[str, Any]:
         return report
     items, missing = load_items(keys, args.qa)
     report["regeneration"] = regeneration_check(items, missing)
-    if args.regeneration_manifest and os.path.exists(args.regeneration_manifest):
-        with open(args.regeneration_manifest, encoding="utf-8") as f:
-            report["generation_manifest"] = json.load(f)
+    paths = manifest_paths(args.regeneration_manifest)
+    if paths:
+        report["generation_manifest"] = merge_manifests(paths)
     if not items:
         return report
     report["quality_card"] = quality_card(items)
@@ -459,6 +475,54 @@ def run_audit(args) -> Dict[str, Any]:
         other, _ = load_items(keys, args.compare_qa)
         report["compare"] = compare_regenerations(items, other)
     return report
+
+
+def manifest_paths(path: Optional[str]) -> List[str]:
+    """A manifest file, or every ``regeneration_manifest*.json`` in a directory (one per shard)."""
+    if not path:
+        return []
+    if os.path.isdir(path):
+        return sorted(glob.glob(os.path.join(path, "regeneration_manifest*.json")))
+    return [path] if os.path.exists(path) else []
+
+
+def _engine(m: Dict[str, Any]) -> str:
+    """Who wrote, from a manifest's top-level fields (manifests before 0.8 record no per-seed machine)."""
+    b = m.get("backend") or {}
+    if b.get("name") == "ollama":
+        return f"Ollama {b.get('version')}, {b.get('model')} ({str(b.get('digest') or '')[:12]})"
+    return f"transformers, {m.get('model')} in {m.get('dtype')}"
+
+
+def merge_manifests(paths: Sequence[str]) -> Dict[str, Any]:
+    """Pool the manifests of shards and machines: a repository built anywhere counts as built."""
+    seconds: Dict[str, float] = {}
+    failed: Dict[str, str] = {}
+    calls: Dict[str, Dict[str, Any]] = {}
+    where: Dict[str, str] = {}
+    for p in paths:
+        with open(p, encoding="utf-8") as f:
+            m = json.load(f)
+        built = m.get("seconds") or {}
+        seconds.update(built)
+        calls.update(m.get("model_calls") or {})
+        for s, e in (m.get("failed") or {}).items():
+            failed.setdefault(s, e)
+        default = f"{_engine(m)} on {m.get('device')}"
+        recorded = m.get("where") or {}
+        for s in built:
+            where[s] = recorded.get(s, default)
+    for s in seconds:
+        failed.pop(s, None)
+    done = [calls[s] for s in seconds if s in calls]
+    contexts = [c["max_context"] for c in done if c.get("max_context")]
+    prompts = [c["max_prompt"] for c in done if c.get("max_prompt")]
+    return {"files": [os.path.basename(p) for p in paths], "n_done": len(seconds), "n_failed": len(failed),
+            "failed": failed, "built_with": dict(Counter(where.values()).most_common()),
+            "model_calls": sum(c.get("n", 0) for c in done), "tokens": sum(c.get("tokens", 0) for c in done),
+            "cut": sum(c.get("cut", 0) for c in done), "largest_context": max(contexts) if contexts else None,
+            "largest_prompt": max(prompts) if prompts else None,
+            "repository_hours": round(sum(seconds.values()) / 3600, 1)}
 
 
 def _provenance(isg: Optional[str]) -> Dict[str, Any]:
@@ -502,8 +566,13 @@ def markdown(r: Dict[str, Any]) -> str:
               if g.get("extensions_vs_paper_p") is not None else "", ""]
         if r.get("generation_manifest"):
             m = r["generation_manifest"]
-            L += [f"Generated with {m.get('model')} in {m.get('dtype')} on {m.get('device')}; "
-                  f"{m.get('n_done')} repositories, {m.get('n_failed')} failed.", ""]
+            L += [f"Generation ({len(m['files'])} manifest{'s' if len(m['files']) != 1 else ''}): {m['n_done']} "
+                  f"repositories built, {m['n_failed']} failed; {m['model_calls']} model calls, {m['cut']} cut at the "
+                  f"ceiling; {m['repository_hours']} h summed over repositories"
+                  + (f"; largest context {m['largest_context']} tokens" if m.get("largest_context") else "")
+                  + (f" (largest prompt {m['largest_prompt']})" if m.get("largest_prompt") else "") + ".",
+                  "", "| Built with | Repositories |", "|---|---:|"]
+            L += [f"| {k} | {v} |" for k, v in m["built_with"].items()] + [""]
         if r.get("compare"):
             c = r["compare"]
             L += [f"Two regenerations: {c['same_question']}/{c['shared']} identical questions, "
@@ -595,7 +664,8 @@ class Ollama:
         for m in self._request("/api/ps").get("models", []):
             if self.model in (m.get("name"), m.get("model")):
                 return {"size_gb": round(m.get("size", 0) / 2 ** 30, 2),
-                        "vram_gb": round(m.get("size_vram", 0) / 2 ** 30, 2), "digest": m.get("digest")}
+                        "vram_gb": round(m.get("size_vram", 0) / 2 ** 30, 2), "digest": m.get("digest"),
+                        "quantization": (m.get("details") or {}).get("quantization_level")}
         return {}
 
     def generate(self, prompt: str, options: Dict[str, Any]) -> Dict[str, Any]:
@@ -629,12 +699,42 @@ class OllamaPipe:
         r = self.client.generate(prompt, options)
         text = r.get("response", "")
         self.last = {"tokens": r.get("eval_count"), "prompt_tokens": r.get("prompt_eval_count", n_prompt),
-                     "generation_seconds": (r.get("eval_duration") or 0) / 1e9}
+                     "generation_seconds": (r.get("eval_duration") or 0) / 1e9, "limit": options["num_predict"],
+                     "done_reason": r.get("done_reason")}
         if cont:
             out = list(messages)[:-1] + [{"role": messages[-1]["role"], "content": messages[-1]["content"] + text}]
         else:
             out = list(messages) + [{"role": "assistant", "content": text}]
         return [{"generated_text": out}]
+
+
+def _shard(text: str) -> Tuple[int, int]:
+    m = re.fullmatch(r"\s*(\d+)\s*/\s*(\d+)\s*", text or "")
+    if not m or not 1 <= int(m.group(1)) <= int(m.group(2)):
+        raise argparse.ArgumentTypeError(f"I/N with 1 <= I <= N, not {text!r}")
+    return int(m.group(1)), int(m.group(2))
+
+
+def _digest(text: Any) -> str:
+    return str(text or "").lower().split(":")[-1]
+
+
+def machine_label(given: Optional[str], torch_mod) -> str:
+    """``--machine``, else the GPUs nvidia-smi lists (2 x Tesla T4), else torch's first GPU."""
+    if given:
+        return given
+    import subprocess
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True,
+                             text=True, timeout=30).stdout
+        names = [line.strip() for line in out.splitlines() if line.strip()]
+    except Exception:  # no NVIDIA driver here, or nvidia-smi not on PATH
+        names = []
+    if not names and torch_mod.cuda.is_available():
+        names = [torch_mod.cuda.get_device_name(0)]
+    if not names:
+        return "no GPU found"
+    return ", ".join(f"{n} x {name}" if n > 1 else name for name, n in Counter(names).items())
 
 
 def model_placement(sim) -> Dict[str, int]:
@@ -659,14 +759,18 @@ def model_placement(sim) -> Dict[str, int]:
 
 def run_generate(args) -> int:
     """ISG's ``1_generate_filesystem.py`` loop, for the seeds the 500 items use, resumable."""
+    t_begin = time.time()
     isg = os.path.abspath(args.isg)
     keys = read_seeds(seeds_path(args.isg, args.seeds))
     seeds = sorted({int(k.split(".")[0]) for k in keys})
     if args.limit:
         seeds = seeds[:args.limit]
+    shard, n_shards = args.shard
+    seeds = seeds[shard - 1::n_shards]  # interleaved: every shard gets early and late seeds alike
     os.makedirs(args.fs_dir, exist_ok=True)
     todo = [s for s in seeds if not os.path.exists(os.path.join(args.fs_dir, f"{s}.json"))]
-    print(f"{len(seeds)} repositories needed, {len(seeds) - len(todo)} already in {args.fs_dir}", flush=True)
+    part = f" in shard {shard} of {n_shards}" if n_shards > 1 else ""
+    print(f"{len(seeds)} repositories needed{part}, {len(seeds) - len(todo)} already in {args.fs_dir}", flush=True)
     if not todo:
         return 0
     import functools
@@ -679,7 +783,10 @@ def run_generate(args) -> int:
     from simulator.utils import load_taxonomy
     dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[args.dtype]
     original = isg_llm.pipeline
-    calls = {"n": 0, "tokens": 0, "cut": 0, "seconds": 0.0}
+    fresh = {"n": 0, "tokens": 0, "cut": 0, "seconds": 0.0, "prompt_tokens": None, "max_prompt": None,
+             "max_context": None}
+    calls = dict(fresh)
+    run_context = {"max": 0, "prompt": 0}
 
     class Capped:
         """ISG's text-generation pipeline with a ceiling on new tokens and a line per call."""
@@ -705,15 +812,28 @@ def run_generate(args) -> int:
                     tokens = len(self._pipe.tokenizer(text, add_special_tokens=False)["input_ids"])
             except Exception:
                 tokens = -1
-            cut = bool(args.max_new_tokens) and tokens >= args.max_new_tokens - 1
+            # Ollama says why it stopped; its limit is lower than the ceiling when the context is short
+            ceiling = (last or {}).get("limit") or args.max_new_tokens
+            if last and last.get("done_reason"):
+                cut = last["done_reason"] == "length"
+            else:
+                cut = bool(ceiling) and tokens >= ceiling - 1
             calls["n"] += 1
             calls["tokens"] += max(tokens, 0)
             calls["cut"] += cut
             calls["seconds"] += seconds
+            prompt = last.get("prompt_tokens") if last else None  # known when the backend reports it
+            if prompt is not None:
+                context = int(prompt) + max(tokens, 0)
+                calls["prompt_tokens"] = (calls["prompt_tokens"] or 0) + int(prompt)
+                calls["max_prompt"] = max(calls["max_prompt"] or 0, int(prompt))
+                calls["max_context"] = max(calls["max_context"] or 0, context)
+                run_context["max"] = max(run_context["max"], context)
+                run_context["prompt"] = max(run_context["prompt"], int(prompt))
             writing = last.get("generation_seconds") if last else None
             rate = f", {tokens / (writing or seconds):.0f} tokens/s" if (writing or seconds) > 0 and tokens > 0 else ""
-            print(f"    model call {calls['n']}: {tokens} tokens, {seconds:.0f} s{rate}"
-                  + (" - cut at the ceiling" if cut else ""), flush=True)
+            print(f"    model call {calls['n']}: " + (f"prompt {prompt} + " if prompt is not None else "")
+                  + f"{tokens} tokens, {seconds:.0f} s{rate}" + (" - cut at the ceiling" if cut else ""), flush=True)
             return out
 
     current = {"seed": 0}
@@ -727,12 +847,17 @@ def run_generate(args) -> int:
         except (ConnectionError, RuntimeError) as e:
             raise SystemExit(f"{e}. Start Ollama (ollama serve) and fetch the model (ollama pull {args.ollama_model}).")
         backend.update(model=args.ollama_model, num_ctx=args.num_ctx, url=args.ollama_url)
-        print(f"Ollama {backend.get('version')}: {args.ollama_model}, {backend.get('vram_gb', 0):.1f} of "
-              f"{backend.get('size_gb', 0):.1f} GB on the GPU, context {args.num_ctx} tokens", flush=True)
+        print(f"Ollama {backend.get('version')}: {args.ollama_model} ({_digest(backend.get('digest'))[:12]}), "
+              f"{backend.get('vram_gb', 0):.1f} of {backend.get('size_gb', 0):.1f} GB on the GPU, context "
+              f"{args.num_ctx} tokens per slot", flush=True)
+        if args.ollama_digest and not _digest(backend.get("digest")).startswith(_digest(args.ollama_digest)):
+            raise SystemExit(f"Ollama serves {args.ollama_model} with digest {_digest(backend.get('digest'))[:12]}, not "
+                             f"{args.ollama_digest}: other weights than the other machines'. Pull the model again or "
+                             "check the name.")
         if backend.get("size_gb") and backend.get("vram_gb", 0) < backend["size_gb"] - 0.01 and not args.allow_cpu:
-            raise SystemExit("part of the model is on the CPU, so it would write at CPU speed. Start Ollama with "
-                             "OLLAMA_NUM_PARALLEL=1, lower --num-ctx, or close programs that use GPU memory; "
-                             "--allow-cpu runs anyway.")
+            raise SystemExit("part of the model is on the CPU, so it would write at CPU speed. Ollama reserves "
+                             "--num-ctx tokens of context for each of its OLLAMA_NUM_PARALLEL slots: lower one of "
+                             "them, or close programs that use GPU memory; --allow-cpu runs anyway.")
         tokenizer = load_tokenizer(args.model)
 
         def seed_of_call():  # reproducible per repository and call
@@ -764,20 +889,36 @@ def run_generate(args) -> int:
         raise SystemExit(f"part of the model is on {', '.join(elsewhere)}, so it would write at CPU speed. Close "
                          "programs that use GPU memory and run again with --device-map cuda:0 (the default), or "
                          "pass --allow-cpu to run anyway.")
-    device = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
-    manifest_path = os.path.join(args.fs_dir, "regeneration_manifest.json")
-    manifest = {"model": args.model, "dtype": args.dtype, "device": device, "isg": _provenance(isg),
-                "torch": torch.__version__, "max_new_tokens": args.max_new_tokens or 300000,
-                "backend": backend, "device_map": device_map, "placement": placement,
+    machine = machine_label(args.machine, torch)
+    device = (torch.cuda.get_device_name(0) if torch.cuda.is_available()
+              else "cpu" if args.backend == "transformers" else machine)
+    if args.backend == "ollama":
+        dtype_used = backend.get("quantization") or "as Ollama serves it"
+        engine = f"{_engine({'backend': backend})}, context {args.num_ctx}"
+    else:
+        dtype_used = args.dtype
+        engine = f"transformers, {args.model} in {args.dtype}, device map {device_map}"
+    name = "regeneration_manifest" + (f".shard-{shard}-of-{n_shards}" if n_shards > 1 else "") + ".json"
+    manifest_path = os.path.join(args.fs_dir, name)
+    manifest = {"model": args.model, "dtype": dtype_used, "device": device, "machine": machine,
+                "isg": _provenance(isg), "torch": torch.__version__, "max_new_tokens": args.max_new_tokens or 300000,
+                "backend": backend, "device_map": device_map, "placement": placement, "shard": [shard, n_shards],
+                "limit": args.limit or None,
                 "gpu_free_gb_before_loading": round(free / 2 ** 30, 2) if free is not None else None,
-                "seconds": {}, "failed": {}, "model_calls": {}}
+                "seconds": {}, "failed": {}, "model_calls": {}, "where": {}}
     if os.path.exists(manifest_path):
         with open(manifest_path, encoding="utf-8") as f:
-            manifest.update({k: v for k, v in json.load(f).items() if k in ("seconds", "failed", "model_calls")})
+            manifest.update({k: v for k, v in json.load(f).items()
+                             if k in ("seconds", "failed", "model_calls", "where")})
     t_start = time.time()
     for n, seed in enumerate(todo, 1):
+        if args.stop_after and time.time() - t_begin > args.stop_after * 3600:
+            print(f"stopping: {args.stop_after} h have passed (--stop-after); {len(todo) - n + 1} repositories "
+                  "left for the next run", flush=True)
+            break
         t0 = time.time()
-        calls.update(n=0, tokens=0, cut=0, seconds=0.0)
+        calls.clear()
+        calls.update(fresh)
         current["seed"] = seed
         print(f"[{n}/{len(todo)}] seed {seed}", flush=True)
         try:
@@ -787,6 +928,7 @@ def run_generate(args) -> int:
                 json.dump(fs.to_json(), f, indent=2)
             os.replace(final + ".tmp", final)
             manifest["seconds"][str(seed)] = round(time.time() - t0, 1)
+            manifest["where"][str(seed)] = f"{engine} on {machine}"
             manifest["failed"].pop(str(seed), None)
         except Exception as e:  # ISG marks such seeds corrupted; the item will be missing
             manifest["failed"][str(seed)] = f"{type(e).__name__}: {e}"[:300]
@@ -796,9 +938,14 @@ def run_generate(args) -> int:
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=1)
         rate = (time.time() - t_start) / n
+        largest = f", largest context {calls['max_context']}" if calls["max_context"] else ""
         print(f"[{n}/{len(todo)}] seed {seed} {'done' if str(seed) in manifest['seconds'] else 'FAILED'} in "
-              f"{time.time() - t0:.0f} s ({calls['n']} model calls, {calls['cut']} cut); about "
+              f"{time.time() - t0:.0f} s ({calls['n']} model calls, {calls['cut']} cut{largest}); about "
               f"{rate * (len(todo) - n) / 3600:.1f} h left", flush=True)
+    if run_context["max"]:
+        print(f"largest context in this run: {run_context['max']} of {args.num_ctx} tokens (largest prompt "
+              f"{run_context['prompt']}); a smaller --num-ctx changes no reply while it is at least the largest "
+              f"prompt + {args.max_new_tokens + 16}", flush=True)
     return 0
 
 
@@ -810,7 +957,9 @@ def main(argv=None) -> int:
     a.add_argument("--seeds", help="seeds.txt, if not in --isg")
     a.add_argument("--qa", help="the regenerated question files (data/qa from 2_generate_questions.py)")
     a.add_argument("--compare-qa", help="a second regeneration, for a determinism check")
-    a.add_argument("--regeneration-manifest", help="regeneration_manifest.json written by 'generate'")
+    a.add_argument("--regeneration-manifest",
+                   help="a manifest written by 'generate', or a directory whose regeneration_manifest*.json are "
+                        "pooled (default: the fs directory next to --qa)")
     a.add_argument("--permutations", type=int, default=200)
     a.add_argument("--repeats", type=int, default=20, help="random halves for the blind policies")
     a.add_argument("--out", default=os.path.join("experiments_output", "isg"))
@@ -831,14 +980,22 @@ def main(argv=None) -> int:
                       help="who writes: ISG's transformers pipeline, or a local Ollama server (much faster on Windows)")
     gsub.add_argument("--ollama-model", default=OLLAMA_MODEL)
     gsub.add_argument("--ollama-url", default="http://localhost:11434")
-    gsub.add_argument("--num-ctx", type=int, default=16384, help="Ollama context (prompt + reply) in tokens")
+    gsub.add_argument("--num-ctx", type=int, default=16384,
+                      help="Ollama context (prompt + reply) in tokens, per slot; the same on every process")
+    gsub.add_argument("--ollama-digest", help="refuse unless Ollama's model digest starts with this (all machines "
+                                              "write with the same weights)")
     gsub.add_argument("--limit", type=int, default=0, help="only the first N repositories (to time a run)")
+    gsub.add_argument("--shard", type=_shard, default=(1, 1), metavar="I/N",
+                      help="build shard I of N (seeds dealt round-robin after --limit); keep N the same everywhere")
+    gsub.add_argument("--stop-after", type=float, default=0, metavar="HOURS",
+                      help="start no repository after this many hours (a Kaggle session ends at 12)")
+    gsub.add_argument("--machine", help="recorded per repository (default: the GPUs nvidia-smi lists)")
     args = p.parse_args(argv)
     if args.command == "generate":
         return run_generate(args)
-    if args.qa and not args.regeneration_manifest:
-        guess = os.path.join(os.path.dirname(os.path.abspath(args.qa)), "fs", "regeneration_manifest.json")
-        args.regeneration_manifest = guess if os.path.exists(guess) else None
+    if args.qa and not args.regeneration_manifest:  # ISG's layout: data/qa next to data/fs
+        guess = os.path.join(os.path.dirname(os.path.abspath(args.qa)), "fs")
+        args.regeneration_manifest = guess if os.path.isdir(guess) else None
     report = run_audit(args)
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "isg_audit.json"), "w", encoding="utf-8") as f:

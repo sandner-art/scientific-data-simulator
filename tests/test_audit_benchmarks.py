@@ -440,8 +440,11 @@ def test_isg_generate_runs_only_the_needed_seeds_and_resumes(tmp_path, monkeypat
         assert llm.CALLS[0]["trust_remote_code"] is False and llm.CALLS[0]["torch_dtype"] == "bf16"
         assert llm.CALLS[0]["device_map"] == "cpu" and man["device_map"] == "cpu"  # no GPU here
         assert [g["max_new_tokens"] for g in llm.GENERATE] == [8192] * 4  # ISG's 300000, capped
-        assert man["model_calls"]["1"] == {"n": 2, "tokens": 6, "cut": 0, "seconds": man["model_calls"]["1"]["seconds"]}
-        assert man["max_new_tokens"] == 8192
+        assert man["model_calls"]["1"] == {"n": 2, "tokens": 6, "cut": 0, "seconds": man["model_calls"]["1"]["seconds"],
+                                           "prompt_tokens": None, "max_prompt": None,
+                                           "max_context": None}  # transformers: not reported
+        assert man["max_new_tokens"] == 8192 and man["shard"] == [1, 1]
+        assert man["where"]["1"].startswith("transformers, Qwen/Qwen3-4B-Instruct-2507 in bfloat16")
         assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(fs_dir)]) == 0  # only seed 3 retried
         assert list(json.loads((fs_dir / "regeneration_manifest.json").read_text())["failed"]) == ["3"]
     finally:
@@ -473,10 +476,10 @@ def test_isg_generate_refuses_a_model_partly_on_the_cpu(tmp_path, monkeypatch):
 class _FakeOllama:
     """An Ollama server stand-in on a free local port: records requests, answers like Ollama."""
 
-    def __init__(self, vram_share=1.0):
+    def __init__(self, vram_share=1.0, done_reason=None):
         import http.server
         import threading
-        self.requests, self.vram_share = [], vram_share
+        self.requests, self.vram_share, self.done_reason = [], vram_share, done_reason
         outer = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -496,15 +499,19 @@ class _FakeOllama:
                     return self._send({"version": "0.0-test"})
                 size = 9 * 2 ** 30
                 self._send({"models": [{"name": "qwen3:4b-instruct-2507-fp16", "model": "qwen3:4b-instruct-2507-fp16",
-                                        "size": size, "size_vram": int(size * outer.vram_share), "digest": "abc"}]})
+                                        "size": size, "size_vram": int(size * outer.vram_share), "digest": "abc123",
+                                        "details": {"quantization_level": "F16"}}]})
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 outer.requests.append(body)
                 if not body.get("prompt"):
                     return self._send({"done": True})
-                self._send({"response": " written", "eval_count": 7, "eval_duration": 5e8, "prompt_eval_count": 5,
-                            "done": True})
+                reply = {"response": " written", "eval_count": 7, "eval_duration": 5e8, "prompt_eval_count": 5,
+                         "done": True}
+                if outer.done_reason:
+                    reply["done_reason"] = outer.done_reason
+                self._send(reply)
 
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
@@ -549,6 +556,9 @@ def test_isg_generate_with_ollama_renders_prompts_like_the_pipeline(tmp_path, mo
         man = json.loads((fs_dir / "regeneration_manifest.json").read_text())
         assert man["backend"]["name"] == "ollama" and man["backend"]["vram_gb"] == 9.0
         assert man["model_calls"]["1"]["tokens"] == 14  # Ollama's own counts
+        assert man["dtype"] == "F16"  # what Ollama serves, not --dtype
+        assert man["model_calls"]["1"]["prompt_tokens"] == 10 and man["model_calls"]["1"]["max_context"] == 12
+        assert man["model_calls"]["1"]["max_prompt"] == 5
     finally:
         server.close()
         _forget_fake_isg()
@@ -567,6 +577,101 @@ def test_isg_generate_with_ollama_stops_when_the_model_spills_to_the_cpu(tmp_pat
         with pytest.raises(SystemExit, match="not reachable"):
             ig.main(["generate", "--isg", str(isg), "--fs-dir", str(tmp_path / "fs"), "--backend", "ollama",
                      "--ollama-url", "http://127.0.0.1:9"])
+    finally:
+        server.close()
+        _forget_fake_isg()
+
+
+def test_isg_generate_shards_split_the_seeds_and_record_where_each_was_built(tmp_path, monkeypatch, capsys):
+    ig = _tool("audit_isg")
+    isg = _fake_isg(tmp_path)  # seeds 1, 3 (fails) and 7
+    _fake_torch(monkeypatch, cuda=True)
+    monkeypatch.setattr(ig, "load_tokenizer", lambda name: _FakeTokenizer())
+    server = _FakeOllama()
+    fs_dir = tmp_path / "fs"
+    common = ["generate", "--isg", str(isg), "--fs-dir", str(fs_dir), "--backend", "ollama", "--ollama-url", server.url]
+    try:
+        with pytest.raises(SystemExit, match="other weights"):
+            ig.main(common + ["--shard", "1/2", "--ollama-digest", "def"])
+        assert not list(fs_dir.glob("*.json"))
+        with pytest.raises(SystemExit):  # argparse: not a shard
+            ig.main(common + ["--shard", "3/2"])
+        assert ig.main(common + ["--shard", "1/2", "--ollama-digest", "sha256:ABC1", "--machine", "box A"]) == 0
+        assert sorted(p.name for p in fs_dir.glob("*.json")) == [
+            "1.json", "7.json", "regeneration_manifest.shard-1-of-2.json"]  # round-robin: 1, 7 | 3
+        assert "largest context in this run: 12 of 16384 tokens (largest prompt 5); a smaller --num-ctx changes no " \
+            "reply while it is at least the largest prompt + 8208" in capsys.readouterr().out
+        man = json.loads((fs_dir / "regeneration_manifest.shard-1-of-2.json").read_text())
+        assert man["shard"] == [1, 2] and man["machine"] == "box A"
+        assert man["where"]["7"] == "Ollama 0.0-test, qwen3:4b-instruct-2507-fp16 (abc123), context 16384 on box A"
+        # a deadline already passed: nothing started, nothing lost
+        assert ig.main(common + ["--shard", "2/2", "--stop-after", "1e-9", "--machine", "box B"]) == 0
+        assert "stopping:" in capsys.readouterr().out and not (fs_dir / "3.json").exists()
+        assert ig.main(common + ["--shard", "2/2", "--machine", "box B"]) == 0
+        assert list(json.loads((fs_dir / "regeneration_manifest.shard-2-of-2.json").read_text())["failed"]) == ["3"]
+        # a manifest from before shards (no per-seed record) is pooled with its run's description
+        (fs_dir / "regeneration_manifest.json").write_text(json.dumps({
+            "model": "Qwen/Qwen3-4B-Instruct-2507", "dtype": "bfloat16", "device": "Old GPU",
+            "backend": {"name": "ollama", "version": "0.1", "model": "qwen3:4b-instruct-2507-fp16", "digest": "abc123ff"},
+            "seconds": {"9": 3600.0, "3": 10.0}, "failed": {},
+            "model_calls": {"9": {"n": 30, "tokens": 30000, "cut": 1, "seconds": 3500.0}}}))
+        pooled = ig.merge_manifests(ig.manifest_paths(str(fs_dir)))
+        assert pooled["n_done"] == 4 and pooled["n_failed"] == 0  # seed 3 was built by the older run
+        assert pooled["built_with"] == {
+            "Ollama 0.0-test, qwen3:4b-instruct-2507-fp16 (abc123), context 16384 on box A": 2,
+            "Ollama 0.1, qwen3:4b-instruct-2507-fp16 (abc123ff) on Old GPU": 2}
+        assert pooled["model_calls"] == 34 and pooled["cut"] == 1 and pooled["largest_context"] == 12
+    finally:
+        server.close()
+        _forget_fake_isg()
+
+
+def test_isg_audit_pools_the_manifests_next_to_the_questions(tmp_path):
+    ig = _tool("audit_isg")
+    qa_dir, seeds = make_isg(str(tmp_path), np.random.default_rng(6))
+    fs_dir = os.path.join(os.path.dirname(qa_dir), "fs")
+    os.makedirs(fs_dir, exist_ok=True)
+    for k, (gpu, seeds_done) in enumerate([("Tesla T4", ["0", "1"]), ("RTX A4000", ["2"])], 1):
+        with open(os.path.join(fs_dir, f"regeneration_manifest.shard-{k}-of-2.json"), "w") as f:
+            json.dump({"seconds": {s: 60.0 for s in seeds_done}, "failed": {},
+                       "model_calls": {s: {"n": 3, "tokens": 900, "cut": 0, "seconds": 50.0, "prompt_tokens": 2000,
+                                           "max_prompt": 500, "max_context": 1000 + 100 * k} for s in seeds_done},
+                       "where": {s: f"Ollama 1, m (d) on {gpu}" for s in seeds_done}}, f)
+    out = tmp_path / "out"
+    assert ig.main(["audit", "--seeds", seeds, "--qa", qa_dir, "--out", str(out), "--permutations", "2",
+                    "--repeats", "2"]) == 0
+    g = json.loads((out / "isg_audit.json").read_text())["generation_manifest"]
+    assert g["n_done"] == 3 and len(g["files"]) == 2 and g["largest_context"] == 1200
+    md = (out / "isg_audit.md").read_text()
+    assert "| Ollama 1, m (d) on Tesla T4 | 2 |" in md and "largest context 1200 tokens (largest prompt 500)" in md
+
+
+def test_isg_machine_label(monkeypatch):
+    import subprocess
+    import types
+    ig = _tool("audit_isg")
+    torch = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: False))
+    assert ig.machine_label("my box", torch) == "my box"
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: types.SimpleNamespace(stdout="Tesla T4\nTesla T4\n"))
+    assert ig.machine_label(None, torch) == "2 x Tesla T4"
+
+    def missing(*a, **k):
+        raise FileNotFoundError("nvidia-smi")
+    monkeypatch.setattr(subprocess, "run", missing)
+    assert ig.machine_label(None, torch) == "no GPU found"
+
+
+def test_isg_generate_counts_a_reply_stopped_by_the_context_as_cut(tmp_path, monkeypatch):
+    ig = _tool("audit_isg")
+    isg = _fake_isg(tmp_path)
+    _fake_torch(monkeypatch, cuda=True)
+    monkeypatch.setattr(ig, "load_tokenizer", lambda name: _FakeTokenizer())
+    server = _FakeOllama(done_reason="length")  # 7 tokens, far below the 8192 ceiling, but stopped by a limit
+    fs_dir = tmp_path / "fs"
+    try:
+        assert ig.main(["generate", "--isg", str(isg), "--fs-dir", str(fs_dir), "--backend", "ollama",
+                        "--ollama-url", server.url, "--limit", "1"]) == 0
+        assert json.loads((fs_dir / "regeneration_manifest.json").read_text())["model_calls"]["1"]["cut"] == 2
     finally:
         server.close()
         _forget_fake_isg()
