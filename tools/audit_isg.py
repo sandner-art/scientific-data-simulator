@@ -57,6 +57,16 @@ context per repository, which sets how many slots fit in GPU memory. Parallel de
 call the same seed as before, but batches change the floating-point sums, so two runs can differ.
 ``docs/reproduce/isg_regeneration.md`` gives the steps, locally and on Kaggle.
 
+``--backend openai`` sends the same rendered prompts to an OpenAI-compatible server
+(``/v1/completions``) such as vLLM, which batches the calls of many processes on one GPU far
+better than Ollama's slots (``kaggle/isg_generate.ipynb`` runs it on two T4s). The tool refuses a
+server that does not serve ``--served-model`` or holds another context length than ``--num-ctx``,
+and records ``--weights-revision`` and ``--note`` (how the server was started).
+
+A generation cut short by a time budget finishes quick repositories first, and these may hold
+easier questions; ``audit --complete-prefix`` therefore analyses only the longest run of seeds,
+in ascending order, that were all attempted, a sample fixed by seed order rather than by speed.
+
 ISG executes Python that the model writes for each dependent variable (while generating, and again
 when questions are generated): run it in its own environment. Sampling on other hardware or in
 another precision gives other repositories than the paper's; the blind baselines depend on the
@@ -452,11 +462,15 @@ def run_audit(args) -> Dict[str, Any]:
                               "isg": _provenance(args.isg), "seeds_check": seeds_check(keys)}
     if not args.qa:
         return report
-    items, missing = load_items(keys, args.qa)
-    report["regeneration"] = regeneration_check(items, missing)
     paths = manifest_paths(args.regeneration_manifest)
     if paths:
         report["generation_manifest"] = merge_manifests(paths)
+    if getattr(args, "complete_prefix", False):
+        if not paths:
+            raise SystemExit("--complete-prefix needs the generation manifests (--regeneration-manifest)")
+        keys, report["sample"] = complete_prefix(keys, report["generation_manifest"])
+    items, missing = load_items(keys, args.qa)
+    report["regeneration"] = regeneration_check(items, missing)
     if not items:
         return report
     report["quality_card"] = quality_card(items)
@@ -477,6 +491,30 @@ def run_audit(args) -> Dict[str, Any]:
     return report
 
 
+def complete_prefix(keys: Sequence[str], pooled: Dict[str, Any]) -> Tuple[List[str], Dict[str, Any]]:
+    """The items of the longest run of seeds, in ascending order, that were all attempted.
+
+    A run stopped by a time budget finishes quick repositories first, and quick repositories may
+    hold easier questions. Cutting at the first seed not yet attempted keeps the sample a fixed
+    rule of seed order (the seeds are random keys) instead of a rule of speed. Seeds that failed
+    inside the prefix stay in it; their items count as missing."""
+    seeds = sorted({int(k.split(".")[0]) for k in keys})
+    attempted = set(pooled.get("built", [])) | set(pooled.get("failed", {}))
+    prefix: List[int] = []
+    for s in seeds:
+        if str(s) not in attempted:
+            break
+        prefix.append(s)
+    chosen = set(prefix)
+    kept = [k for k in keys if int(k.split(".")[0]) in chosen]
+    built_outside = sorted(int(s) for s in pooled.get("built", []) if int(s) not in chosen and int(s) in set(seeds))
+    return kept, {"rule": "longest prefix of the needed seeds (ascending) that were all attempted",
+                  "repositories": len(prefix), "of_repositories": len(seeds), "last_seed": prefix[-1] if prefix else None,
+                  "items": len(kept), "of_items": len(keys), "failed_inside": sorted(
+                      int(s) for s in pooled.get("failed", {}) if int(s) in chosen),
+                  "built_but_left_out": len(built_outside)}
+
+
 def manifest_paths(path: Optional[str]) -> List[str]:
     """A manifest file, or every ``regeneration_manifest*.json`` in a directory (one per shard)."""
     if not path:
@@ -489,6 +527,10 @@ def manifest_paths(path: Optional[str]) -> List[str]:
 def _engine(m: Dict[str, Any]) -> str:
     """Who wrote, from a manifest's top-level fields (manifests before 0.8 record no per-seed machine)."""
     b = m.get("backend") or {}
+    if b.get("name") == "openai":
+        rev = str(b.get("weights_revision") or "")[:12]
+        engine = "vLLM" if b.get("engine") == "vllm" else "OpenAI-compatible server"
+        return (f"{engine} {b.get('version') or ''}".strip() + f", {b.get('model')}" + (f" ({rev})" if rev else ""))
     if b.get("name") == "ollama":
         return f"Ollama {b.get('version')}, {b.get('model')} ({str(b.get('digest') or '')[:12]})"
     return f"transformers, {m.get('model')} in {m.get('dtype')}"
@@ -518,6 +560,7 @@ def merge_manifests(paths: Sequence[str]) -> Dict[str, Any]:
     contexts = [c["max_context"] for c in done if c.get("max_context")]
     prompts = [c["max_prompt"] for c in done if c.get("max_prompt")]
     return {"files": [os.path.basename(p) for p in paths], "n_done": len(seconds), "n_failed": len(failed),
+            "built": sorted(seconds, key=int),
             "failed": failed, "built_with": dict(Counter(where.values()).most_common()),
             "model_calls": sum(c.get("n", 0) for c in done), "tokens": sum(c.get("tokens", 0) for c in done),
             "cut": sum(c.get("cut", 0) for c in done), "largest_context": max(contexts) if contexts else None,
@@ -567,12 +610,18 @@ def markdown(r: Dict[str, Any]) -> str:
         if r.get("generation_manifest"):
             m = r["generation_manifest"]
             L += [f"Generation ({len(m['files'])} manifest{'s' if len(m['files']) != 1 else ''}): {m['n_done']} "
-                  f"repositories built, {m['n_failed']} failed; {m['model_calls']} model calls, {m['cut']} cut at the "
-                  f"ceiling; {m['repository_hours']} h summed over repositories"
+                  f"repositories built, {m['n_failed']} failed; {m['model_calls']} model calls, {m['cut']} cut (ceiling or "
+                  f"full context); {m['repository_hours']} h summed over repositories"
                   + (f"; largest context {m['largest_context']} tokens" if m.get("largest_context") else "")
                   + (f" (largest prompt {m['largest_prompt']})" if m.get("largest_prompt") else "") + ".",
                   "", "| Built with | Repositories |", "|---|---:|"]
             L += [f"| {k} | {v} |" for k, v in m["built_with"].items()] + [""]
+        if r.get("sample"):
+            sm = r["sample"]
+            L += [f"Sample: the {sm['repositories']} of {sm['of_repositories']} repositories up to seed {sm['last_seed']} "
+                  f"(ascending seed order, all attempted), {sm['items']} of {sm['of_items']} items; "
+                  f"{len(sm['failed_inside'])} failed inside it; {sm['built_but_left_out']} built later in the order "
+                  "left out, so speed does not choose the sample.", ""]
         if r.get("compare"):
             c = r["compare"]
             L += [f"Two regenerations: {c['same_question']}/{c['shared']} identical questions, "
@@ -673,34 +722,32 @@ class Ollama:
                                                "keep_alive": "60m", "options": options})
 
 
-class OllamaPipe:
+class _TemplatePipe:
     """Stands in for ISG's transformers text-generation pipeline: the chat is rendered as the
-    pipeline renders it (the model's own chat template, through its tokenizer), Ollama writes the
-    reply with ISG's sampling parameters, and the result has the pipeline's shape (a prefilled
+    pipeline renders it (the model's own chat template, through its tokenizer), a server writes
+    the reply with ISG's sampling parameters, and the result has the pipeline's shape (a prefilled
     final message is continued, as with ``continue_final_message``)."""
 
-    def __init__(self, client: Ollama, tokenizer, seed_of_call):
-        self.client, self.tokenizer, self.seed_of_call = client, tokenizer, seed_of_call
+    def __init__(self, client, tokenizer, seed_of_call, num_ctx: int):
+        self.client, self.tokenizer, self.seed_of_call, self.num_ctx = client, tokenizer, seed_of_call, num_ctx
         self.last: Optional[Dict[str, Any]] = None
 
-    def __call__(self, messages, **kw):
+    def _render(self, messages, kw):
         cont = bool(kw.get("continue_final_message"))
         prompt = self.tokenizer.apply_chat_template(list(messages), tokenize=False, add_generation_prompt=not cont,
                                                     continue_final_message=cont)
         n_prompt = len(self.tokenizer(prompt, add_special_tokens=False)["input_ids"])
-        room = self.client.num_ctx - n_prompt - 16
+        room = self.num_ctx - n_prompt - 16
         if room < 64:
-            raise RuntimeError(f"a prompt of {n_prompt} tokens does not fit the context of {self.client.num_ctx}")
+            raise RuntimeError(f"a prompt of {n_prompt} tokens does not fit the context of {self.num_ctx}")
         sample = kw.get("do_sample", True)
-        options = {"num_ctx": self.client.num_ctx, "num_predict": min(int(kw.get("max_new_tokens") or room), room),
-                   "temperature": float(kw.get("temperature", 1.0)) if sample else 0.0,
-                   "top_p": float(kw.get("top_p", 1.0)), "top_k": int(kw.get("top_k", 0) or 0), "min_p": 0.0,
-                   "repeat_penalty": 1.0, "seed": self.seed_of_call(), "stop": QWEN_STOP}
-        r = self.client.generate(prompt, options)
-        text = r.get("response", "")
-        self.last = {"tokens": r.get("eval_count"), "prompt_tokens": r.get("prompt_eval_count", n_prompt),
-                     "generation_seconds": (r.get("eval_duration") or 0) / 1e9, "limit": options["num_predict"],
-                     "done_reason": r.get("done_reason")}
+        sampling = {"limit": min(int(kw.get("max_new_tokens") or room), room),
+                    "temperature": float(kw.get("temperature", 1.0)) if sample else 0.0,
+                    "top_p": float(kw.get("top_p", 1.0)), "top_k": int(kw.get("top_k", 0) or 0)}
+        return cont, prompt, n_prompt, sampling
+
+    @staticmethod
+    def _shape(messages, cont: bool, text: str):
         if cont:
             out = list(messages)[:-1] + [{"role": messages[-1]["role"], "content": messages[-1]["content"] + text}]
         else:
@@ -708,11 +755,45 @@ class OllamaPipe:
         return [{"generated_text": out}]
 
 
+class OllamaPipe(_TemplatePipe):
+    """ISG's pipeline, written by Ollama (``/api/generate`` with the rendered prompt, raw)."""
+
+    def __init__(self, client: Ollama, tokenizer, seed_of_call):
+        super().__init__(client, tokenizer, seed_of_call, client.num_ctx)
+
+    def __call__(self, messages, **kw):
+        cont, prompt, n_prompt, s = self._render(messages, kw)
+        options = {"num_ctx": self.num_ctx, "num_predict": s["limit"], "temperature": s["temperature"],
+                   "top_p": s["top_p"], "top_k": s["top_k"], "min_p": 0.0, "repeat_penalty": 1.0,
+                   "seed": self.seed_of_call(), "stop": QWEN_STOP}
+        r = self.client.generate(prompt, options)
+        self.last = {"tokens": r.get("eval_count"), "prompt_tokens": r.get("prompt_eval_count", n_prompt),
+                     "generation_seconds": (r.get("eval_duration") or 0) / 1e9, "limit": s["limit"],
+                     "done_reason": r.get("done_reason")}
+        return self._shape(messages, cont, r.get("response", ""))
+
+
+class OpenAIPipe(_TemplatePipe):
+    """ISG's pipeline, written by an OpenAI-compatible server such as vLLM (``/v1/completions``
+    with the rendered prompt; vLLM takes top-k, min-p and the repetition penalty in the request)."""
+
+    def __call__(self, messages, **kw):
+        cont, prompt, n_prompt, s = self._render(messages, kw)
+        text = self.client.complete(prompt, max_tokens=s["limit"], temperature=s["temperature"], top_p=s["top_p"],
+                                    top_k=s["top_k"] or -1, min_p=0.0, repetition_penalty=1.0,
+                                    seed=self.seed_of_call(), stop=QWEN_STOP)
+        r = self.client.last or {}
+        self.last = {"tokens": r.get("tokens"), "prompt_tokens": r.get("prompt_tokens", n_prompt),
+                     "generation_seconds": None, "limit": s["limit"], "done_reason": r.get("stopped")}
+        return self._shape(messages, cont, text)
+
+
 def _shard(text: str) -> Tuple[int, int]:
-    m = re.fullmatch(r"\s*(\d+)\s*/\s*(\d+)\s*", text or "")
-    if not m or not 1 <= int(m.group(1)) <= int(m.group(2)):
-        raise argparse.ArgumentTypeError(f"I/N with 1 <= I <= N, not {text!r}")
-    return int(m.group(1)), int(m.group(2))
+    from scidatasim.ai.local import parse_shard
+    try:
+        return parse_shard(text or "")
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"I/N with 1 <= I <= N, not {text!r}") from None
 
 
 def _digest(text: Any) -> str:
@@ -838,6 +919,9 @@ def run_generate(args) -> int:
 
     current = {"seed": 0}
     backend: Dict[str, Any] = {"name": args.backend}
+
+    def seed_of_call():  # reproducible per repository and call
+        return (current["seed"] * 100003 + calls["n"]) % 2 ** 31
     if args.backend == "ollama":
         client = Ollama(args.ollama_url, args.ollama_model, args.num_ctx)
         try:
@@ -858,13 +942,34 @@ def run_generate(args) -> int:
             raise SystemExit("part of the model is on the CPU, so it would write at CPU speed. Ollama reserves "
                              "--num-ctx tokens of context for each of its OLLAMA_NUM_PARALLEL slots: lower one of "
                              "them, or close programs that use GPU memory; --allow-cpu runs anyway.")
-        tokenizer = load_tokenizer(args.model)
-
-        def seed_of_call():  # reproducible per repository and call
-            return (current["seed"] * 100003 + calls["n"]) % 2 ** 31
+        tokenizer = load_tokenizer(args.tokenizer or args.model)
 
         def pipeline(*a, **kw):
             return Capped(OllamaPipe(client, tokenizer, seed_of_call))
+    elif args.backend == "openai":
+        from scidatasim.ai.local import OpenAICompatibleClient
+        served = args.served_model or args.model
+        client = OpenAICompatibleClient(served, args.openai_url, api_key_env=args.api_key_env, timeout=7200)
+        try:
+            backend.update(client.describe())
+        except (ConnectionError, RuntimeError) as e:
+            raise SystemExit(f"{e}. Start the server first (e.g. vllm serve ... --max-model-len {args.num_ctx}).")
+        ids = {m.get("id"): m for m in backend.get("served") or []}
+        if backend.get("served") is not None and served not in ids:
+            raise SystemExit(f"the server at {args.openai_url} serves {sorted(ids)}, not {served}: "
+                             "--served-model must name one of them")
+        length = (ids.get(served) or {}).get("max_model_len")
+        if length and int(length) != args.num_ctx:
+            raise SystemExit(f"the server holds {length} tokens per sequence, --num-ctx says {args.num_ctx}: make "
+                             "them the same on every machine (vllm serve --max-model-len)")
+        backend.update(model=served, num_ctx=args.num_ctx, url=args.openai_url, weights_revision=args.weights_revision,
+                       note=args.note)
+        print(f"{_engine({'backend': backend})} at {args.openai_url}, context {args.num_ctx} tokens per sequence",
+              flush=True)
+        tokenizer = load_tokenizer(args.tokenizer or args.model)
+
+        def pipeline(*a, **kw):
+            return Capped(OpenAIPipe(client, tokenizer, seed_of_call, args.num_ctx))
     else:
         def pipeline(*a, **kw):
             kw["trust_remote_code"] = False  # Qwen3 is built into transformers; no model-supplied code
@@ -894,6 +999,9 @@ def run_generate(args) -> int:
               else "cpu" if args.backend == "transformers" else machine)
     if args.backend == "ollama":
         dtype_used = backend.get("quantization") or "as Ollama serves it"
+        engine = f"{_engine({'backend': backend})}, context {args.num_ctx}"
+    elif args.backend == "openai":
+        dtype_used = "as the server loads it (see backend.note)"
         engine = f"{_engine({'backend': backend})}, context {args.num_ctx}"
     else:
         dtype_used = args.dtype
@@ -960,6 +1068,9 @@ def main(argv=None) -> int:
     a.add_argument("--regeneration-manifest",
                    help="a manifest written by 'generate', or a directory whose regeneration_manifest*.json are "
                         "pooled (default: the fs directory next to --qa)")
+    a.add_argument("--complete-prefix", action="store_true",
+                   help="analyse only the items of the longest run of seeds (ascending) that were all attempted: "
+                        "a time-limited generation then gives a sample fixed by seed order, not by speed")
     a.add_argument("--permutations", type=int, default=200)
     a.add_argument("--repeats", type=int, default=20, help="random halves for the blind policies")
     a.add_argument("--out", default=os.path.join("experiments_output", "isg"))
@@ -968,6 +1079,8 @@ def main(argv=None) -> int:
     gsub.add_argument("--seeds")
     gsub.add_argument("--fs-dir", required=True, help="where <seed>.json go (ISG's data/fs)")
     gsub.add_argument("--model", default=MODEL)
+    gsub.add_argument("--tokenizer", help="where to load the model's tokenizer (chat template) from, e.g. a local copy "
+                                          "of the weights (default: --model)")
     gsub.add_argument("--dtype", default="bfloat16", choices=["bfloat16", "float16", "float32"],
                       help="bfloat16 is what transformers 4.57's default ('auto') picks for Qwen3-4B")
     gsub.add_argument("--max-new-tokens", type=int, default=8192,
@@ -976,12 +1089,19 @@ def main(argv=None) -> int:
                       help="default: cuda:0 when a GPU is present (all of the model on it), else cpu; 'auto' lets "
                            "transformers move layers that do not fit to the CPU, as ISG does")
     gsub.add_argument("--allow-cpu", action="store_true", help="run even if part of the model is on the CPU")
-    gsub.add_argument("--backend", default="transformers", choices=["transformers", "ollama"],
-                      help="who writes: ISG's transformers pipeline, or a local Ollama server (much faster on Windows)")
+    gsub.add_argument("--backend", default="transformers", choices=["transformers", "ollama", "openai"],
+                      help="who writes: ISG's transformers pipeline, a local Ollama server (much faster on Windows), "
+                           "or an OpenAI-compatible server such as vLLM (many repositories at once)")
     gsub.add_argument("--ollama-model", default=OLLAMA_MODEL)
     gsub.add_argument("--ollama-url", default="http://localhost:11434")
+    gsub.add_argument("--openai-url", default="http://127.0.0.1:8000/v1", help="the server, up to /v1")
+    gsub.add_argument("--served-model", help="the name the server serves the model under (default: --model)")
+    gsub.add_argument("--weights-revision", help="recorded: the Hugging Face revision of the weights it serves")
+    gsub.add_argument("--note", help="recorded: how the server was started (e.g. its command line)")
+    gsub.add_argument("--api-key-env", help="environment variable holding a key, if the server wants one")
     gsub.add_argument("--num-ctx", type=int, default=16384,
-                      help="Ollama context (prompt + reply) in tokens, per slot; the same on every process")
+                      help="context (prompt + reply) in tokens: per Ollama slot, or vLLM's --max-model-len; "
+                           "the same on every process")
     gsub.add_argument("--ollama-digest", help="refuse unless Ollama's model digest starts with this (all machines "
                                               "write with the same weights)")
     gsub.add_argument("--limit", type=int, default=0, help="only the first N repositories (to time a run)")

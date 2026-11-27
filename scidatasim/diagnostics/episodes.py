@@ -34,6 +34,7 @@ Logs from elsewhere - an LLM agent's tool calls, a labelling session - are read 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
@@ -66,6 +67,12 @@ class EpisodeLog:
     def to_dict(self) -> Dict[str, Any]:
         return json.loads(json.dumps(self.__dict__, default=_jsonable))
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "EpisodeLog":
+        """The inverse of :meth:`to_dict` (arrays come back as lists)."""
+        names = cls.__dataclass_fields__
+        return cls(**{k: v for k, v in data.items() if k in names})
+
 
 def _jsonable(value):
     if isinstance(value, np.generic):
@@ -76,10 +83,31 @@ def _jsonable(value):
 
 
 def run_episodes(env, agent: Callable[[Dict[str, Any], EpisodeLog], Dict[str, Any]], seeds: Iterable[int],
-                 max_steps: Optional[int] = None) -> List[EpisodeLog]:
-    """Play one episode per seed and record everything a grader needs (truth included)."""
+                 max_steps: Optional[int] = None, out_dir: Optional[str] = None, shard=None) -> List[EpisodeLog]:
+    """Play one episode per seed and record everything a grader needs (truth included).
+
+    For long runs (a language model as agent, hours of calls):
+
+    * ``out_dir`` writes each finished episode to ``<out_dir>/episode-<seed>.json`` (complete or
+      absent, even if the run is killed) and, on the next run, reads finished seeds back instead
+      of playing them again. The files hold the truth: keep them with the private half.
+    * ``shard="I/N"`` plays part I of N of the seeds (round-robin, :func:`scidatasim.ai.local.shard`),
+      so N processes or machines split the seeds without overlap; with a shared ``out_dir`` each
+      finds the others' episodes when the parts are put together.
+    """
+    seeds = list(seeds)
+    if shard is not None:
+        from ..ai.local import shard as _shard
+        seeds = _shard(seeds, shard)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     logs = []
     for seed in seeds:
+        path = os.path.join(out_dir, f"episode-{seed}.json") if out_dir else None
+        if path and os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                logs.append(EpisodeLog.from_dict(json.load(f)))
+            continue
         obs = env.reset(seed=seed)
         log = EpisodeLog(seed=seed, task=obs, target=env.spec.target, target_type=env.spec.target_type,
                          domain=env.domain, tolerance=env.formula_tolerance() if env.spec.target_type == "expression"
@@ -97,6 +125,10 @@ def run_episodes(env, agent: Callable[[Dict[str, Any], EpisodeLog], Dict[str, An
                 break
         log.truth = env.truth
         logs.append(log)
+        if path:
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(log.to_dict(), f)
+            os.replace(path + ".tmp", path)
     return logs
 
 

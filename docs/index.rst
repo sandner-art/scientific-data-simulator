@@ -468,6 +468,14 @@ dataset or evaluation that used a model can be regenerated without it, and
 :func:`~scidatasim.ai.clients.llm_provenance` summarises model use for a release. A model
 never supplies an answer: ground truth comes from the simulator.
 
+:mod:`scidatasim.ai.local` provides such functions for models on your own GPU or any
+OpenAI-compatible server: :class:`~scidatasim.ai.local.OllamaClient` and
+:class:`~scidatasim.ai.local.OpenAICompatibleClient` (vLLM, llama.cpp, LM Studio, hosted
+providers), standard library only. A local server keeps held-out items off a provider's
+training data. For long runs, :func:`~scidatasim.ai.local.shard` splits the seeds over
+processes or machines, and ``run_episodes(..., out_dir=..., shard="I/N")`` writes one file per
+finished episode and resumes where it stopped.
+
 Law Discovery
 -------------
 

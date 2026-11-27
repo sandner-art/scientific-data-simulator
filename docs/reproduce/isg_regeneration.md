@@ -8,12 +8,13 @@ the card is warm, or about 26 minutes per repository and five days for all 287.
 
 The fix is to generate several repositories at once:
 
-- **Slots.** One Ollama server with several slots writes several replies in the same pass over the
-  weights.
-- **Shards.** Several processes split the seeds without overlap, on one machine or on several
-  (here: your PC and a Kaggle notebook with two T4 GPUs).
+- **Batching.** One server writes several replies in the same pass over the weights: vLLM batches
+  the calls of many processes (`--backend openai`); Ollama has a few slots (`--backend ollama`).
+- **Shards.** Several processes split the seeds without overlap, on one machine or on several.
 
-This page gives the steps. The tool's docstring describes the method.
+The quickest route is two Kaggle notebooks in `kaggle/`: one on CPU prepares and later finishes,
+one on two T4 GPUs generates with vLLM. The other routes on this page (two Ollama slots at home,
+Ollama on Kaggle cell by cell) are slower. The tool's docstring describes the method.
 
 ## What stays fixed, and what differs from the paper
 
@@ -26,6 +27,7 @@ This page gives the steps. The tool's docstring describes the method.
 | Sampling | ISG's: temperature 0.7, top-p 0.8, top-k 20; a seed per repository and model call |
 | Ceiling | 8,192 new tokens per model call (ISG allows 300,000); a cut reply fails ISG's parser and ISG asks again |
 | Context | `--num-ctx 16384` per slot, the same everywhere (see below) |
+| With vLLM | the Hugging Face weights at a revision recorded by the prepare notebook, loaded in float16 (`--dtype half`; the T4 has no bfloat16), `--max-model-len 16384`; prompts go to `/v1/completions` already rendered, with ISG's sampling, min-p 0 and no repetition penalty |
 
 **Variation between runs.** Parallel decoding gives each call the same seed as before. But
 batching changes the order of floating-point sums, so a repository built in a batch can differ
@@ -99,7 +101,39 @@ start "shard 2" cmd /k %GEN% --shard 2/6
 
 Each window prints its own progress. They write into the same folder without collisions.
 
-## On Kaggle (two T4 GPUs)
+## On Kaggle with the two notebooks (vLLM)
+
+Import both notebooks into Kaggle (*File*, *Import Notebook*, from the GitHub link or the file):
+
+| Notebook | Session | Inputs | What it does |
+|---|---|---|---|
+| `kaggle/isg_prepare.ipynb`, `MODE = "prepare"` | CPU, Internet on | none | clones ISG and scidatasim at pinned commits; downloads the weights at a recorded revision (8 GB); finds the newest vLLM release; checks on CPU that ISG imports, the tokenizer renders ISG's prompts and `seeds.txt` reads; writes `plan.json` |
+| `kaggle/isg_generate.ipynb` | GPU T4 x2, Internet on | the prepare output; from session 2 on, its own previous output | one vLLM server per T4, `PER_GPU` processes per server (16 shards), `--stop-after HOURS`; a progress line every 10 minutes; output `fs/` (repositories and manifests) and `logs/` |
+| `kaggle/isg_prepare.ipynb`, `MODE = "finish"` | CPU | the generate output(s) | ISG's question generation, then `audit_isg.py audit --complete-prefix`; output `results/isg_audit.{md,json}` |
+
+Keep all three private: the repositories and questions hold the answers.
+
+**Plan the GPU time.** The first generate session should be short (`HOURS = 1`). It reports
+tokens per second for the whole machine, which is the number to plan with: all 287 repositories
+need about 10 million tokens. A full session is `HOURS = 9.5`. A session ends at 12 hours, and the
+repositories in progress when `HOURS` runs out still have to finish. Kaggle's weekly GPU quota
+caps how many sessions fit in a week.
+
+**A sample fixed in advance.** If time runs out before all 287 repositories are built, analyse the
+longest run of seeds, in ascending order, that were all attempted (`--complete-prefix`, which the
+finish mode uses). Repositories that build quickly finish first and may hold easier questions;
+cutting by seed order, not by what happens to be finished, keeps speed from choosing the sample.
+State the rule and the number of repositories and items in the paper.
+
+**If vLLM does not start on the T4** (a release may drop older GPUs): set `VLLM_VERSION` to an
+earlier release in the generate notebook, or `ENGINE = "ollama"` (two slots per T4, slower). The
+engine is recorded per repository; keep one engine per sample.
+
+The notebooks have been checked for syntax and their logic is tested with stand-in servers, but
+they have not yet been run on Kaggle. The prepare notebook exists to find problems on CPU before
+any GPU time is spent.
+
+## On Kaggle with Ollama, cell by cell (two T4 GPUs)
 
 Kaggle's free tier gives a verified account (phone number) GPU time each week, with sessions of up
 to 12 hours. The GPU T4 x2 option has two 16 GB T4s. The T4 has no bfloat16, but the F16 model

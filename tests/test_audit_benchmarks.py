@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import re
 import pickle
 import sys
 import zlib
@@ -675,3 +676,119 @@ def test_isg_generate_counts_a_reply_stopped_by_the_context_as_cut(tmp_path, mon
     finally:
         server.close()
         _forget_fake_isg()
+
+
+class _FakeVLLM:
+    """An OpenAI-compatible server stand-in (vLLM's /v1/models, /version and /v1/completions)."""
+
+    def __init__(self, max_model_len=16384):
+        import http.server
+        import threading
+        self.requests = []
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _send(self, obj):
+                data = json.dumps(obj).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def do_GET(self):
+                if self.path == "/version":
+                    return self._send({"version": "0.0-vllm"})
+                self._send({"data": [{"id": "Qwen/Qwen3-4B-Instruct-2507", "root": "/models/qwen",
+                                      "max_model_len": max_model_len}]})
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                outer.requests.append(body)
+                self._send({"choices": [{"text": " written", "finish_reason": "stop"}],
+                            "usage": {"prompt_tokens": 5, "completion_tokens": 7}})
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/v1"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def test_isg_generate_through_an_openai_compatible_server(tmp_path, monkeypatch):
+    ig = _tool("audit_isg")
+    isg = _fake_isg(tmp_path)
+    _fake_torch(monkeypatch, cuda=False)
+    monkeypatch.setattr(ig, "load_tokenizer", lambda name: _FakeTokenizer())
+    server = _FakeVLLM()
+    fs_dir = tmp_path / "fs"
+    common = ["generate", "--isg", str(isg), "--fs-dir", str(fs_dir), "--backend", "openai", "--openai-url", server.url,
+              "--limit", "1", "--machine", "box V"]
+    try:
+        with pytest.raises(SystemExit, match="holds 16384 tokens per sequence"):
+            ig.main(common + ["--num-ctx", "8192"])
+        with pytest.raises(SystemExit, match="--served-model must name one"):
+            ig.main(common + ["--served-model", "other"])
+        assert ig.main(common + ["--weights-revision", "deadbeef12345678", "--note", "vllm serve --dtype half"]) == 0
+        assert (fs_dir / "1.json").exists()
+        man = json.loads((fs_dir / "regeneration_manifest.json").read_text())
+        assert man["backend"]["engine"] == "vllm" and man["backend"]["note"] == "vllm serve --dtype half"
+        assert man["where"]["1"] == ("vLLM 0.0-vllm, Qwen/Qwen3-4B-Instruct-2507 (deadbeef1234), context 16384 "
+                                     "on box V")
+        assert man["model_calls"]["1"]["max_context"] == 12
+        first = server.requests[0]
+        assert first["top_k"] == 20 and first["temperature"] == 0.7 and first["stop"] == ig.QWEN_STOP
+        assert first["max_tokens"] == 8192 and isinstance(first["seed"], int)
+        assert json.loads(first["prompt"])["generation_prompt"] is True  # rendered here, by the model's template
+        assert len({r["seed"] for r in server.requests}) == len(server.requests)  # a seed per call
+    finally:
+        server.close()
+        _forget_fake_isg()
+
+
+def test_isg_audit_complete_prefix_is_fixed_by_seed_order(tmp_path):
+    ig = _tool("audit_isg")
+    qa_dir, seeds = make_isg(str(tmp_path), np.random.default_rng(8))
+    fs_dir = os.path.join(os.path.dirname(qa_dir), "fs")
+    os.makedirs(fs_dir, exist_ok=True)
+    built = [s for s in range(10) if s != 4] + [12]  # 4 failed; 10 and 11 not reached; 12 was quick
+    with open(os.path.join(fs_dir, "regeneration_manifest.shard-1-of-2.json"), "w") as f:
+        json.dump({"seconds": {str(s): 60.0 for s in built}, "failed": {"4": "ValueError: x"}, "model_calls": {}}, f)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="needs the generation manifests"):
+        ig.main(["audit", "--seeds", seeds, "--qa", qa_dir, "--regeneration-manifest", str(tmp_path / "none"),
+                 "--complete-prefix", "--out", str(out)])
+    assert ig.main(["audit", "--seeds", seeds, "--qa", qa_dir, "--out", str(out), "--complete-prefix",
+                    "--permutations", "2", "--repeats", "2"]) == 0
+    r = json.loads((out / "isg_audit.json").read_text())
+    sm = r["sample"]
+    assert (sm["repositories"], sm["last_seed"], sm["failed_inside"], sm["built_but_left_out"]) == (10, 9, [4], 1)
+    keys = [k for k in open(seeds).read().split() if k.strip()]
+    assert sm["items"] == sum(int(k.split(".")[0]) < 10 for k in keys)
+    assert "up to seed 9" in (out / "isg_audit.md").read_text()
+
+
+def test_kaggle_notebooks_match_their_generator_and_parse(tmp_path):
+    import ast
+    import subprocess
+    import sys
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    subprocess.run([sys.executable, os.path.join(root, "tools", "make_kaggle_notebooks.py"), str(tmp_path)], check=True)
+    for name in ("isg_prepare.ipynb", "isg_generate.ipynb"):
+        committed = json.load(open(os.path.join(root, "kaggle", name)))
+        assert committed == json.load(open(tmp_path / name)), f"kaggle/{name} differs: rerun the generator"
+        for cell in committed["cells"]:
+            if cell["cell_type"] == "code":
+                ast.parse("".join(cell["source"]))
+    cells = json.load(open(os.path.join(root, "kaggle", "isg_generate.ipynb")))["cells"]
+    generate = "".join("".join(c["source"]) for c in cells)
+    usage = subprocess.run([sys.executable, os.path.join(root, "tools", "audit_isg.py"), "generate", "--help"],
+                           capture_output=True, text=True, check=True).stdout
+    passed = set(re.findall(r'"(--[a-z][a-z-]+)"', generate))
+    assert {"--backend", "--shard", "--stop-after", "--weights-revision", "--tokenizer"} <= passed
+    assert all(flag in usage for flag in passed - {"--complete-prefix"}), passed  # the tool knows every option
