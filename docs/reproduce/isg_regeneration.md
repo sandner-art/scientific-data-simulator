@@ -107,11 +107,35 @@ Import both notebooks into Kaggle (*File*, *Import Notebook*, from the GitHub li
 
 | Notebook | Session | Inputs | What it does |
 |---|---|---|---|
-| `kaggle/isg_prepare.ipynb`, `MODE = "prepare"` | CPU, Internet on | none | clones ISG and scidatasim at pinned commits; downloads the weights at a recorded revision (8 GB); finds the newest vLLM release; checks on CPU that ISG imports, the tokenizer renders ISG's prompts and `seeds.txt` reads; writes `plan.json` |
-| `kaggle/isg_generate.ipynb` | GPU T4 x2, Internet on | the prepare output; from session 2 on, its own previous output | one vLLM server per T4, `PER_GPU` processes per server (16 shards), `--stop-after HOURS`; a progress line every 10 minutes; output `fs/` (repositories and manifests) and `logs/` |
+| `kaggle/isg_prepare.ipynb`, `MODE = "prepare"` | CPU, Internet on | none | clones ISG and scidatasim at pinned commits; records the weights' revision and fetches the tokenizer; finds the newest vLLM release; checks on CPU that ISG imports, the tokenizer renders ISG's prompts and `seeds.txt` reads; writes `plan.json` |
+| `kaggle/isg_generate.ipynb` | GPU T4 x2, Internet on | the prepare output; from session 2 on, its own previous output | downloads the weights at the recorded revision to local disk; one vLLM server per T4, `PER_GPU` processes per server (16 shards), `--stop-after HOURS`, failed seeds retried with new sampling seeds up to `MAX_ATTEMPTS`; a progress line every 10 minutes; output `fs/` (repositories and manifests), `logs/` and the final summary `report.md` |
 | `kaggle/isg_prepare.ipynb`, `MODE = "finish"` | CPU | the generate output(s) | ISG's question generation, then `audit_isg.py audit --complete-prefix`; output `results/isg_audit.{md,json}` |
 
 Keep all three private: the repositories and questions hold the answers.
+
+**The final summary and finding things in the logs.** `report.md` in the generate output holds the
+totals, the throughput, a row per repository (status, attempts, calls, tokens, hours, speed, with
+the log file and line where it starts), the failures by kind and the servers' key lines. The same
+report from a downloaded output, at home:
+
+```bat
+python tools\isg_run_report.py C:\Downloads\isg-generate-v1 --out report.md
+python tools\isg_run_report.py C:\Downloads\isg-generate-v1 --seed 21
+python tools\isg_run_report.py C:\Downloads\isg-generate-v1 --grep "Attempt 1/3|Waiting"
+```
+
+`--seed` prints one repository's manifest entries and log lines; `--grep` every matching log line
+as file:line. Several folders (several sessions) can be given at once.
+
+**The first session (28 November 2026; vLLM 0.34.0, 16 processes, `HOURS = 1`).** 16 repositories
+built and 5 failed in 2.1 hours of generation; replies came at about 8 tokens/s per stream (14 for
+the first, short prompts), so about 130 tokens/s for the machine with every stream busy, and a
+repository took 1 to 1.3 hours. No reply was cut; the largest prompt was 3,819 tokens and the
+largest context 8,107, so 16,384 leaves room. vLLM's KV cache held 29,184 tokens per T4. Startup
+took 23 minutes, 15 of them reading the weights from the prepare output; the weights now come
+from the Hub to local disk (about a minute). Failures were ISG rejecting the model's output
+(malformed structured output after three tries, a distribution missing a parameter, a missing
+key); a retry samples with new seeds, since the same seeds would mostly repeat the failure.
 
 **Plan the GPU time.** The first generate session should be short (`HOURS = 1`). It reports
 tokens per second for the whole machine, which is the number to plan with: all 287 repositories

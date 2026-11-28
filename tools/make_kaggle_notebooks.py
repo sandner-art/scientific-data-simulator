@@ -79,6 +79,7 @@ ISG_COMMIT = "2006f69872986e502074282ee4d23634e0cab689"
 MODEL = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_REVISION = ""       # empty: today's revision (recorded in plan.json)
 VLLM_VERSION = ""         # empty: the newest (recorded in plan.json); the GPU notebook installs it
+WEIGHTS_IN_OUTPUT = False # True: also keep the 8 GB of weights in this output (a fallback for the GPU notebook)
 ISG_PACKAGES = ["numpy==2.4.0", "pandas==2.3.3", "scipy==1.17.0", "transformers==4.57.3", "XlsxWriter==3.2.9",
                 "huggingface_hub<1.0"]
 TORCH_CPU = "torch==2.9.1"
@@ -100,7 +101,11 @@ py = isg_venv(ISG_PACKAGES, TORCH_CPU)
 if MODE == "prepare":
     from huggingface_hub import HfApi, snapshot_download
     revision = HfApi().model_info(MODEL, revision=MODEL_REVISION or None).sha
-    snapshot_download(MODEL, revision=revision, local_dir=f"{OUT}/model")
+    # the tokenizer and configs for the checks; the GPU notebook downloads the weights at this revision
+    # itself (about a minute, against 15 minutes reading 8 GB from an input). WEIGHTS_IN_OUTPUT = True
+    # also stores the weights here, as a fallback should the Hub be unreachable.
+    snapshot_download(MODEL, revision=revision, local_dir=f"{OUT}/model",
+                      allow_patterns=None if WEIGHTS_IN_OUTPUT else ["*.json", "*.txt"])
     if not VLLM_VERSION:  # the newest release, so every session installs the same one
         found = subprocess.run(f"{sys.executable} -m pip index versions vllm", shell=True, capture_output=True,
                                text=True).stdout
@@ -153,8 +158,9 @@ Run with *Save Version*, *Save & Run All (Commit)*; the browser need not stay op
   for the whole job).
 * No repository is started after `HOURS` hours; those in progress finish. A session ends at 12 hours,
   so leave room for the slowest repository: `HOURS = 1` for a first, measuring session, `9.5` after.
-* The progress lines give repositories done and tokens per second; the last cell pools the
-  manifests. Questions and the audit run on CPU: `isg_prepare.ipynb` with `MODE = "finish"`.
+* The progress lines give repositories done, tokens per second and CPU load; the last cell writes
+  the final summary, `report.md` (from `tools/isg_run_report.py`), to the output. Questions and the
+  audit run on CPU: `isg_prepare.ipynb` with `MODE = "finish"`.
 * `ENGINE = "ollama"` is the fallback if vLLM does not start on the T4 (slower: two slots per GPU).
   The engine is recorded per repository; do not mix engines in one sample without saying so.
 '''),
@@ -165,6 +171,8 @@ PER_GPU = 8              # processes per GPU; N = 2 * PER_GPU shards, the same f
 NUM_CTX = 16384          # tokens per sequence (vLLM --max-model-len, Ollama num_ctx), the same everywhere
 VLLM_VERSION = ""        # empty: the one in plan.json
 GPU_MEMORY = 0.90        # vLLM's share of each T4
+KV_CACHE_GIB = None      # e.g. 5.0: vLLM's KV cache in GiB instead of GPU_MEMORY (its log suggests a value)
+MAX_ATTEMPTS = 3         # a seed that failed this often is not tried again; retries sample with new seeds
 OLLAMA_VERSION, OLLAMA_MODEL, OLLAMA_DIGEST = "0.40.13", "qwen3:4b-instruct-2507-fp16", "259cbeb0f33b"
 OUT = "/kaggle/working"
 '''),
@@ -191,6 +199,17 @@ py = isg_venv(plan["isg_packages"], plan["torch_cpu"])
 import shlex
 import urllib.request
 servers, urls, logs = [], [], []
+model_dir = "/tmp/model"                 # local disk: loading from an input took 15 minutes
+if not os.path.exists(f"{model_dir}/config.json") or not glob.glob(f"{model_dir}/*.safetensors"):
+    t = time.time()
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(plan["model"], revision=plan["revision"], local_dir=model_dir)
+    except Exception as e:                # the Hub unreachable: the weights kept by the prepare notebook, if any
+        print("download failed:", e)
+        assert glob.glob(f"{prep}/model/*.safetensors"), "no weights: rerun prepare with WEIGHTS_IN_OUTPUT = True"
+        shutil.copytree(f"{prep}/model", model_dir, dirs_exist_ok=True)
+    print(f"weights {plan['model']} at {plan['revision'][:12]} in {model_dir} ({time.time() - t:.0f} s)")
 if ENGINE == "vllm":
     if not os.path.exists("/tmp/vllm_venv/bin/vllm"):
         sh(f"{sys.executable} -m uv venv -q --python 3.12 /tmp/vllm_venv")
@@ -198,8 +217,10 @@ if ENGINE == "vllm":
            if VLLM_VERSION else f"{sys.executable} -m uv pip install -q --python /tmp/vllm_venv/bin/python vllm")
     version = subprocess.run(["/tmp/vllm_venv/bin/python", "-c", "import vllm; print(vllm.__version__)"],
                              capture_output=True, text=True).stdout.strip()
-    serve = (f"vllm serve {prep}/model --served-model-name {plan['model']} --dtype half --max-model-len {NUM_CTX} "
-             f"--gpu-memory-utilization {GPU_MEMORY} --host 127.0.0.1")
+    memory = (f"--kv-cache-memory {int(KV_CACHE_GIB * 2 ** 30)}" if KV_CACHE_GIB
+              else f"--gpu-memory-utilization {GPU_MEMORY}")
+    serve = (f"vllm serve {model_dir} --served-model-name {plan['model']} --dtype half --max-model-len {NUM_CTX} "
+             f"{memory} --host 127.0.0.1")
     for gpu in (0, 1):
         logs.append(f"{OUT}/logs/vllm-gpu{gpu}.log")
         servers.append(subprocess.Popen(shlex.split(f"/tmp/vllm_venv/bin/{serve} --port {8000 + gpu}"),
@@ -244,19 +265,22 @@ for gpu, url in enumerate(urls):
                   if ENGINE == "vllm" else ["--backend", "ollama", "--ollama-url", url, "--ollama-model", OLLAMA_MODEL,
                                             "--ollama-digest", OLLAMA_DIGEST])
         cmd = [py, "-I", "-X", "utf8", tool, "generate", "--isg", "/tmp/code/isg", "--fs-dir", fs, "--model",
-               plan["model"], "--tokenizer", f"{prep}/model", *engine, "--num-ctx", str(NUM_CTX),
-               "--shard", f"{i}/{N}", "--stop-after", str(HOURS), "--machine", f"Kaggle, Tesla T4 (GPU {gpu})",
-               "--note", note]
+               plan["model"], "--tokenizer", model_dir, *engine, "--num-ctx", str(NUM_CTX),
+               "--shard", f"{i}/{N}", "--stop-after", str(HOURS), "--max-attempts", str(MAX_ATTEMPTS),
+               "--machine", f"Kaggle, Tesla T4 (GPU {gpu})", "--note", note]
         procs.append(subprocess.Popen(cmd, stdout=open(f"{OUT}/logs/shard-{i}.log", "w"), stderr=subprocess.STDOUT))
 
-def written():
+import re
+CALL = re.compile(r"model call \d+: (?:prompt \d+ \+ )?(\d+) tokens")
+
+def written():                           # every reply so far, from the shard logs (also unfinished repositories)
     total = 0
-    for m in glob.glob(f"{fs}/regeneration_manifest.shard-*-of-{N}.json"):
-        try:
-            total += sum(c.get("tokens", 0) for c in json.load(open(m)).get("model_calls", {}).values())
-        except ValueError:                   # being written right now
-            pass
+    for log in glob.glob(f"{OUT}/logs/shard-*.log"):
+        with open(log, errors="replace") as f:
+            total += sum(int(m.group(1)) for m in CALL.finditer(f.read()))
     return total
+
+print(f"{os.cpu_count()} CPUs for 2 servers and {len(procs)} processes")
 
 t0, start, tokens0, last = time.time(), done, written(), 0.0
 while any(p.poll() is None for p in procs):
@@ -266,18 +290,18 @@ while any(p.poll() is None for p in procs):
     last = time.time()
     now, hours = len(glob.glob(f"{fs}/[0-9]*.json")), (time.time() - t0) / 3600
     print(f"{hours:.1f} h: {now} of {plan['repositories']} repositories ({now - start} this session), "
-          f"{sum(p.poll() is None for p in procs)} processes running, about "
-          f"{(written() - tokens0) / max(hours * 3600, 1):.0f} tokens/s in finished repositories", flush=True)
+          f"{sum(p.poll() is None for p in procs)} processes running, {(written() - tokens0) / max(hours * 3600, 1):.0f} "
+          f"tokens/s written this session, CPU load {os.getloadavg()[0]:.1f}", flush=True)
 for server in servers:
     server.terminate()
 print("exit codes:", [p.returncode for p in procs], "(non-zero: see logs/shard-*.log)")
 '''),
 ("code", r'''
-sys.path.insert(0, "/tmp/code/sds/tools")
-import audit_isg
-pooled = audit_isg.merge_manifests(audit_isg.manifest_paths(fs))
-print(json.dumps({k: v for k, v in pooled.items() if k not in ("built", "failed")}, indent=1))
-print("failed:", pooled["failed"])
+# The final summary: report.md in the output (totals, throughput, every repository, failures, servers).
+# The same report at home, from the downloaded output: python tools/isg_run_report.py <folder>
+sh(f"{py} /tmp/code/sds/tools/isg_run_report.py {OUT} --out {OUT}/report.md")
+text = open(f"{OUT}/report.md").read()
+print(text.split("## Repositories")[0])
 '''),
 ]
 

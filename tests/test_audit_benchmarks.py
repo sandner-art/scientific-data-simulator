@@ -389,6 +389,9 @@ def _fake_isg(tmp_path):
         "        self.llm = LLM(model_name, device_map)\n"
         "    def get_filesystem(self, seed):\n"
         "        if seed == 3:\n            raise RuntimeError('corrupted')\n"
+        "        if seed == 9:  # fails after a model call\n"
+        "            self.llm.pipe([{'role': 'user', 'content': 'story'}], **SAMPLING)\n"
+        "            raise ValueError('bad output')\n"
         "        story = self.llm.pipe([{'role': 'user', 'content': 'story'}], **SAMPLING)\n"
         "        code = self.llm.pipe([{'role': 'user', 'content': 'code'}, {'role': 'assistant', 'content': 'PRE:'}],\n"
         "                             continue_final_message=True, **SAMPLING)\n"
@@ -792,3 +795,64 @@ def test_kaggle_notebooks_match_their_generator_and_parse(tmp_path):
     passed = set(re.findall(r'"(--[a-z][a-z-]+)"', generate))
     assert {"--backend", "--shard", "--stop-after", "--weights-revision", "--tokenizer"} <= passed
     assert all(flag in usage for flag in passed - {"--complete-prefix"}), passed  # the tool knows every option
+
+
+def test_isg_generate_retries_a_failed_seed_with_new_sampling_seeds_and_gives_up(tmp_path, monkeypatch, capsys):
+    ig = _tool("audit_isg")
+    isg = _fake_isg(tmp_path)  # seed 9 always fails after one model call
+    seeds = tmp_path / "seeds9.txt"
+    seeds.write_text("1.file_extension\n9.count_rows_0\n")
+    _fake_torch(monkeypatch, cuda=False)
+    monkeypatch.setattr(ig, "load_tokenizer", lambda name: _FakeTokenizer())
+    server = _FakeVLLM()
+    fs_dir = tmp_path / "fs"
+    run = ["generate", "--isg", str(isg), "--seeds", str(seeds), "--fs-dir", str(fs_dir), "--backend", "openai",
+           "--openai-url", server.url, "--shard", "2/2", "--max-attempts", "2", "--machine", "box"]  # seed 9 only
+    try:
+        assert ig.main(run) == 0 and ig.main(run) == 0
+        first, second = (r["seed"] for r in server.requests)
+        assert first != second  # the retry samples differently
+        assert "attempt 2, new sampling seeds" in capsys.readouterr().out
+        assert ig.main(run) == 0 and len(server.requests) == 2  # two failures: not tried a third time
+        assert "failed 2 times and are not tried again: [9]" in capsys.readouterr().out
+        man = json.loads((fs_dir / "regeneration_manifest.shard-2-of-2.json").read_text())
+        assert man["attempts"] == {"9": 2} and [a["ok"] for a in man["attempt_calls"]["9"]] == [False, False]
+        pooled = ig.merge_manifests(ig.manifest_paths(str(fs_dir)))
+        assert pooled["attempts"] == 2 and pooled["tokens_all_attempts"] == 14 and pooled["n_failed"] == 1
+    finally:
+        server.close()
+        _forget_fake_isg()
+
+
+def test_isg_run_report_reads_outputs_and_points_at_lines(tmp_path):
+    rep = _tool("isg_run_report")
+    out = tmp_path / "session1"
+    (out / "logs").mkdir(parents=True)
+    (out / "fs").mkdir()
+    (out / "logs" / "shard-1.log").write_text(
+        "3 repositories needed in shard 1 of 2, 0 already in fs\n"
+        "[1/3] seed 7\n    model call 1: prompt 300 + 1200 tokens, 100 s, 12 tokens/s\n"
+        "    model call 2: prompt 1600 + 800 tokens, 100 s, 8 tokens/s\n"
+        "[1/3] seed 7 done in 220 s (2 model calls, 0 cut, largest context 2400); about 1.0 h left\n"
+        "[2/3] seed 21\n    model call 1: prompt 320 + 400 tokens, 50 s, 8 tokens/s\n"
+        "[2/3] seed 21 FAILED in 60 s (1 model calls, 0 cut); about 0.5 h left\n"
+        "[3/3] seed 40\n    model call 1: prompt 310 + 900 tokens, 90 s, 10 tokens/s\n")
+    (out / "logs" / "vllm-gpu0.log").write_text(
+        "INFO [kv_cache_utils.py:1] GPU KV cache size: 29,184 tokens, Maximum concurrency for 16,384 tokens: 1.78x\n"
+        "INFO [loggers.py:1] Engine 000: Avg prompt throughput: 50.0 tokens/s, Avg generation throughput: 64.0 tokens/s, "
+        "Running: 8 reqs, Waiting: 2 reqs, GPU KV cache usage: 91.5%, Prefix cache hit rate: 0.0%\n"
+        "WARNING 11-28 [model.py:1] Default vLLM sampling parameters have been overridden\n")
+    (out / "fs" / "regeneration_manifest.shard-1-of-2.json").write_text(json.dumps({
+        "seconds": {"7": 220.0}, "failed": {"21": "AssertionError: high not in self.params"},
+        "attempts": {"7": 1, "21": 1},
+        "model_calls": {"7": {"n": 2, "tokens": 2000, "max_prompt": 1600, "max_context": 2400},
+                        "21": {"n": 1, "tokens": 400}}}))
+    text = rep.report([str(tmp_path)])
+    assert "| 7 | done | shard-1-of-2 | 1 | 2 | 2000 | 0.06 | 9.1 | 1600 | 2400 | `shard-1.log:2` |" in text
+    assert "| 40 | in progress (session ended) |" in text and "AssertionError 1" in text
+    assert "median 9.0 tokens/s" in text and "GPU KV cache size: 29,184 tokens" in text
+    assert "Generation 64 tokens/s median" in text and "waiting max 2" in text and "KV cache use median 92 %" in text
+    one = rep.report([str(tmp_path)], seed="21")
+    assert "lines 6-8 (failed)" in one and "prompt 320 + 400 tokens" in one
+    hits = rep.report([str(tmp_path)], grep="FAILED")
+    assert "shard-1.log:8`" in hits

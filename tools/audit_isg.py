@@ -542,6 +542,8 @@ def merge_manifests(paths: Sequence[str]) -> Dict[str, Any]:
     failed: Dict[str, str] = {}
     calls: Dict[str, Dict[str, Any]] = {}
     where: Dict[str, str] = {}
+    attempts: Dict[str, int] = {}
+    spent = {"tokens": 0, "seconds": 0.0}
     for p in paths:
         with open(p, encoding="utf-8") as f:
             m = json.load(f)
@@ -550,6 +552,11 @@ def merge_manifests(paths: Sequence[str]) -> Dict[str, Any]:
         calls.update(m.get("model_calls") or {})
         for s, e in (m.get("failed") or {}).items():
             failed.setdefault(s, e)
+        for s, k in (m.get("attempts") or {}).items():
+            attempts[s] = max(attempts.get(s, 0), int(k))
+        for tries in (m.get("attempt_calls") or {}).values():
+            spent["tokens"] += sum(t.get("tokens", 0) for t in tries)
+            spent["seconds"] += sum(t.get("seconds_total", 0) for t in tries)
         default = f"{_engine(m)} on {m.get('device')}"
         recorded = m.get("where") or {}
         for s in built:
@@ -565,7 +572,11 @@ def merge_manifests(paths: Sequence[str]) -> Dict[str, Any]:
             "model_calls": sum(c.get("n", 0) for c in done), "tokens": sum(c.get("tokens", 0) for c in done),
             "cut": sum(c.get("cut", 0) for c in done), "largest_context": max(contexts) if contexts else None,
             "largest_prompt": max(prompts) if prompts else None,
-            "repository_hours": round(sum(seconds.values()) / 3600, 1)}
+            "repository_hours": round(sum(seconds.values()) / 3600, 1),
+            "attempts": sum(attempts.values()) if attempts else None,
+            "built_after_retry": sum(1 for s in seconds if attempts.get(s, 1) > 1),
+            "tokens_all_attempts": spent["tokens"] or None,
+            "hours_all_attempts": round(spent["seconds"] / 3600, 1) if spent["seconds"] else None}
 
 
 def _provenance(isg: Optional[str]) -> Dict[str, Any]:
@@ -917,11 +928,11 @@ def run_generate(args) -> int:
                   + f"{tokens} tokens, {seconds:.0f} s{rate}" + (" - cut at the ceiling" if cut else ""), flush=True)
             return out
 
-    current = {"seed": 0}
+    current = {"seed": 0, "attempt": 0}
     backend: Dict[str, Any] = {"name": args.backend}
 
-    def seed_of_call():  # reproducible per repository and call
-        return (current["seed"] * 100003 + calls["n"]) % 2 ** 31
+    def seed_of_call():  # reproducible per repository, attempt and call; attempt 0 as before
+        return (current["seed"] * 100003 + current["attempt"] * 7777777 + calls["n"]) % 2 ** 31
     if args.backend == "ollama":
         client = Ollama(args.ollama_url, args.ollama_model, args.num_ctx)
         try:
@@ -1013,11 +1024,18 @@ def run_generate(args) -> int:
                 "backend": backend, "device_map": device_map, "placement": placement, "shard": [shard, n_shards],
                 "limit": args.limit or None,
                 "gpu_free_gb_before_loading": round(free / 2 ** 30, 2) if free is not None else None,
-                "seconds": {}, "failed": {}, "model_calls": {}, "where": {}}
+                "seconds": {}, "failed": {}, "model_calls": {}, "where": {}, "attempts": {}, "attempt_calls": {},
+                "max_attempts": args.max_attempts}
     if os.path.exists(manifest_path):
         with open(manifest_path, encoding="utf-8") as f:
             manifest.update({k: v for k, v in json.load(f).items()
-                             if k in ("seconds", "failed", "model_calls", "where")})
+                             if k in ("seconds", "failed", "model_calls", "where", "attempts", "attempt_calls")})
+    for s in manifest["failed"]:  # manifests before attempts were counted: one failed attempt each
+        manifest["attempts"].setdefault(s, 1)
+    given_up = [s for s in todo if manifest["attempts"].get(str(s), 0) >= args.max_attempts]
+    if given_up:
+        print(f"{len(given_up)} failed {args.max_attempts} times and are not tried again: {given_up}", flush=True)
+        todo = [s for s in todo if s not in given_up]
     t_start = time.time()
     for n, seed in enumerate(todo, 1):
         if args.stop_after and time.time() - t_begin > args.stop_after * 3600:
@@ -1028,7 +1046,9 @@ def run_generate(args) -> int:
         calls.clear()
         calls.update(fresh)
         current["seed"] = seed
-        print(f"[{n}/{len(todo)}] seed {seed}", flush=True)
+        current["attempt"] = manifest["attempts"].get(str(seed), 0)
+        again = f" (attempt {current['attempt'] + 1}, new sampling seeds)" if current["attempt"] else ""
+        print(f"[{n}/{len(todo)}] seed {seed}{again}", flush=True)
         try:
             fs = sim.get_filesystem(seed)
             final = os.path.join(args.fs_dir, f"{seed}.json")
@@ -1040,7 +1060,12 @@ def run_generate(args) -> int:
             manifest["failed"].pop(str(seed), None)
         except Exception as e:  # ISG marks such seeds corrupted; the item will be missing
             manifest["failed"][str(seed)] = f"{type(e).__name__}: {e}"[:300]
-        manifest["model_calls"][str(seed)] = {k: (round(v, 1) if isinstance(v, float) else v) for k, v in calls.items()}
+        record = {k: (round(v, 1) if isinstance(v, float) else v) for k, v in calls.items()}
+        manifest["model_calls"][str(seed)] = record
+        manifest["attempts"][str(seed)] = current["attempt"] + 1
+        manifest["attempt_calls"].setdefault(str(seed), []).append(
+            {**record, "ok": str(seed) in manifest["seconds"] and str(seed) not in manifest["failed"],
+             "seconds_total": round(time.time() - t0, 1)})
         manifest["n_done"] = len(manifest["seconds"])
         manifest["n_failed"] = len(manifest["failed"])
         with open(manifest_path, "w", encoding="utf-8") as f:
@@ -1107,6 +1132,8 @@ def main(argv=None) -> int:
     gsub.add_argument("--limit", type=int, default=0, help="only the first N repositories (to time a run)")
     gsub.add_argument("--shard", type=_shard, default=(1, 1), metavar="I/N",
                       help="build shard I of N (seeds dealt round-robin after --limit); keep N the same everywhere")
+    gsub.add_argument("--max-attempts", type=int, default=3,
+                      help="a seed that failed this often is not tried again; each retry samples with new seeds")
     gsub.add_argument("--stop-after", type=float, default=0, metavar="HOURS",
                       help="start no repository after this many hours (a Kaggle session ends at 12)")
     gsub.add_argument("--machine", help="recorded per repository (default: the GPUs nvidia-smi lists)")
